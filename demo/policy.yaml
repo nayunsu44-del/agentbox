@@ -1,0 +1,17 @@
+# 데모 전용 정책 (run_demo.sh가 AGENTBOX_POLICY로 쓴다).
+# 기본 정책(agentbox/default_policy.yaml)은 exec를 허용 목록으로 다뤄 /dev/tcp 전송도 승인 앞에서 멈춘다.
+# 데모는 일부러 이름 목록(rm, curl)만 보는 느슨한 정책을 써서, 정책이 놓친 전송을 네트워크 차단이
+# 막는 것을 보여준다 (정책은 첫 번째 방어선일 뿐이다).
+version: 2
+default: allow
+rules:
+  - id: rm-curl-needs-approval
+    tool: exec
+    match:
+      commands: [rm, curl]
+    action: require_approval
+    reason: 파일 삭제(rm) 또는 외부 전송(curl)이 들어간 명령
+  - id: delete-file-needs-approval
+    tool: delete_file
+    action: require_approval
+    reason: 파일 삭제

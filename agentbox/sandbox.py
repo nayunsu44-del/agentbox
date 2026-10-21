@@ -629,7 +629,8 @@ class SandboxManager:
         return [line for line in out.splitlines() if line]
 
     def _walk(self, c, path: str, limit: int) -> list[str]:
-        res = c.exec_run(["sh", "-c", 'cd /workspace; find "$1" 2>/dev/null | head -n "$2"', "_", path, str(limit)],
+        res = c.exec_run(["sh", "-c", 'cd /workspace; case "$1" in -*) set -- "./$1" "$2";; esac; find "$1" 2>/dev/null | head -n "$2"',
+                          "_", path, str(limit)],
                          user=AGENT_UID, demux=True)
         out = (res.output[0] or b"").decode("utf-8", errors="replace")
         return [line for line in out.splitlines() if line]

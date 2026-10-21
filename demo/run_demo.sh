@@ -15,6 +15,8 @@ if [[ "${1:-}" == "--auto" ]]; then AUTO="${2:-n}"; fi
 
 export AGENTBOX_HOME="${AGENTBOX_HOME:-$ROOT/demo-data}"
 export AGENTBOX_URL="${AGENTBOX_URL:-http://127.0.0.1:8765}"
+# 느슨한 데모 정책: 정책이 놓친 전송을 네트워크 차단이 막는 것을 보여준다 (demo/policy.yaml 참고)
+export AGENTBOX_POLICY="${AGENTBOX_POLICY:-$ROOT/demo/policy.yaml}"
 export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
 PY="${PYTHON:-python3}"
 # 서버는 AGENTBOX_URL의 포트로 띄운다. 다른 포트로 돌리려면 AGENTBOX_URL만 바꾸면 된다.

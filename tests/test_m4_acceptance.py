@@ -126,3 +126,25 @@ def test_takeover_closed_on_restart(home):
         assert len([x for x in ev if x["event"] == "human_handback"]) == 2
     finally:
         c.delete(f"/sandboxes/{sid}", headers=H)
+
+
+def test_preview_does_not_run_find_options(home):
+    """파일 이름이 -delete여도 승인 카드용 미리보기가 find 옵션으로 읽어 지우지 않는다."""
+    c, _, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid, A = sb["id"], {"Authorization": f"Bearer {sb['agent_token']}"}
+
+    def tool(name, **args):
+        return c.post(f"/sandboxes/{sid}/tools/{name}", json={"args": args}, headers=A)
+
+    try:
+        assert tool("write_file", path="/workspace/keep.md", content="keep").status_code == 200
+        assert tool("write_file", path="/workspace/-delete", content="x").status_code == 200
+        r = tool("exec", command="rm -r -- -delete")
+        assert r.status_code == 202, r.text
+        pending = c.get("/approvals", params={"status": "pending"}, headers=H).json()
+        assert "-delete" in str(pending[0]["preview"])
+        names = tool("exec", command="ls -a /workspace").json()["result"]["stdout"].split()
+        assert "keep.md" in names and "-delete" in names          # 승인 전에는 아무것도 안 지워졌다
+    finally:
+        c.delete(f"/sandboxes/{sid}", headers=H)

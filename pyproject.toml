@@ -2,6 +2,8 @@
 name = "agentbox"
 version = "0.1.0"
 description = "망 안의 에이전트 컴퓨터 — AI 에이전트용 격리 샌드박스, 사람 승인, 해시 체인 감사 로그"
+readme = "README.md"
+license = {text = "MIT"}
 requires-python = ">=3.11"
 dependencies = [
   "fastapi>=0.110",

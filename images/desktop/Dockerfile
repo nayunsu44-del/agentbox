@@ -1,6 +1,6 @@
 # 데스크톱 템플릿 샌드박스 이미지 (UX-1, UX-2, TL-2).
 #
-#   docker build -t agentbox-desktop:0.1 agentbox/images/desktop
+#   docker build -t agentbox-desktop:0.1 images/desktop
 #
 # 사용자 두 명으로 나눈다.
 #   agent   (uid 1000)  에이전트의 exec·파일 도구가 도는 계정

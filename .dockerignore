@@ -5,3 +5,7 @@ data/
 tests/
 demo/
 images/
+.git/
+.local/
+demo-data/
+*.env

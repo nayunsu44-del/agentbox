@@ -3,7 +3,9 @@
 exec 명령에서 '실행될 프로그램 이름'을 뽑아 규칙과 비교한다.
 따옴표·역슬래시·경로(/bin/rm)·명령 연결(; && | $( ))·sh -c 안의 문자열까지 펼쳐 본다.
 그래도 변수 치환($X)처럼 실행해 봐야 알 수 있는 우회는 못 잡는다.
-그래서 정책은 첫 번째 방어선일 뿐이고, 네트워크 차단과 원본 읽기 전용이 최종 방어선이다.
+기본 정책은 그래서 exec를 허용 목록으로 다룬다: 읽기 전용 프로그램만 쓰는 단순 명령만 바로 실행하고
+나머지는 모두 사람 승인을 받는다 (`find -delete`, `python -c` 같은 우회를 이름 목록으로 다 막을 수 없으므로).
+정책은 첫 번째 방어선일 뿐이고, 네트워크 차단과 원본 읽기 전용이 최종 방어선이다.
 """
 
 from __future__ import annotations
@@ -71,6 +73,43 @@ def command_names(command: str) -> set[str]:
     return names
 
 
+# 출력을 버리는 리다이렉션은 파일을 바꾸지 않으므로 읽기 전용 판정에서 빼고 본다.
+_DEVNULL = re.compile(r"\d*>>?\s*/dev/null|\d*>&\d")
+
+
+def simple_programs(command: str) -> set[str] | None:
+    """변수·명령 치환, 파일 쓰기 리다이렉션, 환경 변수 접두가 없는 단순 명령이면 실행될 프로그램 이름들.
+    아니면 None. 읽기 전용 허용 목록(only_commands)은 None이면 맞지 않는 것으로 친다."""
+    cmd = _DEVNULL.sub(" ", command)
+    if any(s in cmd for s in ("$", "`", ">", "<(")):
+        return None
+    try:
+        lex = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
+        lex.whitespace_split = True
+        lex.commenters = ""
+        tokens = list(lex)
+    except ValueError:
+        return None
+    programs: set[str] = set()
+    start, skip = True, False
+    for t in tokens:
+        if all(c in ";&|()" for c in t):     # ; && || | |& ( ) 등. 다음 단어가 프로그램
+            start = True
+            continue
+        if t == "<":
+            skip = True
+            continue
+        if skip:
+            skip = False
+            continue
+        if start:
+            if "=" in t.split("/", 1)[0]:
+                return None          # LD_PRELOAD=… cat 같은 접두는 허용 목록 밖
+            programs.add(t.rsplit("/", 1)[-1])
+            start = False
+    return programs
+
+
 def _raw_hits(command: str, names: list[str]) -> set[str]:
     """보수적 2차 확인: 원문에서 단어 경계로 등장하는지."""
     hits = set()
@@ -105,6 +144,15 @@ class Policy:
                 continue
             match = r.get("match") or {}
             wanted = [str(c) for c in match.get("commands", [])]
+            only = [str(c) for c in match.get("only_commands", [])]
+            if only:
+                # 모든 프로그램이 목록 안에 있는 단순 명령일 때만 맞는다 (읽기 전용 허용 목록)
+                if tool != "exec":
+                    continue
+                progs = simple_programs(str(args.get("command", "")))
+                if not progs or not progs <= set(only):
+                    continue
+                return Decision(r["action"], r["id"], r.get("reason"), sorted(progs))
             if wanted:
                 if tool != "exec":
                     continue

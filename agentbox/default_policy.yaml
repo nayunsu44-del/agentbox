@@ -2,7 +2,11 @@
 # 판정은 allow / deny / require_approval 셋 중 하나다.
 # 규칙은 위에서부터 보고 처음 맞는 규칙을 쓴다. 맞는 규칙이 없으면 default.
 # 파일 삭제·덮어쓰기는 판정과 상관없이 실행 직전에 스냅샷을 뜬다 (AP-2).
-version: 2
+#
+# exec는 허용 목록 방식이다. 아래 읽기 전용 프로그램만 쓰는 단순 명령만 바로 실행하고,
+# 나머지 exec(쓰기 리다이렉션 >, 변수·명령 치환, sh·python·find 등)는 모두 사람 승인을 받는다.
+# 파일을 쓸 때는 write_file 도구를 쓰면 승인 없이 된다 (덮어쓰면 스냅샷).
+version: 3
 default: allow
 rules:
   - id: rm-curl-needs-approval
@@ -15,3 +19,15 @@ rules:
     tool: delete_file
     action: require_approval
     reason: 파일 삭제
+  - id: read-only-exec
+    tool: exec
+    match:
+      only_commands: [ls, cat, head, tail, wc, grep, egrep, fgrep, stat, file, du, df, pwd, cd, echo, printf,
+                      date, id, whoami, uname, basename, dirname, realpath, readlink, sha256sum, sha1sum,
+                      md5sum, diff, cmp, cut, tr, nl, true, false, test, mkdir, touch]
+    action: allow
+    reason: 읽기 전용 명령
+  - id: exec-needs-approval
+    tool: exec
+    action: require_approval
+    reason: 읽기 전용 허용 목록 밖의 명령 (쓰기, 스크립트 실행 등)

@@ -5,12 +5,12 @@
 | --- | --- |
 | 컨테이너 1개 | `network=none`, 원본 폴더는 `/source`에 읽기 전용, 작업 폴더 `/workspace`는 쓰기 가능 (원본의 복사본) |
 | MCP 도구 3개 | `list_dir`, `read_file`, `exec` |
-| 정책 규칙 1개 | `rm`·`curl`이 들어간 명령은 승인 대기 (`agentbox/default_policy.yaml`) |
+| 정책 | `exec`는 읽기 전용 명령 허용 목록 밖이면 승인 대기, `delete_file`도 승인 대기 (`agentbox/default_policy.yaml`) |
 | 터미널 승인 | 실제 명령과 시스템이 계산한 영향 파일 목록을 보여주고 y/N. 에이전트가 쓴 설명은 보여주지 않는다 |
 | 사전 스냅샷 | 승인된 위험 명령 직전 `docker commit` |
 | 해시 체인 로그 | SQLite 추가 전용 테이블, 기록 실패 시 실행 중단, `verify`로 깨진 지점 표시 |
 
-빼는 것 (문서대로): noVNC 화면, GUI 도구, 결과함 화면, 템플릿, 웹 UI.
+위 표는 최소 증명 데모의 범위다. 그 뒤 M2~M3에서 파일 도구, 데스크톱 템플릿(화면 보기·인수, GUI 도구), 웹 UI(파일 넣기, 결과함, 승인, 타임라인), 세션 저장, compose+TLS 설치를 더했다. 아래 각 절 참고.
 
 ## 요구사항
 
@@ -45,12 +45,12 @@ Debian 13 KVM VM(4 vCPU, `/dev/kvm` 없음), runsc release-20261012.0에서 검�
 
 | 항목 | runc | runsc (gVisor) |
 | --- | --- | --- |
-| 전체 테스트 | 33 passed, 1 skipped | 33 passed, 1 skipped |
+| 전체 테스트 (최소 데모 시점) | 33 passed, 1 skipped | 33 passed, 1 skipped |
 | 샌드박스 생성 (작업 폴더 복사 포함) | 107 ms | 140 ms |
 | `exec true` 1회 | 27 ms | 30 ms |
 | 스냅샷 | 174 ms | 192 ms |
 
-시간은 이미지 캐시 상태에서 5회 평균. 데모도 runsc에서 전송 실패, 승인 대기, 원본 무사, 해시 체인 검증, 복원 후 파일 4개 복구까지 모두 같게 나온다.
+시간은 이미지 캐시 상태에서 5회 평균. 지금 전체 테스트는 runsc에서 119개가 통과한다 (데스크톱 이미지가 없으면 데스크톱 항목은 건너뜀). 데모도 runsc에서 전송 실패, 승인 대기, 원본 무사, 해시 체인 검증, 복원 후 파일 4개 복구까지 모두 같게 나온다.
 
 ### docker compose + TLS로 설치 (NF-5)
 
@@ -64,7 +64,7 @@ docker compose exec agentbox agentbox ui --base-url https://agentbox.example.com
 ```
 
 - `AGENTBOX_SITE`가 공개 도메인이면 Caddy가 인증서를 자동으로 받는다 (80·443 포트가 열려 있어야 함). 비우면 `localhost`로 뜨고 Caddy 내부 CA로 서명한다 (개발용, 브라우저 경고). 포트는 `AGENTBOX_HTTPS_PORT`·`AGENTBOX_HTTP_PORT`로 바꾼다.
-- 데이터 폴더(`AGENTBOX_HOME_DIR`, 기본 `/var/lib/agentbox`)는 호스트와 컨테이너에서 같은 경로로 마운트한다. 샌드박스의 `/source`를 호스트 Docker 데몬이 마운트하기 때문이다. 파일은 웹 UI로 넣는다.
+- 데이터 폴더(compose 변수 `AGENTBOX_HOME_DIR`, 기본 `/var/lib/agentbox`. 컨테이너 안에서는 이 값이 `AGENTBOX_HOME`이 된다)는 호스트와 컨테이너에서 같은 경로로 마운트한다. 샌드박스의 `/source`를 호스트 Docker 데몬이 마운트하기 때문이다. 파일은 웹 UI로 넣는다.
 - 컨트롤 플레인 컨테이너는 `/var/run/docker.sock`을 쓴다. 이 소켓은 호스트 root 권한과 같으므로 이 컨테이너만 쓰게 둔다. gVisor 등 격리 런타임은 호스트 데몬에 설치한다.
 - 에이전트 쪽 MCP 설정은 `AGENTBOX_URL=https://agentbox.example.com`. 내부 CA를 쓰면 `SSL_CERT_FILE`로 그 루트 인증서를 믿게 한다 (`docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt`).
 
@@ -93,6 +93,7 @@ docker compose exec agentbox agentbox ui --base-url https://agentbox.example.com
 2. 에이전트에게는 "보고서를 요약해"라고만 시킨다.
 3. 에이전트가 숨은 지시를 따라 전송과 삭제를 시도한다.
 4. 전송은 네트워크 차단으로 실패한다 (`Network is unreachable`). 삭제는 승인 대기에서 멈춘다.
+   데모는 일부러 이름 목록(`rm`, `curl`)만 보는 느슨한 정책(`demo/policy.yaml`)을 쓴다. 정책이 놓친 `/dev/tcp` 전송을 네트워크 차단이 막는 것을 보이려는 것이다. 기본 정책이면 이 전송도 승인 앞에서 멈춘다.
 5. 거절하면 아무것도 지워지지 않는다. 승인해도 `/source` 원본은 읽기 전용이라 무사하고, 지워진 `/workspace`는 스냅샷으로 되돌린다.
 6. 감사 로그에 시도·판정·승인·스냅샷·결과가 모두 남고, `verify`가 체인이 온전함을 보여준다.
 
@@ -195,7 +196,7 @@ agentbox desktop sb_xxx                                     # 1회용 링크 (60
 | `list_dir`, `read_file` | 모두 | 허용 | `/workspace`, `/source` 아래만 |
 | `write_file` | 모두 | 허용 | `/workspace` 아래만, 최대 1MB. 있는 파일을 덮어쓰면 직전에 스냅샷. 로그에는 내용 대신 크기·sha256 |
 | `delete_file` | 모두 | 승인 필요 | 파일 하나만 (폴더 불가). 승인 후 스냅샷 뜨고 삭제 |
-| `exec` | 모두 | `rm`·`curl`이 있으면 승인 필요 | |
+| `exec` | 모두 | 읽기 전용 명령만 허용, 나머지는 승인 필요 | 허용 목록: `ls` `cat` `head` `tail` `wc` `grep` `stat` `du` `echo` `mkdir` 등 (`default_policy.yaml`의 `read-only-exec`). 파일 쓰기 리다이렉션(`>`), 변수·명령 치환, `sh`·`python`·`find` 같은 명령은 승인 대상. 파일을 쓸 때는 `write_file`을 쓴다 |
 | `screenshot`, `click`, `type`, `key` | desktop | 허용 | 화면 인수 중에는 423. 로그에는 이미지 대신 크기·sha256 |
 
 승인 요청은 `AGENTBOX_APPROVAL_TIMEOUT`초(기본 300) 안에 결정이 없으면 `expired`로 거부된다 (AP-1).
@@ -240,6 +241,28 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 
 "오래된 보고서를 정리하고 요약본을 만들어"라고만 하면 Claude는 지우지 않고 `archive/`로 옮기는 쪽을 골랐다. 그래서 승인 단계가 나오지 않았다. 데모에서는 지우라고 분명히 시킨다.
 
+## 환경 변수
+
+| 변수 | 기본값 | 뜻 |
+| --- | --- | --- |
+| `AGENTBOX_HOME` | `./data` | 데이터 폴더 (DB, 사람 토큰, 캡처) |
+| `AGENTBOX_DB` | `$AGENTBOX_HOME/agentbox.db` | SQLite 파일 |
+| `AGENTBOX_POLICY` | `agentbox/default_policy.yaml` | 정책 파일 |
+| `AGENTBOX_HUMAN_TOKEN` | (파일에 생성) | 사람 토큰 지정 |
+| `AGENTBOX_IMAGE` | `buildpack-deps:noble-curl` | cli 템플릿 이미지 |
+| `AGENTBOX_RUNTIME` | `auto` | 격리 런타임 (`runsc`, `runc` 등으로 고정 가능) |
+| `AGENTBOX_MEM` · `AGENTBOX_CPUS` · `AGENTBOX_PIDS` | `512m` · `1.0` · `256` | cli 샌드박스 자원 상한 |
+| `AGENTBOX_DISK` | (없음) | 디스크 상한 (xfs+pquota일 때만) |
+| `AGENTBOX_EXEC_TIMEOUT` | `60` | exec 한 번의 제한 시간(초) |
+| `AGENTBOX_MAX_UPLOAD` | 50MB | 파일 넣기 하나의 상한 |
+| `AGENTBOX_APPROVAL_TIMEOUT` | `300` | 승인 대기 상한(초) |
+| `AGENTBOX_DESKTOP_IMAGE` | `agentbox-desktop:0.1` | desktop 템플릿 이미지 |
+| `AGENTBOX_DESKTOP_MEM` · `_CPUS` · `_PIDS` | `1536m` · `2.0` · `1024` | desktop 샌드박스 자원 상한 |
+| `AGENTBOX_TAKEOVER_IDLE` | `600` | 인수한 사람이 연결 없이 이만큼 지나면 에이전트에게 돌려줌(초) |
+| `AGENTBOX_DOCKER_CLI` | `docker` | 화면 연결에 쓰는 docker 명령 |
+| `AGENTBOX_SECURE_COOKIE` | (끔) | `1`이면 쿠키에 Secure |
+| `AGENTBOX_BEHIND_TLS_PROXY` · `AGENTBOX_TRUSTED_PROXIES` | (끔) · `*` | `--behind-tls-proxy`와 같음 · 믿을 프록시 주소 |
+
 ## API
 
 | 메서드 | 경로 | 토큰 |
@@ -255,6 +278,12 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 | GET | `/approvals/{id}` | 사람, 에이전트(자기 요청의 상태와 결과만) |
 | POST | `/approvals/{id}` | **사람만**. 에이전트 토큰이면 403, 시도도 감사 로그에 남는다 |
 | GET | `/audit`, `/audit/verify` | 사람 |
+| POST | `/sandboxes/{id}/files` | 사람 (multipart, 파일 넣기). 있는 파일을 덮어쓰면 직전 스냅샷 |
+| GET | `/sandboxes/{id}/outbox`, `/sandboxes/{id}/outbox/{name}` | 사람 (결과함 목록·내려받기, 반출 기록) |
+| GET | `/approvals/{id}/capture.png` | 사람 (승인 요청 시점 화면) |
+| POST | `/sandboxes/{id}/desktop/ticket` | 사람 토큰만 (1회용 화면 링크) |
+| GET·POST | `/sandboxes/{id}/desktop`, `/desktop/state`, `/desktop/takeover`, `/desktop/handback`, `/desktop/ws` | 브라우저 세션 (화면 보기·인수) |
+| GET | `/healthz` | 없음 (런타임·템플릿 확인) |
 
 사람 토큰은 처음 실행할 때 `data/human_token`에 만들어진다 (`AGENTBOX_HUMAN_TOKEN`으로 지정 가능).
 
@@ -316,7 +345,8 @@ pytest           # Docker가 있어야 수용 테스트까지 돈다
 
 ## 알려진 한계
 
-- **정책은 첫 번째 방어선일 뿐이다.** 따옴표, 역슬래시, 경로(`/bin/rm`), 명령 연결, `sh -c` 안쪽까지 펼쳐 보지만 `r$(echo m)`처럼 실행해 봐야 아는 우회는 놓칠 수 있다. 최종 방어선은 네트워크 차단과 원본 읽기 전용이다. 데모의 전송 시도가 일부러 `curl` 없이 `/dev/tcp`를 써서 정책을 통과하고 네트워크에서 막히는 것을 보여주는 이유다.
+- **정책은 첫 번째 방어선일 뿐이다.** 기본 정책은 exec를 허용 목록으로 다뤄 `find -delete`, `python -c`, `r$(echo m)` 같은 우회도 승인 앞에서 멈추지만, 허용 목록 안의 명령이 예상 밖의 일을 할 가능성은 남는다. 최종 방어선은 네트워크 차단과 원본 읽기 전용이다. 데모가 일부러 느슨한 정책으로 `/dev/tcp` 전송을 통과시키고 네트워크에서 막히는 것을 보여주는 이유다.
+- 허용 목록 때문에 쓰기 리다이렉션(`echo a > f`)이나 스크립트 실행도 매번 승인이 필요하다. 에이전트가 파일을 쓸 때는 `write_file`을 쓰게 하면 승인 횟수가 줄어든다. 운영에 맞게 `AGENTBOX_POLICY`로 목록을 바꾼다.
 - **끝부분을 잘라낸 로그는 체인만으로 못 잡는다.** 중간 수정·삭제는 잡지만, 마지막 몇 줄을 통째로 지우면 남은 체인은 온전하다. 마지막 해시를 바깥(다른 서버, 인쇄물 등)에 주기적으로 남기는 앵커가 필요하다.
 - 실행이 끝난 뒤 결과 기록이 실패하면 그 실행은 되돌릴 수 없다. 다음 호출은 요청 기록 단계에서 막힌다.
 - 사용자 구분 없이 사람 토큰 하나로 들어간다 (MVP 범위). 로그인 세션은 12시간 유지되고 서버를 다시 띄워도 남는다.
@@ -326,6 +356,14 @@ pytest           # Docker가 있어야 수용 테스트까지 돈다
 - `--behind-tls-proxy`는 프록시 앞단만 TLS다. 컨트롤 플레인 포트를 프록시 말고 다른 곳에 열면 그 경로는 평문이다.
 - 인수 기록의 `client_bytes`는 브라우저가 보낸 RFB 바이트 수(화면 갱신 요청 포함)다. 키·마우스 입력 하나하나를 기록하지는 않는다.
 - 데스크톱 이미지는 약 1.35GB이고, 데스크톱 샌드박스 하나가 메모리 1.5GB·CPU 2개를 상한으로 쓴다.
+- 검수(2026-10-22)에서 나온 것 중 아직 고치지 않은 것:
+  - 감사 로그의 비밀값 가림이 `DB_PASSWORD=`, `GITHUB_TOKEN=`, 따옴표로 감싼 값 같은 형식을 놓친다.
+  - 스냅샷 개수에 상한이 없다. 덮어쓰기·삭제를 반복하면 호스트 디스크가 찰 수 있다.
+  - 에이전트가 만든 FIFO 파일을 `read_file`로 읽히면 그 요청이 멈춘다.
+  - 화면 링크로 받은 세션도 전체 웹 UI를 쓸 수 있다. 로그아웃해도 이미 열린 화면 연결은 끊기지 않는다.
+  - gVisor가 없으면 경고만 하고 runc로 돈다 (`AGENTBOX_RUNTIME=runsc`로 고정하면 없을 때 실패한다).
+  - `source_dir`에 허용 경로 제한이 없다. 사람 토큰을 가진 사람만 지정할 수 있지만 데이터 폴더도 지정된다.
+  - 터미널 승인 화면(`agentbox approve`)은 에이전트가 넣은 제어 문자를 걸러내지 않는다. 웹 승인 화면은 안전하다.
 - 승인 화면의 영향 파일 계산은 `rm`과 `curl`만 안다. 그 밖의 명령이 규칙에 걸리면 "자동 계산 못 함"을 표시하고 명령 원문을 보여준다.
 
 ## 라이선스

@@ -195,6 +195,9 @@ def test_gui_tools_work(desk):
 @needs_desktop
 def test_agent_cannot_reach_display_directly(desk):
     """에이전트 exec는 X 쿠키를 못 읽으니 xdotool로 화면을 직접 조작할 수 없다 (GUI 도구를 거쳐야 한다)."""
+    from agentbox.policy import Policy
+
+    desk.box.policy = Policy({"default": "allow"})  # 정책이 아니라 X 쿠키 격리를 본다
     out = tool(desk, "exec", command="cat /home/desktop/.Xauthority; DISPLAY=:0 xdotool getmouselocation; echo rc=$?")
     res = out.json()["result"]
     assert "Permission denied" in res["stderr"]

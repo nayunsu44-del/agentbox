@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from agentbox.config import Settings  # noqa: E402
 from agentbox.desktop import COOKIE  # noqa: E402
+from agentbox.policy import Policy  # noqa: E402
 
 
 def _has_image(name):
@@ -126,6 +127,7 @@ def test_create_upload_outbox_download(ui):
     assert len(imported) == 2 and len(imported[0]["payload"]["sha256"]) == 64 and imported[0]["actor"] == "human"
     # 결과함
     assert "비어 있음" in e.c.get(f"/ui/sandboxes/{sid}/outbox").text
+    e.box.policy = Policy({"default": "allow"})  # 결과함이 링크를 걸러내는지 본다 (정책은 따로 테스트)
     tool(e, sid, A, "exec", command="printf '요약 본문' > outbox/요약.md && ln -s /etc/passwd outbox/link")
     names = [f["name"] for f in e.c.get(f"/sandboxes/{sid}/outbox").json()]
     assert names == ["요약.md"]                                           # 링크는 보이지 않는다
@@ -167,7 +169,7 @@ def test_export_refused_when_audit_unwritable(ui):
     e = ui
     login(e)
     sid, A = create(e)
-    tool(e, sid, A, "exec", command="mkdir -p outbox && echo hi > outbox/r.txt")
+    assert tool(e, sid, A, "write_file", path="/workspace/outbox/r.txt", content="hi").status_code == 200
     e.box.audit.conn = sqlite3.connect(f"file:{e.db}?mode=ro", uri=True, check_same_thread=False,
                                        isolation_level=None)
     assert e.c.get(f"/sandboxes/{sid}/outbox/r.txt").status_code == 503       # 기록 못 하면 반출 안 함
@@ -204,6 +206,8 @@ def test_approval_has_screen_capture(ui):
     e = ui
     login(e)
     sid, A = create(e, "desktop")
+    # 캡처는 실패해도 승인 요청을 막지 않는다(최선 노력). 화면이 뜰 때까지 기다린 뒤 요청한다.
+    assert tool(e, sid, A, "screenshot").status_code == 200
     aid = tool(e, sid, A, "exec", command="rm -f /workspace/nothing").json()["approval_id"]
     apr = e.c.get(f"/approvals/{aid}", headers=e.H).json()
     assert apr["preview"]["capture"]["width"] == 1280

