@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>{% block title %}agentbox{% endblock %}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<script src="/static/htmx.min.js"></script>
+<style>
+  :root { --bg: #f4f5f7; --fg: #1d1f23; --mut: #6b7079; --line: #dde0e5; --red: #b42318; --grn: #1f6b3a; --org: #b85c00; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, "Noto Sans KR", sans-serif; background: var(--bg); color: var(--fg); }
+  header { display: flex; gap: 10px; align-items: center; padding: 8px 16px; background: #23262b; color: #eee; }
+  header a { color: #fff; text-decoration: none; font-size: 16px; }
+  header .right { margin-left: auto; }
+  main { padding: 16px; max-width: 1500px; margin: 0 auto; }
+  .badge { padding: 2px 8px; border-radius: 4px; background: #444; color: #eee; font-size: 12px; white-space: nowrap; }
+  .warn { background: var(--red); color: #fff; } .ok { background: var(--grn); color: #fff; } .pend { background: var(--org); color: #fff; }
+  section { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 14px; }
+  section h2 { margin: 0 0 8px; font-size: 15px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--mut); font-weight: 500; font-size: 12px; }
+  code, pre, .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12.5px; }
+  pre { background: #f0f1f3; padding: 8px; border-radius: 6px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+  button { font: inherit; padding: 4px 12px; border-radius: 5px; border: 1px solid #aab; background: #fff; cursor: pointer; }
+  button.primary { background: var(--grn); color: #fff; border-color: var(--grn); }
+  button.danger { background: var(--red); color: #fff; border-color: var(--red); }
+  .mut { color: var(--mut); } .err { color: var(--red); }
+  .grid { display: grid; grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr); gap: 14px; }
+  @media (max-width: 1000px) { .grid { grid-template-columns: 1fr; } }
+  .card { border: 2px solid var(--org); border-radius: 8px; padding: 10px; margin-bottom: 10px; background: #fffaf3; }
+  .card.done { border: 1px solid var(--line); background: #fafafa; }
+  .card img { max-width: 100%; border: 1px solid var(--line); border-radius: 4px; }
+  .del { color: var(--red); font-weight: 600; }
+  #drop { border: 2px dashed #99a; border-radius: 8px; padding: 22px; text-align: center; color: var(--mut); }
+  #drop.over { background: #eef6ff; border-color: #36c; color: #36c; }
+  tr.broken td { background: #fde8e8; }
+  .act-AI { color: #1a5fb4; font-weight: 600; } .act-사람 { color: var(--org); font-weight: 600; } .act-시스템 { color: var(--mut); }
+</style>
+</head>
+<body>
+<header>
+  <a href="/ui"><b>agentbox</b></a>
+  <span class="badge">격리: {{ runtime }}</span>
+  {% if runtime == "runc" %}<span class="badge warn">runc: 개발 전용 (격리 약함)</span>{% endif %}
+  <span id="notify" hx-get="/ui/notify" hx-trigger="load, every 3s"></span>
+  <span class="right"></span>
+  <button id="notif-btn" type="button" onclick="Notification.requestPermission().then(()=>this.remove())" hidden>브라우저 알림 켜기</button>
+  <form method="post" action="/logout"><button>로그아웃</button></form>
+</header>
+<main>{% block main %}{% endblock %}</main>
+<script>
+// UX-5 알림: 새 승인 요청·새 결과 파일이 보이면 제목을 바꾸고 (허용했으면) 브라우저 알림을 띄운다.
+// 주기 갱신: 지금 가진 조각의 버전을 보내고, 서버가 같다고 하면(204) 그대로 둔다.
+document.body.addEventListener("htmx:configRequest", (ev) => {
+  const v = ev.detail.target.dataset.abv;
+  if (ev.detail.verb === "get" && v) ev.detail.headers["X-AB-Have"] = v;
+});
+document.body.addEventListener("htmx:afterRequest", (ev) => {
+  const v = ev.detail.xhr && ev.detail.xhr.getResponseHeader("X-AB-Version");
+  if (v && ev.detail.successful) ev.detail.target.dataset.abv = v;
+});
+const seen = new Set(JSON.parse(sessionStorage.getItem("ab_seen") || "[]"));
+const primed = new WeakSet();
+const baseTitle = document.title;
+if ("Notification" in window && Notification.permission === "default") document.getElementById("notif-btn").hidden = false;
+document.body.addEventListener("htmx:afterSwap", (ev) => {
+  const t = ev.detail.target, quiet = !primed.has(t);
+  primed.add(t);
+  t.querySelectorAll("[data-notify]").forEach((el) => {
+    const id = el.dataset.notify;
+    if (seen.has(id)) return;
+    seen.add(id);
+    if (quiet && !id.startsWith("apr:")) return;   // 처음 열었을 때 이미 있던 결과 파일은 알리지 않는다
+    document.title = "(!) " + baseTitle;
+    if ("Notification" in window && Notification.permission === "granted") new Notification("agentbox", { body: el.dataset.text });
+  });
+  sessionStorage.setItem("ab_seen", JSON.stringify([...seen].slice(-500)));
+});
+document.addEventListener("visibilitychange", () => { if (!document.hidden) document.title = baseTitle; });
+</script>
+{% block script %}{% endblock %}
+</body></html>

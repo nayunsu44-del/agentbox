@@ -1,0 +1,9 @@
+<div class="card done" style="border-color:var(--grn)">
+  <p><b>샌드박스 {{ sb.id }}</b> 생성됨 (템플릿 {{ sb.template }}, 격리 {{ sb.runtime }}).
+     <a href="/ui/sandboxes/{{ sb.id }}">샌드박스 화면으로 →</a></p>
+  <p>에이전트 토큰 (이 샌드박스 전용, <b>이 화면에서 한 번만 보인다</b>):</p>
+  <pre id="agent-token">{{ token }}</pre>
+  <p class="mut">Claude Code에 붙이기:</p>
+  <pre id="claude-cmd">claude mcp add agentbox {{ claude }} -- python3 -m agentbox.mcp_server</pre>
+  <details><summary class="mut">MCP 설정 JSON</summary><pre id="mcp-json">{{ mcp }}</pre></details>
+</div>

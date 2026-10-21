@@ -1,0 +1,10 @@
+<table>
+  <tr><th>#</th><th>시각 (UTC)</th><th>누가</th><th>사건</th><th>도구</th><th>내용</th></tr>
+  {% for e in rows %}{% set who = actors.get(e.actor, e.actor) %}
+  <tr id="audit-{{ e.id }}"><td class="mut">{{ e.id }}</td><td class="mono mut">{{ e.ts[11:23] }}</td>
+    <td class="act-{{ who }}">{{ who }}{% if e.payload.session %} <span class="mut" style="font-weight:400">{{ e.payload.session }}</span>{% endif %}</td>
+    <td>{{ e.event }}</td><td>{{ e.tool or "" }}</td><td class="mono">{{ describe(e) }}</td></tr>
+  {% endfor %}
+</table>
+<script>window.abBroken && document.getElementById("audit-" + window.abBroken)?.classList.add("broken");</script>
+{% if total > rows | length %}<p class="mut">최근 {{ rows | length }}개만 표시 (전체 {{ total }}개)</p>{% endif %}

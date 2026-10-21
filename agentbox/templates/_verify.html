@@ -1,0 +1,5 @@
+{% if v.ok %}<span class="badge ok">해시 체인 온전함</span> <span class="mut">항목 {{ v.checked }}개 모두 확인</span>
+{% else %}<span class="badge warn">해시 체인 깨짐</span> <b>항목 #{{ v.broken_at }}</b> — {{ v.reason }}
+  {% if here %}<span class="err">(이 샌드박스의 항목)</span>
+  <script>window.abBroken = {{ v.broken_at }}; document.getElementById("audit-{{ v.broken_at }}")?.classList.add("broken");</script>{% elif here is not none %}<span class="mut">(다른 샌드박스의 항목)</span>{% endif %}
+{% endif %}

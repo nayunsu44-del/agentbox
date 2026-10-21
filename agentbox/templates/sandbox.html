@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}agentbox {{ sb.id }}{% endblock %}
+{% block main %}
+<p><a href="/ui">← 목록</a> · <b>{{ sb.id }}</b> · 템플릿 {{ sb.template }} · 격리 {{ sb.runtime }} · 상태 {{ sb.status }}
+  <button class="danger" style="float:right" hx-post="/ui/sandboxes/{{ sb.id }}/delete" hx-confirm="{{ sb.id }}를 지울까요? 컨테이너가 사라진다.">샌드박스 삭제</button></p>
+<div class="grid">
+<div>
+  <section>
+    <h2>화면</h2>
+    {% if desktop %}
+      <iframe id="screen" src="/sandboxes/{{ sb.id }}/desktop" style="width:100%;height:620px;border:0;border-radius:6px;background:#1e1e1e"></iframe>
+      <p class="mut">"화면 인수"를 누르면 내가 조작하고, 그동안 에이전트의 화면 도구는 기다린다. 다 하면 "돌려주기".</p>
+    {% else %}<p class="mut">명령줄 템플릿이라 화면이 없다.</p>{% endif %}
+  </section>
+  <section>
+    <h2>감사 로그 타임라인</h2>
+    <button hx-get="/ui/verify?sandbox_id={{ sb.id }}" hx-target="#verify">해시 체인 검증</button>
+    <span id="verify"></span>
+    <div id="audit" hx-get="/ui/audit?sandbox_id={{ sb.id }}" hx-trigger="load, every 3s, audit-changed from:body" style="margin-top:8px"></div>
+  </section>
+</div>
+<div>
+  <section>
+    <h2>승인 요청</h2>
+    <div id="approvals" hx-get="/ui/approvals?sandbox_id={{ sb.id }}" hx-trigger="load, every 2s"></div>
+  </section>
+  <section>
+    <h2>파일 넣기</h2>
+    <div id="drop">여기에 파일을 끌어다 놓기 (작업 폴더 /workspace에 복사된다, 하나에 최대 {{ (max_upload / 1048576) | int }}MB)<br>
+      <input id="pick" type="file" multiple style="margin-top:8px"></div>
+    <div id="upload-msg" class="mut"></div>
+  </section>
+  <section>
+    <h2>결과함 <span class="mut" style="font-weight:400">/workspace/outbox</span></h2>
+    <div id="outbox" hx-get="/ui/sandboxes/{{ sb.id }}/outbox" hx-trigger="load, every 3s"></div>
+  </section>
+  <section>
+    <h2>스냅샷</h2>
+    <button hx-post="/ui/sandboxes/{{ sb.id }}/snapshots" hx-target="#snaps">지금 스냅샷</button>
+    <div id="snaps" hx-get="/ui/sandboxes/{{ sb.id }}/snapshots" hx-trigger="load, every 5s" style="margin-top:6px"></div>
+  </section>
+</div>
+</div>
+{% endblock %}
+{% block script %}
+<script>
+const drop = document.getElementById("drop"), msg = document.getElementById("upload-msg");
+async function send(files) {
+  if (!files.length) return;
+  const fd = new FormData();
+  for (const f of files) fd.append("files", f, f.name);
+  msg.textContent = files.length + "개 보내는 중…";
+  const r = await fetch("/sandboxes/{{ sb.id }}/files", { method: "POST", body: fd, credentials: "same-origin" });
+  const body = await r.json().catch(() => ({}));
+  msg.textContent = r.ok ? body.map((x) => x.path + " (" + x.bytes + " bytes)").join(", ") + " 넣음"
+                         : "실패: " + (body.detail || r.status);
+  htmx.trigger(document.body, "audit-changed");
+}
+["dragenter", "dragover"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach((t) => drop.addEventListener(t, (e) => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", (e) => send([...e.dataTransfer.files]));
+document.getElementById("pick").addEventListener("change", (e) => { send([...e.target.files]); e.target.value = ""; });
+</script>
+{% endblock %}

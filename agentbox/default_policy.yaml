@@ -1,0 +1,17 @@
+# 기본 정책.
+# 판정은 allow / deny / require_approval 셋 중 하나다.
+# 규칙은 위에서부터 보고 처음 맞는 규칙을 쓴다. 맞는 규칙이 없으면 default.
+# 파일 삭제·덮어쓰기는 판정과 상관없이 실행 직전에 스냅샷을 뜬다 (AP-2).
+version: 2
+default: allow
+rules:
+  - id: rm-curl-needs-approval
+    tool: exec
+    match:
+      commands: [rm, curl]
+    action: require_approval
+    reason: 파일 삭제(rm) 또는 외부 전송(curl)이 들어간 명령
+  - id: delete-file-needs-approval
+    tool: delete_file
+    action: require_approval
+    reason: 파일 삭제

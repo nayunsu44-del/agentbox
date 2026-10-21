@@ -1,0 +1,43 @@
+# agentbox 설치 (NF-5): 컨트롤 플레인 + Caddy(TLS 종료).
+#
+#   cd deploy
+#   AGENTBOX_SITE=agentbox.example.com docker compose up -d --build
+#   docker compose exec agentbox agentbox ui --base-url https://agentbox.example.com
+#
+# AGENTBOX_SITE가 공개 도메인이면 Caddy가 인증서를 자동으로 받는다(80·443 포트 필요).
+# 비워 두면 localhost로 뜨고 Caddy 내부 CA로 서명한다(브라우저 경고, 개발용).
+name: agentbox
+
+services:
+  agentbox:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: agentbox-control:0.1
+    restart: unless-stopped
+    environment:
+      # 샌드박스의 /source는 호스트 데몬이 바인드 마운트한다. 그래서 데이터 폴더는 호스트와
+      # 컨테이너에서 같은 절대 경로여야 한다.
+      AGENTBOX_HOME: ${AGENTBOX_HOME_DIR:-/var/lib/agentbox}
+      AGENTBOX_BEHIND_TLS_PROXY: "1"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${AGENTBOX_HOME_DIR:-/var/lib/agentbox}:${AGENTBOX_HOME_DIR:-/var/lib/agentbox}
+    expose:
+      - "8765"            # 호스트에 열지 않는다 (평문 HTTP)
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [agentbox]
+    environment:
+      AGENTBOX_SITE: ${AGENTBOX_SITE:-localhost}
+    ports:
+      - "${AGENTBOX_HTTPS_PORT:-443}:443"
+      - "${AGENTBOX_HTTP_PORT:-80}:80"     # https로 넘기기와 인증서 발급용
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+
+volumes:
+  caddy-data:

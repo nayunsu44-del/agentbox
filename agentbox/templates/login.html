@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}agentbox 로그인{% endblock %}
+{% block main %}
+<section style="max-width:520px;margin:60px auto">
+  <h2>사람 토큰으로 로그인</h2>
+  <p class="mut">컨트롤 플레인을 띄운 곳의 <code>data/human_token</code> 값, 또는 터미널에서 <code>agentbox ui</code>가 주는 1회용 링크로 들어온다. 에이전트 토큰으로는 들어올 수 없다.</p>
+  {% if error %}<p class="err">{{ error }}</p>{% endif %}
+  <form method="post" action="/login">
+    <input name="token" type="password" placeholder="hum_…" style="width:100%;padding:6px" autofocus>
+    <p><button class="primary">로그인</button></p>
+  </form>
+</section>
+{% endblock %}

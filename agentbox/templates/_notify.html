@@ -1,0 +1,4 @@
+{% if pending %}
+  {% for a in pending %}<span hidden data-notify="apr:{{ a.id }}" data-text="승인 요청 {{ a.sandbox_id }}: {{ a.tool }} {{ (a.args.command or a.args.path or '') | short(60) }}"></span>{% endfor %}
+  <a class="badge pend" href="/ui/sandboxes/{{ pending[0].sandbox_id }}">승인 대기 {{ pending | length }}건</a>
+{% else %}<span class="badge">승인 대기 없음</span>{% endif %}

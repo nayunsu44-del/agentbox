@@ -1,0 +1,32 @@
+#!/bin/bash
+# 컨테이너 시작 스크립트 (root로 시작해 desktop 계정으로 내려간다).
+# 스냅샷에서 복원하면 이전 X 서버의 잠금 파일이 남아 있으므로 먼저 지운다.
+set -u
+D=/home/desktop
+GEOM="${AGENTBOX_SCREEN:-1280x800x24}"
+
+rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
+mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
+
+as_desktop() {
+  setpriv --reuid=desktop --regid=desktop --init-groups \
+    env -i HOME="$D" USER=desktop LOGNAME=desktop SHELL=/bin/bash LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+        PATH=/usr/local/bin:/usr/bin:/bin DISPLAY=:0 XAUTHORITY="$D/.Xauthority" "$@"
+}
+
+# 시작할 때마다 새 쿠키. desktop만 읽을 수 있다.
+COOKIE=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+rm -f "$D/.Xauthority"
+as_desktop bash -c "umask 077; xauth -q -f '$D/.Xauthority' add :0 . $COOKIE"
+
+as_desktop Xvfb :0 -screen 0 "$GEOM" -auth "$D/.Xauthority" -nolisten tcp 2>/tmp/xvfb.log &
+for _ in $(seq 1 100); do
+  as_desktop xdotool getdisplaygeometry >/dev/null 2>&1 && break
+  sleep 0.1
+done
+
+# 화면 보호기와 절전은 끈다 (사람이 보고 있는 화면이 꺼지면 안 된다).
+as_desktop xset s off -dpms >/dev/null 2>&1 || true
+as_desktop bash -c 'umask 002; exec dbus-launch --exit-with-session startxfce4' >/tmp/xfce.log 2>&1 &
+
+exec sleep infinity

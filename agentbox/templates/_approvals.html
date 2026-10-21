@@ -1,0 +1,32 @@
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+{% for a in pending %}
+<div class="card" data-notify="apr:{{ a.id }}" data-text="승인 요청: {{ a.tool }}">
+  <div><span class="badge pend">승인 대기</span> <b>{{ a.id }}</b> · 샌드박스 <a href="/ui/sandboxes/{{ a.sandbox_id }}">{{ a.sandbox_id }}</a>
+    · <span class="mut">{{ a.created_at[11:19] }} UTC, {{ timeout }}초 안에 결정하지 않으면 거부</span></div>
+  <p class="mut" style="margin:4px 0">맞은 규칙: {{ a.rule_id }} — {{ a.rule_reason }}</p>
+  {% if a.tool == "exec" %}
+    <div>실제로 실행될 명령 <span class="mut">(작업 폴더 {{ a.preview.cwd }})</span>:</div><pre>{{ a.args.command }}</pre>
+  {% else %}
+    <div>실제로 실행될 도구:</div><pre>{{ a.tool }} {{ a.args | short(400) }}</pre>
+  {% endif %}
+  {% set aff = a.preview.affected or [] %}
+  <div>시스템이 계산한 영향 ({{ aff | length }}건):</div>
+  <table>{% for it in aff[:30] %}<tr><td class="{{ 'del' if it.effect == '삭제' or '보낼' in it.effect }}" style="width:40%">{{ it.effect }}</td><td class="mono">{{ it.path }}</td></tr>{% endfor %}</table>
+  {% if aff | length > 30 %}<p class="mut">… 외 {{ aff | length - 30 }}건</p>{% endif %}
+  {% for n in a.preview.notes or [] %}<p class="err">! {{ n }}</p>{% endfor %}
+  {% if a.preview.capture %}<div class="mut">요청 시점 화면 (시스템이 찍음):</div><img src="/approvals/{{ a.id }}/capture.png" alt="요청 시점 화면" loading="lazy">{% endif %}
+  <p class="mut" style="font-size:12px">에이전트가 쓴 설명은 보여주지 않는다. 승인하면 실행 직전에 스냅샷을 만든다.</p>
+  <button class="primary" hx-post="/ui/approvals/{{ a.id }}/approve?sandbox_id={{ sandbox_id }}" hx-target="#approvals" hx-disabled-elt="this">승인</button>
+  <button class="danger" hx-post="/ui/approvals/{{ a.id }}/deny?sandbox_id={{ sandbox_id }}" hx-target="#approvals" hx-disabled-elt="this">거절</button>
+</div>
+{% else %}<p class="mut">대기 중인 승인 요청 없음</p>{% endfor %}
+{% if done %}
+<details {{ "open" if not pending }}><summary class="mut">최근 결정</summary>
+{% for a in done %}
+<div class="card done"><b>{{ a.id }}</b> · {{ a.tool }} <code>{{ (a.args.command or a.args.path or "") | short(80) }}</code>
+  → <span class="badge {{ 'ok' if a.status == 'executed' else 'warn' if a.status in ('denied', 'expired', 'failed') }}">{{ a.status }}</span>
+  {% if a.snapshot_id %}<span class="mut">스냅샷 {{ a.snapshot_id }}</span>{% endif %}
+  <span class="mut">{{ a.decided_by or "" }} {{ (a.decided_at or "")[11:19] }}</span></div>
+{% endfor %}
+</details>
+{% endif %}

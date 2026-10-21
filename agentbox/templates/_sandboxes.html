@@ -1,0 +1,9 @@
+{% if sandboxes %}
+<table>
+  <tr><th>id</th><th>템플릿</th><th>상태</th><th>격리</th><th>원본</th><th>만든 때 (UTC)</th></tr>
+  {% for s in sandboxes %}
+  <tr><td><a href="/ui/sandboxes/{{ s.id }}"><b>{{ s.id }}</b></a></td><td>{{ s.template }}</td><td>{{ s.status }}</td>
+      <td>{{ s.runtime }}</td><td class="mono mut">{{ s.source_dir | short(60) }}</td><td class="mut">{{ s.created_at[:19] }}</td></tr>
+  {% endfor %}
+</table>
+{% else %}<p class="mut">아직 없음</p>{% endif %}

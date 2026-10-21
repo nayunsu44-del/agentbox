@@ -1,0 +1,416 @@
+"""도구 호출의 흐름: 기록 → 판정 → (승인 대기 | 실행) → 기록.
+
+규칙: 감사 기록이 실패하면 실행하지 않는다 (AU-2).
+승인된 위험 명령은 실행 직전에 스냅샷을 만든다 (AP-2). 파일 삭제·덮어쓰기는 승인 없이 허용돼도 스냅샷을 먼저 뜬다.
+승인 요청은 approval_timeout초(기본 300) 안에 결정이 없으면 거부로 끝난다 (AP-1).
+사람이 화면을 인수한 동안 GUI 도구는 실행하지 않고 423을 돌려준다 (UX-2).
+승인 요청에는 시스템이 직접 찍은 화면 캡처를 붙인다 (UX-5, 데스크톱 템플릿만).
+사람이 넣고(UX-3) 받는(UX-4) 파일은 sha256과 함께 기록한 뒤에 옮긴다.
+"""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+import time
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any
+
+from . import approvals as A
+from .approvals import ApprovalStore
+from .audit import AuditLog, AuditWriteError
+from .desktop import DesktopControl, Lease
+from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Policy
+from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, safe_path
+
+FILE_TOOLS = {"list_dir", "read_file", "exec", "write_file", "delete_file"}
+GUI_TOOLS = {"screenshot", "click", "type", "key"}
+TOOLS = FILE_TOOLS | GUI_TOOLS
+
+
+@dataclass
+class ToolOutcome:
+    status: int          # HTTP 상태: 200 실행됨, 202 승인 대기, 403 차단, 423 사람이 화면 조작 중
+    body: dict[str, Any]
+
+
+class ServiceError(RuntimeError):
+    def __init__(self, status: int, message: str):
+        super().__init__(message)
+        self.status = status
+        self.message = message
+
+
+class HumanControl(Exception):
+    def __init__(self, lease: Lease):
+        super().__init__(f"사람이 화면을 조작 중 ({lease.session}, {lease.since}부터)")
+        self.lease = lease
+
+
+class AgentBox:
+    def __init__(self, audit: AuditLog, policy: Policy, sandboxes: SandboxManager, approvals: ApprovalStore,
+                 desktop: DesktopControl | None = None, approval_timeout: int = 300,
+                 captures: Path | None = None):
+        self.audit = audit
+        self.policy = policy
+        self.sandboxes = sandboxes
+        self.approvals = approvals
+        self.desktop = desktop or DesktopControl()
+        self.approval_timeout = approval_timeout
+        self.captures = captures
+
+    def capture_path(self, aid: str) -> Path | None:
+        if not self.captures or not aid.replace("_", "").isalnum():
+            return None
+        p = self.captures / f"{aid}.png"
+        return p if p.is_file() else None
+
+    def _capture(self, sid: str) -> tuple[bytes, dict[str, Any]] | None:
+        """승인 요청 시점의 화면. 실패해도 승인 요청은 그대로 낸다."""
+        if not self.captures or not self.sandboxes.template_of(sid).desktop:
+            return None
+        try:
+            shot = self.sandboxes.screenshot(sid)
+        except SandboxError:
+            return None
+        png = shot.pop("png")
+        return png, shot
+
+    # ---- 내부 -----------------------------------------------------------
+    def _run_tool(self, sid: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        sb = self.sandboxes
+        if tool == "exec":
+            return sb.exec(sid, str(args.get("command", "")))
+        if tool == "list_dir":
+            return sb.list_dir(sid, str(args.get("path", "/workspace")))
+        if tool == "read_file":
+            return sb.read_file(sid, str(args.get("path", "")))
+        if tool == "write_file":
+            return sb.write_file(sid, str(args.get("path", "")), str(args.get("content", "")))
+        if tool == "delete_file":
+            return sb.delete_file(sid, str(args.get("path", "")))
+        if tool in GUI_TOOLS:
+            with self.desktop.gui_lock(sid):
+                self._check_control(sid)
+                if tool == "screenshot":
+                    shot = sb.screenshot(sid)
+                    png = shot.pop("png")
+                    return {**shot, "bytes": len(png), "png_base64": base64.b64encode(png).decode()}
+                if tool == "click":
+                    return sb.click(sid, _int(args, "x"), _int(args, "y"), str(args.get("button", "left")),
+                                    bool(args.get("double", False)))
+                if tool == "type":
+                    return sb.type_text(sid, str(args.get("text", "")))
+                return sb.key(sid, str(args.get("keys", "")))
+        raise ServiceError(404, f"알 수 없는 도구: {tool}")
+
+    def _check_control(self, sid: str) -> None:
+        """gui_lock을 잡은 채로 부른다."""
+        if self.desktop.is_stale(sid):
+            self._handback_locked(sid, None, "idle_timeout")
+        lease = self.desktop.lease(sid)
+        if lease:
+            raise HumanControl(lease)
+
+    @staticmethod
+    def _logged_args(tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        """감사 로그에는 쓸 파일 내용 대신 크기와 해시를 남긴다."""
+        if tool == "write_file" and "content" in args:
+            data = str(args.get("content", "")).encode("utf-8")
+            return {k: v for k, v in args.items() if k != "content"} | {
+                "content_bytes": len(data), "content_sha256": hashlib.sha256(data).hexdigest()}
+        return args
+
+    @staticmethod
+    def _summary(tool: str, result: dict[str, Any]) -> dict[str, Any]:
+        """감사 로그에는 결과 전체 대신 요약을 남긴다 (파일 내용이 로그로 새지 않게)."""
+        if tool == "exec":
+            return {k: result.get(k) for k in ("exit_code", "timed_out")} | {
+                "stdout_head": (result.get("stdout") or "")[:500],
+                "stderr_head": (result.get("stderr") or "")[:500],
+            }
+        if tool == "read_file":
+            return {"path": result.get("path"), "bytes": len(result.get("content") or ""),
+                    "truncated": result.get("truncated")}
+        if tool == "screenshot":
+            return {k: result.get(k) for k in ("width", "height", "bytes", "sha256")}
+        if tool in ("write_file", "delete_file", "list_dir"):
+            return {k: v for k, v in result.items() if k in ("path", "bytes", "sha256", "deleted")}
+        return result
+
+    def _preview(self, sid: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        if tool == "exec":
+            return self.sandboxes.preview(sid, str(args.get("command", "")))
+        if tool in ("delete_file", "write_file"):
+            p = safe_path(str(args.get("path", "")))
+            exists = self.sandboxes.exists(sid, p)
+            notes = []
+            if tool == "delete_file":
+                effect = "삭제" if exists else "삭제 시도 (현재 존재하지 않음)"
+            else:
+                effect = "덮어쓰기" if exists else "새 파일 만들기"
+                la = self._logged_args(tool, args)
+                notes.append(f"쓸 내용 {la['content_bytes']} bytes, sha256 {la['content_sha256'][:16]}…")
+            return {"tool": tool, "cwd": WORKSPACE, "affected": [{"path": p, "effect": effect}], "notes": notes}
+        return {"tool": tool, "cwd": WORKSPACE, "affected": [],
+                "notes": ["시스템이 영향을 계산하지 못함. 도구 인자 원문을 확인할 것."]}
+
+    def _needs_snapshot(self, sid: str, tool: str, args: dict[str, Any]) -> bool:
+        """AP-2: 삭제·덮어쓰기는 승인 여부와 상관없이 직전에 스냅샷."""
+        if tool == "delete_file":
+            return True
+        if tool == "write_file":
+            try:
+                return self.sandboxes.exists(sid, str(args.get("path", "")))
+            except SandboxError:
+                return False
+        return False
+
+    def _snapshot(self, sid: str, tool: str, reason: str, ref: dict[str, Any]) -> dict[str, Any]:
+        snap = self.sandboxes.snapshot(sid, reason=reason)
+        self.audit.append(actor="system", event="snapshot", sandbox_id=sid, tool=tool,
+                          payload={**ref, "snapshot_id": snap["id"], "image": snap["image"]})
+        return snap
+
+    # ---- 도구 호출 --------------------------------------------------------
+    def call_tool(self, sid: str, tool: str, args: dict[str, Any], actor: str = "agent") -> ToolOutcome:
+        if tool not in TOOLS:
+            raise ServiceError(404, f"알 수 없는 도구: {tool}")
+        self.sandboxes.get(sid)  # 없으면 SandboxError
+        try:
+            req_id = self.audit.append(actor=actor, event="tool_request", sandbox_id=sid, tool=tool,
+                                       payload={"args": self._logged_args(tool, args)})
+            decision = self.policy.decide(tool, args)
+            self.audit.append(actor="system", event="policy_decision", sandbox_id=sid, tool=tool,
+                              payload={"request": req_id, **decision.as_dict()})
+        except AuditWriteError as e:
+            raise ServiceError(503, f"{e}. 기록할 수 없어서 실행하지 않음.") from e
+
+        if decision.action == DENY:
+            return ToolOutcome(403, {"status": "denied", "rule_id": decision.rule_id, "reason": decision.reason})
+
+        if decision.action == REQUIRE_APPROVAL:
+            try:
+                preview = self._preview(sid, tool, args)
+            except Exception as e:  # 미리보기가 실패해도 승인은 사람에게 넘긴다
+                preview = {"command": args.get("command"), "affected": [], "notes": [f"미리보기 실패: {e}"]}
+            cap = self._capture(sid)
+            if cap:
+                preview["capture"] = cap[1]
+            apr = self.approvals.create(sandbox_id=sid, tool=tool, args=args, rule_id=decision.rule_id,
+                                        rule_reason=decision.reason, preview=preview)
+            if cap:
+                self.captures.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
+                (self.captures / f"{apr['id']}.png").write_bytes(cap[0])  # type: ignore[operator]
+            try:
+                self.audit.append(actor="system", event="approval_requested", sandbox_id=sid, tool=tool,
+                                  payload={"request": req_id, "approval_id": apr["id"],
+                                           "preview": {k: v for k, v in preview.items() if k != "capture"},
+                                           "capture": preview.get("capture"), "expires_in": self.approval_timeout})
+            except AuditWriteError as e:
+                self.approvals.claim(apr["id"], A.FAILED, "system")
+                raise ServiceError(503, f"{e}. 기록할 수 없어서 승인 요청을 취소함.") from e
+            return ToolOutcome(202, {"status": "pending", "approval_id": apr["id"],
+                                     "expires_in": self.approval_timeout,
+                                     "message": "사람의 승인을 기다리는 중. GET /approvals/{id}로 결과를 확인."})
+
+        assert decision.action == ALLOW
+        if self._needs_snapshot(sid, tool, args):
+            try:
+                self._snapshot(sid, tool, f"before {tool} (request {req_id})", {"request": req_id})
+            except (SandboxError, AuditWriteError, Exception) as e:
+                self._safe_log(sid, tool, "tool_error", {"request": req_id, "error": f"스냅샷 실패: {e}"})
+                raise ServiceError(503, f"스냅샷 또는 기록 실패, 실행하지 않음: {e}") from e
+        try:
+            result = self._run_tool(sid, tool, args)
+        except HumanControl as h:
+            try:
+                self.audit.append(actor="system", event="tool_blocked", sandbox_id=sid, tool=tool,
+                                  payload={"request": req_id, "reason": "human_control", "session": h.lease.session})
+            except AuditWriteError as e:
+                raise ServiceError(503, f"{e}. 기록할 수 없어서 실행하지 않음.") from e
+            return ToolOutcome(423, {"status": "human_control", "since": h.lease.since,
+                                     "message": "사람이 화면을 조작 중이라 GUI 도구를 실행하지 않았다. "
+                                                "돌려받은 뒤 다시 호출할 것 (GET /sandboxes/{id}/desktop/state)."})
+        except SandboxError as e:
+            self._safe_log(sid, tool, "tool_error", {"request": req_id, "error": str(e)})
+            raise ServiceError(400, str(e)) from e
+        self._safe_log(sid, tool, "tool_result", {"request": req_id, **self._summary(tool, result)})
+        return ToolOutcome(200, {"status": "executed", "result": result})
+
+    def _safe_log(self, sid: str | None, tool: str | None, event: str, payload: dict[str, Any],
+                  actor: str = "system") -> None:
+        try:
+            self.audit.append(actor=actor, event=event, sandbox_id=sid, tool=tool, payload=payload)
+        except AuditWriteError:
+            # 이미 실행이 끝난 뒤라 되돌릴 수 없다. 다음 호출은 요청 기록 단계에서 막힌다.
+            pass
+
+    # ---- 승인 결정 --------------------------------------------------------
+    def expire_stale(self) -> None:
+        """AP-1: 기한이 지난 대기 요청을 거부로 끝낸다. 조회·결정 때마다 부른다."""
+        limit = datetime.now(timezone.utc) - timedelta(seconds=self.approval_timeout)
+        for apr in self.approvals.list(status=A.PENDING):
+            if datetime.fromisoformat(apr["created_at"]) > limit:
+                continue
+            if self.approvals.claim(apr["id"], A.EXPIRED, "system"):
+                self.approvals.finish(apr["id"], A.EXPIRED, {
+                    "message": f"{self.approval_timeout}초 안에 결정이 없어 거부함. 실행하지 않음."})
+                self._safe_log(apr["sandbox_id"], apr["tool"], "approval_expired",
+                               {"approval_id": apr["id"], "timeout_s": self.approval_timeout})
+
+    def decide(self, aid: str, approve: bool, actor: str = "human", session: str | None = None) -> dict[str, Any]:
+        self.expire_stale()
+        apr = self.approvals.get(aid)
+        if not apr:
+            raise ServiceError(404, f"승인 요청 없음: {aid}")
+        decision = A.APPROVED if approve else A.DENIED
+        if not self.approvals.claim(aid, decision, actor):
+            raise ServiceError(409, f"이미 결정된 요청: {aid} ({apr['status']})")
+        sid, tool, args = apr["sandbox_id"], apr["tool"], apr["args"]
+        try:
+            self.audit.append(actor=actor, event="approval_decision", sandbox_id=sid, tool=tool,
+                              payload={"approval_id": aid, "decision": decision, "session": session})
+        except AuditWriteError as e:
+            self.approvals.finish(aid, A.FAILED, {"error": str(e)})
+            raise ServiceError(503, f"{e}. 기록할 수 없어서 실행하지 않음.") from e
+
+        if not approve:
+            self.approvals.finish(aid, A.DENIED, {"message": "사람이 거절함. 실행하지 않음."})
+            return self.approvals.get(aid)  # type: ignore[return-value]
+
+        # AP-2: 실행 직전 스냅샷
+        try:
+            snap = self._snapshot(sid, tool, f"before {aid}", {"approval_id": aid})
+            self.audit.append(actor="system", event="tool_execute", sandbox_id=sid, tool=tool,
+                              payload={"approval_id": aid, "args": self._logged_args(tool, args)})
+        except (SandboxError, AuditWriteError, Exception) as e:
+            self.approvals.finish(aid, A.FAILED, {"error": f"스냅샷 또는 기록 실패, 실행하지 않음: {e}"})
+            self._safe_log(sid, tool, "tool_error", {"approval_id": aid, "error": str(e)})
+            raise ServiceError(503, f"스냅샷 또는 기록 실패, 실행하지 않음: {e}") from e
+
+        try:
+            result = self._run_tool(sid, tool, args)
+        except (SandboxError, HumanControl) as e:
+            self.approvals.finish(aid, A.FAILED, {"error": str(e)}, snapshot_id=snap["id"])
+            self._safe_log(sid, tool, "tool_error", {"approval_id": aid, "error": str(e)})
+            return self.approvals.get(aid)  # type: ignore[return-value]
+        self.approvals.finish(aid, A.EXECUTED, result, snapshot_id=snap["id"])
+        self._safe_log(sid, tool, "tool_result", {"approval_id": aid, **self._summary(tool, result)})
+        return self.approvals.get(aid)  # type: ignore[return-value]
+
+    # ---- 샌드박스 생성 (SB-1) --------------------------------------------
+    def create_sandbox(self, source_dir: str | None, template: str,
+                       session: str | None = None) -> tuple[dict[str, Any], str]:
+        self.log_human("sandbox_create_request", None, {"source_dir": source_dir, "template": template,
+                                                        "session": session})
+        rec, token = self.sandboxes.create(source_dir, template)
+        self.audit.register_secret(token)
+        self.log_human("sandbox_created", rec["id"], {"source_dir": rec["source_dir"], "runtime": rec["runtime"],
+                                                      "image": rec["image"], "template": rec["template"],
+                                                      "session": session})
+        return rec, token
+
+    # ---- 파일 넣기·받기 (UX-3, UX-4) ---------------------------------------
+    def import_file(self, sid: str, name: str, data: bytes, session: str | None = None) -> dict[str, Any]:
+        name = clean_name(name)
+        meta = {"name": name, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(), "session": session}
+        self.log_human("file_import_request", sid, meta)
+        path = f"{WORKSPACE}/{name}"
+        if self.sandboxes.is_dir(sid, path):
+            raise ServiceError(409, f"같은 이름의 폴더가 있음: {name}")
+        if self.sandboxes.exists(sid, path):  # AP-2: 사람이 덮어써도 먼저 스냅샷
+            try:
+                self._snapshot(sid, None, f"before import {name}", {"name": name})  # type: ignore[arg-type]
+            except (SandboxError, AuditWriteError, Exception) as e:
+                raise ServiceError(503, f"스냅샷 또는 기록 실패, 넣지 않음: {e}") from e
+        res = self.sandboxes.upload(sid, name, data)
+        self._safe_log(sid, None, "file_imported", {**meta, "path": res["path"]}, actor="human")
+        return res
+
+    def export_file(self, sid: str, name: str, session: str | None = None) -> bytes:
+        name = clean_name(name)
+        data = self.sandboxes.outbox_read(sid, name)
+        # 반출은 기록한 뒤에 내보낸다. 기록을 못 하면 내보내지 않는다.
+        self.log_human("file_exported", sid, {"name": name, "bytes": len(data),
+                                              "sha256": hashlib.sha256(data).hexdigest(), "session": session})
+        return data
+
+    # ---- 화면 인수·반환 (UX-2) -------------------------------------------
+    def takeover(self, sid: str, session: str) -> dict[str, Any]:
+        self.sandboxes._desktop(sid)  # 데스크톱이 아니면 SandboxError
+        with self.desktop.gui_lock(sid):  # 실행 중인 GUI 도구가 끝날 때까지 기다린다
+            cur = self.desktop.lease(sid)
+            if cur and cur.session != session:
+                raise ServiceError(409, f"다른 사람 세션({cur.session})이 이미 조작 중")
+            if not cur:
+                self.log_human("human_takeover", sid, {"session": session})  # 기록 못 하면 인수하지 않는다
+                self.desktop.take(sid, session)
+        return self.desktop.state(sid, session)
+
+    def handback(self, sid: str, session: str | None, reason: str = "handback") -> dict[str, Any]:
+        with self.desktop.gui_lock(sid):
+            self._handback_locked(sid, session, reason)
+        return self.desktop.state(sid, session)
+
+    def _handback_locked(self, sid: str, session: str | None, reason: str) -> None:
+        lease = self.desktop.lease(sid)
+        if not lease:
+            return
+        if session is not None and lease.session != session:
+            raise ServiceError(409, f"다른 사람 세션({lease.session})이 조작 중. 그 세션만 돌려줄 수 있음")
+        payload = {"session": lease.session, "reason": reason,
+                   "seconds": round(time.monotonic() - lease.started, 1), "client_bytes": lease.client_bytes}
+        try:
+            self.audit.append(actor="human" if reason == "handback" else "system", event="human_handback",
+                              sandbox_id=sid, payload=payload)
+        except AuditWriteError as e:
+            # 기록 없이 에이전트에게 화면을 넘기지 않는다.
+            raise ServiceError(503, f"{e}. 기록할 수 없어서 돌려주지 않음.") from e
+        self.desktop.release(sid)
+
+    def close(self) -> None:
+        """DB 연결과 Docker 클라이언트를 닫는다 (서버 종료, 테스트)."""
+        for close in (self.audit.conn.close, self.approvals.conn.close, self.sandboxes.conn.close,
+                      self.sandboxes.client.close, self.desktop.close):
+            try:
+                close()
+            except Exception:
+                pass
+
+    def recover_takeovers(self) -> int:
+        """서버를 켤 때: 지난 실행에서 돌려주지 않은 인수를 server_restart로 기록하고 정리한다.
+        감사 로그에 human_takeover만 있고 짝이 없는 일이 없게 한다. 기록을 못 하면 서버를 띄우지 않는다."""
+        n = 0
+        for row in self.desktop.leftover_leases():
+            payload = {"session": row["session"], "reason": "server_restart",
+                       "seconds": round(max(0.0, time.time() - row["started"]), 1), "client_bytes": None}
+            self.audit.append(actor="system", event="human_handback", sandbox_id=row["sandbox_id"], payload=payload)
+            self.desktop.forget_lease(row["sandbox_id"])
+            n += 1
+        return n
+
+    def end_desktop(self, sid: str, reason: str) -> None:
+        """삭제·복원 때: 인수 상태를 기록하고 정리, 열린 화면 연결을 끊는다."""
+        if self.desktop.lease(sid):
+            try:
+                self.handback(sid, None, reason)
+            except ServiceError:
+                pass
+        self.desktop.close_all(sid)
+
+    # ---- 사람이 하는 샌드박스 조작도 기록한다 ----------------------------
+    def log_human(self, event: str, sid: str | None, payload: dict[str, Any]) -> None:
+        try:
+            self.audit.append(actor="human", event=event, sandbox_id=sid, payload=payload)
+        except AuditWriteError as e:
+            raise ServiceError(503, f"{e}. 기록할 수 없어서 실행하지 않음.") from e
+
+
+def _int(args: dict[str, Any], key: str) -> int:
+    try:
+        return int(args[key])
+    except (KeyError, TypeError, ValueError) as e:
+        raise SandboxError(f"{key}는 정수여야 함") from e

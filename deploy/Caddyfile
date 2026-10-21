@@ -1,0 +1,6 @@
+# TLS를 여기서 끝내고 agentbox(평문, 컨테이너 네트워크 안)로 넘긴다.
+# 웹소켓(화면 보기)도 reverse_proxy가 그대로 넘긴다. Host와 X-Forwarded-Proto를 붙여 주므로
+# agentbox는 같은 출처 검사와 Secure 쿠키를 그대로 쓴다.
+{$AGENTBOX_SITE} {
+	reverse_proxy agentbox:8765
+}
