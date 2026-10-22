@@ -1,0 +1,1150 @@
+[
+  {
+    "verdict": "confirmed",
+    "fingerprint": "agentbox/api.py:call_tool:sync-tool-calls-starve-shared-threadpool",
+    "title": "Blocking allowlisted execs hold the shared request threadpool and freeze the human API for the whole exec timeout",
+    "description": "The tool-call endpoint was a sync FastAPI handler, so each exec held one of the ~40 threads of the anyio threadpool shared with every human endpoint for up to AGENTBOX_EXEC_TIMEOUT (60 s). An allowlisted command with no output (tail -f /dev/null) needs no approval. Found during N-2 validation. Validated in run-2 (2026-10-22) on Docker 29.9.1 (runc, overlayfs/containerd snapshotter, no userns remap, cgroup v1), 4 vCPU / 15 GB host, agentbox at the fix commits listed in remediation; images buildpack-deps:noble-curl and agentbox-desktop:0.1 built from images/desktop.",
+    "root_cause": "Agent tool execution and human control endpoints shared one bounded threadpool with no per-sandbox concurrency limit, so an agent could occupy every worker with long-running allowlisted commands.",
+    "intended_behavior": "The human must always be able to reach approvals, the UI and sandbox delete/pause, regardless of what agents are running.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/api.py",
+        "line": 188,
+        "scope": "call_tool POST /sandboxes/{sid}/tools/{tool}",
+        "description": "Sync handler: FastAPI runs it on the shared anyio threadpool."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/service.py",
+        "line": 85,
+        "scope": "AgentBox._run_tool",
+        "description": "Dispatches exec to SandboxManager.exec with no concurrency limit."
+      },
+      {
+        "kind": "sink",
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "scope": "SandboxManager.exec",
+        "description": "Blocking exec_run for up to the timeout while holding the worker thread."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/api.py",
+        "line": 188,
+        "description": "def call_tool(...) is synchronous and calls box.call_tool inline."
+      },
+      {
+        "file": "agentbox/config.py",
+        "line": 43,
+        "description": "exec_timeout default 60 s bounds each hold, but nothing bounds concurrent holds."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "Caller holds only the per-sandbox agent token (Principal kind=agent) of its own sandbox."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "Shipped default_policy.yaml (default: allow, read-only-exec allowlist)."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "An agent wants to stop the human from denying its requests or deleting its sandbox.",
+      "payloads": [
+        "tail -f /dev/null"
+      ],
+      "instructions": [
+        "Run 'agentbox serve' with AGENTBOX_EXEC_TIMEOUT=20 and create a sandbox.",
+        "Fire 45 concurrent tools/exec calls with the payload using the agent token, wait 3 s, then time a human GET /approvals."
+      ],
+      "observed_result": "With 5 holders GET /approvals answered in 0.1 s; with 45 holders it answered only after 18.6 s (the remainder of the timeout). Repeating keeps the human locked out. After the fix: 0.0 s with the default per-sandbox cap and 0.1 s with the cap disabled (dedicated pool alone)."
+    },
+    "remediation": {
+      "strategy": "Fixed in c6a0a3c: the tool-call endpoint is async and runs box.call_tool on a dedicated 32-thread executor separate from the human API, and each sandbox may run at most AGENTBOX_TOOL_CONCURRENCY (default 4) tool calls at once (excess -> 429).",
+      "code_changes": [
+        {
+          "file_name": "agentbox/api.py",
+          "fixed_code": "out = await asyncio.get_running_loop().run_in_executor(\n    tool_pool, lambda: guard(lambda: box.call_tool(sid, tool, body.args, actor=p.kind)))"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "45 parallel default-allowed calls with the agent's own token; deterministic."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Control-plane availability: the human cannot approve, deny or delete for as long as the agent sustains the calls. No data compromise."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Measured against a real uvicorn server before and after the fix; an in-process TestClient does not reproduce it because it creates a portal per request."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "fingerprint": "agentbox/cli.py:approval-terminal-escape-spoof",
+    "title": "Terminal approval screen renders agent-controlled command/paths without control-character stripping (approval display spoofing)",
+    "description": "The terminal approval screen (agentbox approve -> _show_approval) printed the agent-controlled command, affected paths and notes verbatim. Terminal control sequences in the command (CR, ESC[2K, SGR) can repaint the line so the operator sees a different, benign command. For commands outside rm/curl the screen itself tells the operator the impact could not be computed and to check the command text - which is the spoofed part. The audit timeline (stderr_head) had the same issue. The web approval UI is not affected (Jinja autoescape).",
+    "root_cause": "cmd_approve -> _show_approval prints apr['args'].get('command') (cli.py:165) and the affected item['path'] (cli.py:174) directly to stdout between ANSI codes without neutralizing terminal control sequences; the exec 'command' argument is fully agent-controlled, stored verbatim in the approval record by AgentBox.call_tool via self.approvals.create (service.py:202), and executed verbatim through 'bash -c' (service.py:85 -> sandbox.py:379), so the human approver can be shown a command that differs from what is stored and executed.",
+    "intended_behavior": "The operator must see exactly the command that will run; agent-controlled strings must not be interpreted by the operator's terminal.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/mcp_server.py",
+        "line": 136,
+        "scope": "exec(command) MCP tool",
+        "description": "The agent (optionally driven by injected file content) calls the exec tool with a command string; the string is fully attacker-controlled and may contain CR/ANSI escape bytes."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/service.py",
+        "line": 202,
+        "scope": "AgentBox.call_tool (REQUIRE_APPROVAL branch)",
+        "description": "Policy classifies the non-allowlisted exec as require_approval and the raw args (including the escape-laden command) are stored verbatim in the approval record via self.approvals.create; the same command is later run verbatim via bash -c (service.py:85 -> sandbox.py:379)."
+      },
+      {
+        "kind": "sink",
+        "file": "agentbox/cli.py",
+        "line": 165,
+        "scope": "cmd_approve -> _show_approval",
+        "description": "The stored command is printed to the operator's terminal verbatim between ANSI codes (and affected paths at cli.py:174), so embedded CR/ANSI escape sequences are emitted to the terminal and can misrepresent, to a VT-compatible renderer, the action the human is approving."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/cli.py",
+        "line": 165,
+        "description": "print(f\"    {CYAN}{apr['args'].get('command')}{RESET}\") emits the stored exec command with no control-character sanitization; the exec branch (unlike the non-exec branch at cli.py:169) does not route through json.dumps."
+      },
+      {
+        "file": "agentbox/cli.py",
+        "line": 174,
+        "description": "print(f\"    {color}{item['effect']:<12}{RESET} {item['path']}\") emits each computed affected path verbatim; paths derive from the agent-controlled command, so they are also a potential escape-injection channel."
+      },
+      {
+        "file": "agentbox/service.py",
+        "line": 202,
+        "description": "self.approvals.create(sandbox_id=sid, tool=tool, args=args, ...) stores the agent-supplied args unmodified, so the escape-laden command is recorded exactly as supplied."
+      },
+      {
+        "file": "agentbox/service.py",
+        "line": 85,
+        "description": "_run_tool for exec calls sb.exec(sid, str(args.get('command',''))), executing the same stored command string that the approval screen displays."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "description": "exec runs c.exec_run([\"timeout\",\"-k\",\"5\",str(t),\"bash\",\"-c\",\"umask 002\\n\"+command], ...), so the literal command (including embedded CR/escape bytes) is executed by bash; a '#' comment in the command swallows everything to end-of-line, including CR and overwrite bytes (confirmed with a local bash fixture on dummy files)."
+      },
+      {
+        "file": "agentbox/templates/_approvals.html",
+        "line": 8,
+        "description": "The web approval screen renders a.args.command inside <pre>{{ a.args.command }}</pre> under FastAPI Jinja2Templates default autoescaping; browsers do not interpret ANSI/CR as terminal control, so the web path is not spoofable, confirming the gap is terminal-specific."
+      },
+      {
+        "file": "README.md",
+        "line": 366,
+        "description": "'알려진 한계' explicitly states the terminal approval screen (agentbox approve) does not filter agent-inserted control characters while the web approval screen is safe; unfixed at HEAD 7fc501f."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "Caller holds only the per-sandbox agent token (Principal kind=agent) of its own sandbox."
+      },
+      {
+        "kind": "user_interaction",
+        "description": "The operator decides approvals with the terminal 'agentbox approve' flow in a VT-compatible terminal."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "An agent wants the operator to approve a destructive command believing it is a harmless listing.",
+      "payloads": [
+        "python3 -c \"import shutil; shutil.rmtree('/workspace')\" #\\r\\x1b[2K    \\x1b[36mls -la /workspace"
+      ],
+      "instructions": [
+        "With the agent token, POST tools/exec with the payload (lands in approval, rule exec-needs-approval).",
+        "Fetch the stored approval via GET /approvals/{id}, render it through cli._show_approval, and feed the output to a VT100 emulator (pyte) to obtain the visible screen."
+      ],
+      "observed_result": "The stored command is the python rmtree; the rendered screen shows 'ls -la /workspace' under '실제로 실행될 명령' with 0 affected files and the note to check the command text. After the fix the screen shows the real python command with the escapes rendered visibly (\\x0d\\x1b[2K)."
+    },
+    "remediation": {
+      "strategy": "Fixed in 1a9bb0f: cli._safe renders C0/DEL/C1 control characters and bidi overrides visibly (\\x1b, \\u202e) for every agent-influenced string on the approval screen, post-approval output and the audit timeline; multi-line commands are printed one line per row with a line count so padding cannot push the real command off-screen.",
+      "code_changes": [
+        {
+          "file_name": "agentbox/cli.py",
+          "fixed_code": "_UNSAFE = re.compile(\"[\\x00-\\x1f\\x7f-\\x9f\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]\")"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "Only operators using the terminal approve flow are exposed; crafting the payload is trivial."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Induces approval of an arbitrary command; bounded by the container and by the AP-2 snapshot taken before every approved execution, so damage is recoverable."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Rendered through a real terminal emulator from an approval created via the live API."
+    }
+  },
+  {
+    "verdict": "rejected",
+    "fingerprint": "agentbox/desktop.py:redeem:sandbox-scoped-ticket-mints-unscoped-full-admin-session",
+    "title": "A per-sandbox desktop ticket redeems into an unscoped full-admin session usable on every /ui/* route and every sandbox",
+    "description": "The candidate claims that issuing a per-sandbox desktop ticket (POST /sandboxes/{sid}/desktop/ticket, human_only, scope=sid) and redeeming it (GET /sandboxes/{sid}/desktop?ticket=) mints an unscoped full-admin session, so a link intended as 'view one sandbox's screen' confers full UI-admin breadth across all sandboxes and the approval queue. The code path is real (redeem() checks the ticket scope against the path sid, then returns new_session(), and ui_sessions carries no scope column, so every /ui/* route accepts the resulting cookie). However, the asserted security property — that a sandbox-scoped ticket should yield authority limited to that one sandbox — is not a property this system ever had or intended, and the behavior is a documented, accepted design characteristic.",
+    "claimed_root_cause": "The ticket carries a sandbox scope but the session it mints does not; redeem() discards the scope by calling new_session(), and no downstream route re-checks a per-session sandbox scope.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/api.py",
+        "line": 278,
+        "scope": "GET /sandboxes/{sid}/desktop?ticket=",
+        "description": "Recipient of a per-sandbox desktop link redeems the ticket; redemption is performed at line 281 via box.desktop.redeem(ticket, sid)."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/desktop.py",
+        "line": 104,
+        "scope": "DesktopControl.redeem",
+        "description": "The ticket row is consumed (DELETE at line 103) and its stored scope is compared to the path sid at line 104 — this only binds WHERE a ticket may be redeemed (desktop ticket -> that sandbox's desktop page; login ticket -> /login via scope '*'); it is not a session privilege."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/desktop.py",
+        "line": 106,
+        "scope": "DesktopControl.redeem",
+        "description": "Returns new_session(); the ticket scope is intentionally not carried into the session, because the session model has no scope column (desktop.py:33-34)."
+      },
+      {
+        "kind": "sink",
+        "file": "agentbox/web.py",
+        "line": 192,
+        "scope": "POST /ui/approvals/{aid}/{decision} and all /ui/* routes",
+        "description": "Any valid session cookie satisfies browser_human (=screen_human) on every /ui/* route — true of a desktop-ticket session, a login-ticket session, and a human-token login session alike, because there is a single human trust level."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/desktop.py",
+        "line": 33,
+        "description": "ui_sessions schema is (hash, public, created, expires) with no per-session sandbox-scope column: sessions are unscoped by design, not by an accidental discard in redeem()."
+      },
+      {
+        "file": "agentbox/desktop.py",
+        "line": 106,
+        "description": "redeem() returns new_session(); the scope checked at line 104 is a redemption-location binding, never persisted onto the session."
+      },
+      {
+        "file": "README.md",
+        "line": 352,
+        "description": "Documented intended model (Known limitations): no user distinction — a single human token logs in (MVP scope). There is no lesser-privileged human principal that a 'scoped' desktop session could represent, so no privilege boundary exists to cross."
+      },
+      {
+        "file": "README.md",
+        "line": 363,
+        "description": "Known-limitations section (review 2026-10-22, not-yet-fixed) explicitly states that a session obtained via a desktop link can use the entire web UI — the exact behavior the candidate reports, acknowledged as an accepted characteristic rather than a boundary violation."
+      },
+      {
+        "file": "agentbox/api.py",
+        "line": 272,
+        "description": "Both the desktop ticket (api.py:272) and the UI login ticket (web.py:129) are issued only to the human-token holder (human_only), who is already full admin; a desktop link is therefore equivalent to a login link, not a delegation of reduced authority."
+      },
+      {
+        "file": "agentbox/cli.py",
+        "line": 154,
+        "description": "The 'agentbox desktop' CLI describes the link as creating a session 'in this browser' (the operator's own browser), not as a shareable reduced-privilege grant, so the premise that operators will treat it as view-only delegation is not supported by the product's own framing."
+      }
+    ],
+    "reason": "The code path is accurately described, but the finding is refuted on its premise and impact. (1) No trust boundary is crossed: only the human-token holder (full admin) can issue a desktop ticket (api.py:272, human_only), and the resulting full session is identical to the one minted by the human-token login and the /login one-time ticket. A desktop link is thus equivalent to handing over a login link — the issuer already holds all the authority the recipient obtains. (2) The system has a single human trust level with no sub-scopes by explicit design (README.md:352, 'no user distinction, single human token, MVP scope'; ui_sessions has no scope column, desktop.py:33-34). The ticket 'scope' is only a redemption-location binding (checked at desktop.py:104), so redeem() does not 'discard' a session scope that never existed; the candidate's claimed intended_behavior (scoped ticket -> sandbox-limited authority) is an invented property the source contradicts. (3) The exact behavior is a documented, accepted limitation: README.md:363 states a desktop-link session can use the entire web UI, listed under Known limitations (review 2026-10-22, not yet fixed), and the CLI frames the link as the operator's own browser session (cli.py:154). Because the asserted security boundary does not exist in the design and the behavior is intended/acknowledged, the vulnerability claim (medium severity, confused-deputy delegation) is refuted. No deployment/runtime fact is decisive to this conclusion, so it is rejected rather than needs_validation; the Docker end-to-end click-through the candidate defers would at most re-demonstrate the already-source-evident code path, not establish a boundary violation."
+  },
+  {
+    "verdict": "confirmed",
+    "fingerprint": "agentbox/policy.py:_DEVNULL:redirect-digit-target-stripped-bypasses-write-gate",
+    "title": "_DEVNULL regex strips a '>&<digit>' redirect before the '>'-means-approval gate, auto-allowing an exec that writes a file",
+    "description": "simple_programs() removes substrings matching _DEVNULL = r\"\\d*>>?\\s*/dev/null|\\d*>&\\d\" (agentbox/policy.py:77,83) BEFORE the fail-closed check that any remaining '>' forces None/approval (agentbox/policy.py:84). The second alternative, \\d*>&\\d, matches a csh-style combined redirect whose target begins with a digit: in 'echo DATA >&2evil' it matches '>&2'. After substitution the command becomes 'echo DATA  evil' with no '>' left, so simple_programs returns {'echo'}; because the shipped default_policy.yaml read-only-exec rule lists 'echo' in only_commands, Policy.decide returns ALLOW. bash, however, interprets 'echo DATA >&2evil' as redirecting stdout+stderr to a file named '2evil' (the word after >& is not purely digits, so it is treated as a filename, not an fd), writing/overwriting it in /workspace with no approval card and no AP-2 pre-snapshot. This defeats the policy's stated 'a write redirection > forces approval' sub-invariant for redirect targets whose name begins with a digit. Verified in a bounded python3 -I + bash fixture harness: the policy returned allow/read-only-exec and the exact sandbox wrapper created '2evil' containing 'DATA' and overwrote an existing '9target' to 'PWNED'.",
+    "root_cause": "_DEVNULL is intended to ignore harmless '>/dev/null' discards and bare fd-duplications before the '>' guard, but its second alternative \\d*>&\\d also matches a real redirect to a digit-prefixed filename (e.g. '>&2evil') and strips the '>' that the guard at policy.py:84 relies on, so a write redirection slips into the read-only-exec allowlist.",
+    "intended_behavior": "An exec command containing an output redirection ('>') that writes a file must not match the read-only-exec allowlist; it must route to require_approval. default_policy.yaml (line 7 comment) and policy.py (lines 6-8, 76, 84) state that write redirections get human approval while only output-discarding/fd-duplication redirects are exempt from the read-only judgment.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/service.py",
+        "line": 185,
+        "scope": "AgentBox.call_tool",
+        "description": "Agent-controlled exec tool call: args['command'] (e.g. 'echo DATA >&2evil') is passed to self.policy.decide(tool, args)."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/policy.py",
+        "line": 83,
+        "scope": "simple_programs",
+        "description": "cmd = _DEVNULL.sub(' ', command) strips the '>&2' match from the command, leaving 'echo DATA  evil' with no '>' before the guard runs."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/policy.py",
+        "line": 84,
+        "scope": "simple_programs",
+        "description": "The fail-closed check `if any(s in cmd for s in ('$','`','>','<(')): return None` no longer sees a '>', so it does not return None and parsing continues; programs resolves to {'echo'}."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/policy.py",
+        "line": 153,
+        "scope": "Policy.decide",
+        "description": "simple_programs() returns {'echo'}; the gate `if not progs or not progs <= set(only): continue` passes because the read-only-exec rule's only_commands lists 'echo', so decide returns Decision(allow, 'read-only-exec', ...) at line 155."
+      },
+      {
+        "kind": "sink",
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "scope": "SandboxManager.exec",
+        "description": "With ALLOW and _needs_snapshot False for exec, bash runs `bash -c 'umask 002\\necho DATA >&2evil'` in /workspace, creating/overwriting the file '2evil' with no approval and no pre-snapshot."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/policy.py",
+        "line": 77,
+        "description": "_DEVNULL = re.compile(r\"\\d*>>?\\s*/dev/null|\\d*>&\\d\") — the second alternative \\d*>&\\d matches a real digit-prefixed redirect target such as '>&2' in '>&2evil'."
+      },
+      {
+        "file": "agentbox/policy.py",
+        "line": 83,
+        "description": "cmd = _DEVNULL.sub(\" \", command) strips the redirect operator before the '>' guard; verified sub('echo DATA >&2evil') == 'echo DATA  evil'."
+      },
+      {
+        "file": "agentbox/policy.py",
+        "line": 84,
+        "description": "if any(s in cmd for s in (\"$\", \"`\", \">\", \"<(\")): return None — the read-only fail-closed gate relies on the '>' still being present in cmd."
+      },
+      {
+        "file": "agentbox/default_policy.yaml",
+        "line": 25,
+        "description": "read-only-exec rule only_commands includes 'echo' (and printf, etc.), so simple_programs()=={'echo'} is a subset and Policy.decide returns ALLOW under the shipped default policy."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "description": "SandboxManager.exec runs `bash -c 'umask 002\\n' + command`; a digit-prefixed '>&<digit><name>' is executed by bash as a redirect to a file named '<digit><name>' in /workspace."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "Caller holds a valid agent token and issues an exec tool call against a running sandbox (actor='agent')."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "The active policy is the shipped default_policy.yaml (or any policy with a read-only-exec only_commands allowlist and the '>'-based write gate); under the looser demo policy every non-rm/curl exec is already allowed, so the gate does not exist there."
+      },
+      {
+        "kind": "data_state",
+        "description": "The redirect target name begins with a digit (e.g. '2evil'), which is what makes _DEVNULL's \\d*>&\\d match and strip the redirect; the digit prefix also forces a relative path under /workspace (no absolute escape)."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "An agent wants to write or overwrite a file in /workspace via exec without the human approval card and without the AP-2 pre-snapshot that a write_file overwrite would take.",
+      "payloads": [
+        "echo DATA >&2<name>"
+      ],
+      "instructions": [
+        "In python3 -I, import agentbox/policy.py and call Policy.load('agentbox/default_policy.yaml').decide('exec', {'command': 'echo DATA >&2evil'}); observe action=allow, rule=read-only-exec, matched=['echo'], while decide('exec', {'command': 'echo DATA > evilfile'}) returns require_approval.",
+        "In a scratch directory run the exact sandbox wrapper bash -c $'umask 002\\necho DATA >&2evil'; observe a file named '2evil' is created containing 'DATA'. Repeat with an existing digit-prefixed file to observe overwrite. Confirm plain 'echo DATA >&2' (pure-digit word) creates no file, isolating the digit-prefixed-filename case."
+      ],
+      "observed_result": "policy.decide returned allow/read-only-exec with matched=['echo'] (baseline 'echo DATA > evilfile' returned require_approval); the bash wrapper created '2evil' (5 bytes, content 'DATA\\n') and overwrote an existing '9target' from 'ORIGINAL' to 'PWNED', both with no snapshot path (exec never triggers _needs_snapshot). Bounded to a scratch directory; no target sandbox, Docker daemon, network, or shared state was touched. A digit-prefixed path with components ('>&2../../etc/passwd') failed with 'No such file or directory', confirming the write stays confined to /workspace."
+    },
+    "remediation": {
+      "strategy": "Anchor _DEVNULL so it only strips genuine discard/duplication redirects: require the /dev/null target not to be followed by filename characters, and restrict the fd-duplication alternative to a bare 'N>&M' with no trailing filename characters, so '>&2evil' keeps its '>' and routes to require_approval. Equivalently, treat any residual redirect operator conservatively (return None) on ambiguity.",
+      "code_changes": [
+        {
+          "file_name": "agentbox/policy.py",
+          "fixed_code": "_DEVNULL = re.compile(r\"\\d*>>?\\s*/dev/null(?![\\w./-])|\\d*>&\\d+(?![\\w./-])\")  # only strip true /dev/null discards and bare fd-duplications, not '>&2evil'"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "Trivially craftable by any agent that can call exec, but the redirect target must begin with a digit and the agent can already write /workspace through the default-allowed write_file tool, so the incentive to use this specific bypass is narrow."
+      },
+      "impact": {
+        "score": "low",
+        "reason": "Lets an exec create or overwrite a digit-prefixed /workspace file without the approval card and, for overwrites, without the AP-2 pre-snapshot that write_file would take, defeating the policy's '>'-gate for that case. The digit prefix forces a relative path under /workspace (no absolute/traversal escape was reachable), and /workspace is already agent-writable, so the only genuine gain over write_file is losing the restore point on overwrite. No cross-boundary effect."
+      },
+      "overall_severity": "low"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Both halves independently reproduced in the bounded harness: pure-function Policy.decide returned allow/read-only-exec under the shipped default policy, and the exact bash -c wrapper created and overwrote files via the digit-prefixed redirect, with the baseline '>' redirect correctly routing to approval."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "fingerprint": "agentbox/policy.py:simple_programs:quoted-comment-hides-program-from-allowlist",
+    "title": "Quoted '#' comment hides a non-allowlisted program from the read-only-exec allowlist, so arbitrary exec runs without approval or pre-snapshot",
+    "description": "policy.simple_programs tokenizes the exec command with shlex configured commenters=\"\" (agentbox/policy.py:89), so '#' is never treated as a comment. When a non-allowlisted command is placed on its own line and a single quote is opened immediately after a '#', the newline-derived ' ; ' separators (and the whole hidden line) are swallowed into one single-quoted argument token. simple_programs therefore sees only the leading allowlisted program (e.g. ls) and returns {ls}; Policy.decide's only_commands subset test then returns ALLOW via the read-only-exec rule. The sandbox executes the raw command through bash (sandbox.exec: timeout -k 5 T bash -c \"umask 002\\n\"+command, agentbox/sandbox.py:379), where '#' IS a comment to end-of-line, so bash strips the comment lines and runs the hidden line. The agent thereby runs a non-allowlisted program (interpreter, copier, find -delete) as uid 1000 with no human approval and, because the exec ALLOW path takes no snapshot (service._needs_snapshot returns False for exec, agentbox/service.py:169), no pre-snapshot either. The container's final defenses still hold: network is disabled and /source is read-only, so this is confined to the writable /workspace inside the container.",
+    "root_cause": "The policy's command lexer and bash disagree on '#': shlex is configured commenters=\"\" while bash honours '#' comments, and a single quote opened immediately after '#' groups the hidden lines (including the newline/';' separators) into one quoted argument token, so simple_programs never sees the hidden program in command position. The lexer thus reports a program set that is laxer than what bash actually runs.",
+    "intended_behavior": "Any exec command whose executed programs are not all on the read-only-exec allowlist must fall through to the exec-needs-approval rule and require human approval before execution; the policy's view of which programs run must be consistent-with-or-stricter-than bash's.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/api.py",
+        "line": 188,
+        "scope": "create_app.call_tool route (POST /sandboxes/{sid}/tools/{tool})",
+        "description": "Agent-authenticated HTTP route; the per-sandbox agent principal (Bearer agent token) supplies body.args['command'], forwarded unchanged to box.call_tool(sid, tool, body.args, actor=p.kind) at api.py:191."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/service.py",
+        "line": 185,
+        "scope": "AgentBox.call_tool",
+        "description": "decision = self.policy.decide(tool, args); the raw command string reaches the policy and (on ALLOW) is later run verbatim via _run_tool -> sandbox.exec (service.py:84-85)."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/policy.py",
+        "line": 89,
+        "scope": "simple_programs",
+        "description": "lex.commenters = \"\" so '#' is an ordinary character; after '\\n' -> ' ; ', a single quote opened right after '#' swallows the ' ; '-separators and the hidden line into one quoted token, leaving only the leading 'ls' in command position."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/policy.py",
+        "line": 153,
+        "scope": "Policy.decide",
+        "description": "only_commands subset test (if not progs or not progs <= set(only)) passes because progs={ls} is a subset of the allowlist; ALLOW with rule read-only-exec is returned at line 155."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/service.py",
+        "line": 220,
+        "scope": "AgentBox.call_tool ALLOW branch",
+        "description": "ALLOW path; _needs_snapshot returns False for exec (falls through to return False at service.py:169), so no pre-snapshot is taken before the hidden destructive exec runs."
+      },
+      {
+        "kind": "sink",
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "scope": "SandboxManager.exec",
+        "description": "Runs timeout -k 5 T bash -c \"umask 002\\n\"+command as uid 1000:1000; bash treats '#' as a comment to end-of-line, strips the comment lines, and executes the hidden non-allowlisted program."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/policy.py",
+        "line": 89,
+        "description": "lex.commenters = \"\" in simple_programs - '#' is never a comment to the policy lexer, unlike bash which honours it."
+      },
+      {
+        "file": "agentbox/policy.py",
+        "line": 153,
+        "description": "only_commands subset test; ALLOW (returned at line 155) when every extracted program is on the allowlist. Harness shows simple_programs returns exactly {'ls'} for the crafted command."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "description": "exec wraps the raw command in bash -c with a 'umask 002\\n' prefix (uid 1000:1000); bash honours '#' comments and newlines, so it runs lines the policy lexer hid."
+      },
+      {
+        "file": "agentbox/service.py",
+        "line": 169,
+        "description": "_needs_snapshot falls through to 'return False' for exec (only delete_file / existing-write_file return True), so an ALLOW exec takes no pre-snapshot."
+      },
+      {
+        "file": "agentbox/api.py",
+        "line": 191,
+        "description": "box.call_tool(sid, tool, body.args, actor=p.kind): the agent principal (per-sandbox agent token) reaches exec with an attacker-controlled command string."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "Caller holds a valid per-sandbox agent token (the ordinary agent principal); no human approval is involved."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "The default policy (agentbox/default_policy.yaml) is active; the read-only-exec only_commands rule is what grants ALLOW."
+      },
+      {
+        "kind": "data_state",
+        "description": "The hidden command must contain no single quote and none of '$', backtick, '>', '<(' (otherwise simple_programs returns None and the command routes to approval); non-allowlisted commands such as 'cp SRC DST' or 'find /workspace -type f -delete' and interpreter invocations of a pre-written script satisfy this."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "A prompt-injected or malicious agent holding only its sandbox's agent token wants to run a non-allowlisted program (an interpreter, a copier, or find -delete) without triggering the human approval card and without leaving a restore point.",
+      "payloads": [
+        "ls #'<LF><non-allowlisted command, no single-quote and no $ ` > <( ><LF>#'   (e.g. the middle line 'cp SRC DST' or 'find /workspace -type f -delete')"
+      ],
+      "instructions": [
+        "In an isolated pure-function harness (python3 -I, sys.path to the repo) import agentbox.policy and call Policy.load(agentbox/default_policy.yaml).decide('exec', {'command': \"ls #'\\ncp dummy_src SENTINEL\\n#'\"}); observe simple_programs() == {'ls'} and the decision action=allow, rule_id=read-only-exec, matched=['ls'].",
+        "In a scratch directory containing only dummy files, run the exact sandbox wrapper bash -c (\"umask 002\\n\" + the same command) where the hidden line copies a dummy file to a sentinel; observe the sentinel file is created, proving bash executed a program the policy classified as read-only {ls}."
+      ],
+      "observed_result": "policy.decide returned action=allow / rule_id=read-only-exec with programs={'ls'}; a control run whose hidden command contained single quotes instead returned require_approval (confirming the no-single-quote constraint). The exact bash -c wrapper executed both 'ls' and the hidden non-allowlisted 'cp dummy_src SENTINEL', creating SENTINEL with the copied contents. The human approval gate and the pre-snapshot were both bypassed. Bounded to a scratch directory; no target Docker sandbox, network, or shared state was touched."
+    },
+    "remediation": {
+      "strategy": "Make the policy lexer treat the command the way bash will. In simple_programs (and the sibling lexers _words / command_names, which share lex.commenters=\"\"), either strip bash comments before tokenizing (drop from an unquoted word-initial '#' to end of line, per physical line, before the '\\n'->' ; ' rewrite) or, more conservatively, fail closed: return None (forcing the exec-needs-approval route) whenever the command contains a '#' in a shell-comment position or any construct the lexer cannot faithfully model. Do not return a program subset on lexing ambiguity.",
+      "code_changes": [
+        {
+          "file_name": "agentbox/policy.py",
+          "fixed_code": "# simple_programs(): before the '\\n'->' ; ' rewrite and lexing, strip bash comments the way a non-interactive bash would\n#   (from an unquoted, word-initial '#' to end-of-line, evaluated per physical line and respecting open quotes),\n#   OR fail closed: if any '#' sits in a shell-comment position (start of a word, outside matched quotes), return None\n#   so the command routes to require_approval instead of being classified as a read-only subset. Apply the same\n#   comment-aware handling (or fail-closed) to _words()/command_names() so rm/curl detection cannot be hidden either."
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "Trivially craftable by any agent holding its own sandbox token; the product's own threat model (policy docstring) assumes a prompt-injected agent will try exactly this kind of allowlist evasion. Reproduced deterministically in the bounded harness."
+      },
+      "impact": {
+        "score": "high",
+        "reason": "Fully defeats the exec human-approval gate - the central first-line control - allowing unapproved execution of arbitrary non-allowlisted programs as uid 1000 (interpreters, find -delete, cp/mv) with no pre-snapshot, so destructive actions on the writable /workspace leave no restore point. Bounded by the container's final defenses (network_mode=none, /source read-only, cap_drop ALL, no-new-privileges), so no network exfiltration and no modification of the read-only source - hence high, not critical."
+      },
+      "overall_severity": "high"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Both halves reproduced in a bounded local harness: the pure-function policy returns ALLOW/read-only-exec with programs={ls}, and the exact bash -c wrapper executes the hidden non-allowlisted program and creates the sentinel. Source confirms the command is passed to bash unchanged and that exec takes no pre-snapshot. A negative control (single-quote in the hidden command) correctly yielded require_approval, isolating the precise condition."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "fingerprint": "agentbox/sandbox.py:auto-snapshot-unbounded-no-gc",
+    "title": "Agent-reachable write_file overwrite forces an uncapped docker commit per call with no snapshot limit or image GC, potentially exhausting shared host disk",
+    "description": "write_file is default-allowed. Overwriting an existing file forces a docker commit (AP-2) with no snapshot cap, and delete() removed only the container, so snapshot images outlived the sandbox. docker commit copies the container's whole writable layer each time, so per-snapshot cost equals the current /workspace size, which the agent can grow with default-allowed new-file writes (no snapshot needed). Validated in run-2 (2026-10-22) on Docker 29.9.1 (runc, overlayfs/containerd snapshotter, no userns remap, cgroup v1), 4 vCPU / 15 GB host, agentbox at the fix commits listed in remediation; images buildpack-deps:noble-curl and agentbox-desktop:0.1 built from images/desktop.",
+    "root_cause": "Automatic pre-write snapshotting (service._needs_snapshot returns True for an existing write_file target, which is ALLOW by the default policy with no human approval) performs an unconditional c.commit per overwrite with (a) no snapshot-count cap, (b) no image garbage collection anywhere, and (c) images that outlive the sandbox because delete() removes only the container; all committed images live on the single host Docker daemon shared by every sandbox and the control plane.",
+    "intended_behavior": "Automatic snapshots protect recoverability but must not let an agent consume unbounded host disk without a human in the loop; deleting a sandbox should release its storage.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/api.py",
+        "line": 188,
+        "scope": "call_tool POST /sandboxes/{sid}/tools/{tool}",
+        "description": "An agent-token principal (p.kind=='agent', p.sandbox_id==sid) invokes write_file on its own sandbox; the handler calls box.call_tool with actor='agent'. write_file matches no policy rule, so the decision is default:allow (pure-function harness over default_policy.yaml confirmed action='allow', rule_id=None)."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/service.py",
+        "line": 220,
+        "scope": "AgentBox.call_tool ALLOW branch",
+        "description": "On ALLOW, call_tool invokes _needs_snapshot(sid,'write_file',args), which returns self.sandboxes.exists(path) (service.py:164-168) and is True when the path already exists, so _snapshot runs unconditionally before the overwrite executes; snapshot failure aborts the write but snapshot success commits an image."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/sandbox.py",
+        "line": 341,
+        "scope": "SandboxManager.snapshot",
+        "description": "snapshot() computes a random snap_id and tag=f'{sid}-{snap_id}', then c.commit(repository='agentbox-snap', tag=tag, pause=True), creating a fresh persistent image on every call, and inserts a snapshots-table row. There is no count cap or rate limit."
+      },
+      {
+        "kind": "sink",
+        "file": "agentbox/sandbox.py",
+        "line": 312,
+        "scope": "SandboxManager.delete",
+        "description": "delete() removes only the container (containers.get(...).remove(force=True) at line 315) and sets status='deleted'; it never removes committed images or snapshots rows, and no images.remove/rmi/prune exists anywhere in the repo, so committed images accumulate without bound on the shared host Docker storage."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/default_policy.yaml",
+        "line": 10,
+        "description": "default: allow; the rules (lines 11-33) cover only exec (rm/curl, read-only allowlist, catch-all require_approval) and delete_file (require_approval). No rule targets write_file, so it resolves to default:allow with no human approval. Pure-function harness over this policy file confirmed: decide('write_file',{'path':'/workspace/x','content':'a'}) -> action='allow', rule_id=None; decide('delete_file',{'path':'/workspace/x'}) -> action='require_approval', rule_id='delete-file-needs-approval'."
+      },
+      {
+        "file": "agentbox/service.py",
+        "line": 164,
+        "description": "_needs_snapshot returns True for delete_file and, for write_file, returns self.sandboxes.exists(path) (lines 164-168), i.e. True whenever the overwrite target already exists."
+      },
+      {
+        "file": "agentbox/service.py",
+        "line": 220,
+        "description": "The ALLOW branch (lines 219-225) calls _snapshot(sid,tool,...) unconditionally whenever _needs_snapshot is True; a snapshot/audit failure raises 503 and skips the write, but a successful snapshot commits one image before the overwrite runs."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 341,
+        "description": "snapshot() runs c.commit(repository='agentbox-snap', tag=f'{sid}-{snap_id}', pause=True) with a fresh random snap_id (line 338) on every call and inserts a snapshots row (lines 344-348); there is no per-sandbox or global snapshot-count cap in this function or elsewhere."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 315,
+        "description": "delete() removes only the container (line 315) and marks status='deleted' (line 318); it never removes committed images or snapshots rows. A repo-wide search for images.remove/rmi/prune/image cleanup returns no matches (the only .remove(force=True) calls are container removals at sandbox.py:296,302,315,364,613)."
+      },
+      {
+        "file": "deploy/docker-compose.yml",
+        "line": 24,
+        "description": "The control plane bind-mounts /var/run/docker.sock, so it drives the host Docker daemon; all committed agentbox-snap images therefore live on the single host image store shared by every sandbox container and the control-plane container. The compose file defines no image-reaper/prune service."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "Caller holds only the per-sandbox agent token (Principal kind=agent) of its own sandbox."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "Shipped default_policy.yaml (default: allow, read-only-exec allowlist)."
+      },
+      {
+        "kind": "data_state",
+        "description": "Target path already exists in /workspace (any seeded or agent-created file)."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "An agent wants to fill the host disk shared by every sandbox and the control plane.",
+      "payloads": [
+        "write_file /workspace/f.txt (existing) x200",
+        "write_file /workspace/blob{0..49} 1 MB each, then write_file /workspace/small.txt (existing, 2 bytes) x10"
+      ],
+      "instructions": [
+        "With the agent token only, overwrite the same existing file 200 times; count agentbox-snap images, approvals, and images left after DELETE /sandboxes/{id}.",
+        "Separately, create 50 new 1 MB files, then overwrite a 2-byte file 10 times while measuring du -sb /var/lib/docker."
+      ],
+      "observed_result": "200 overwrites: 200 x HTTP 200, 0 approvals, 200 snapshot images, all 200 still present after the sandbox was deleted. Amplification: with a 50 MB workspace, 10 two-byte changes grew /var/lib/docker by 811 MB (~81 MB per snapshot); 595 MB remained after sandbox deletion. After the fix: 200 attempts -> 50 executed + 150 pending approval, 50 images, 0 left after delete."
+    },
+    "remediation": {
+      "strategy": "Fixed in 4826cb5: AGENTBOX_SNAPSHOT_QUOTA (default 50). Once a sandbox holds that many snapshots, ALLOW-path calls that would need a snapshot are escalated to require_approval (rule snapshot-quota); the approval path still snapshots before executing, so AP-2 is preserved. Deleting a sandbox removes its snapshot images. Pruning oldest snapshots was rejected because an agent could evict the snapshot protecting a file it had just clobbered.",
+      "code_changes": [
+        {
+          "file_name": "agentbox/service.py",
+          "fixed_code": "if decision.action == ALLOW and self._over_snapshot_quota(sid, tool, args):\n    decision = Decision(REQUIRE_APPROVAL, \"snapshot-quota\", ..., decision.matched)"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "Plain loop of a default-allowed tool with the agent's own token."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Host-disk exhaustion of the shared Docker daemon (all sandboxes and the control plane) at ~workspace-size per call; availability only, recoverable by pruning images."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Image counts and on-disk growth measured on a live daemon before and after the fix."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "fingerprint": "agentbox/sandbox.py:create:source_dir-no-allowlist-arbitrary-host-copy",
+    "title": "source_dir overlapping the agentbox data directory copies the human token into the agent-readable /workspace (agent -> human privilege escalation)",
+    "description": "create() accepted any existing host directory as source_dir and root-copied it (cp -a with DAC_OVERRIDE) into /workspace, then chowned it to the agent. AGENTBOX_HOME defaults to ./data, so an operator who runs 'agentbox serve' in a project folder and creates a sandbox from that folder ships data/human_token (and agentbox.db, other sandboxes' sources) to the agent. With runc and no userns remap, container uid 0 bypasses host DAC on the bind mount, so even 0600 files owned by another uid become agent-readable. Validated in run-2 (2026-10-22) on Docker 29.9.1 (runc, overlayfs/containerd snapshotter, no userns remap, cgroup v1), 4 vCPU / 15 GB host, agentbox at the fix commits listed in remediation; images buildpack-deps:noble-curl and agentbox-desktop:0.1 built from images/desktop.",
+    "root_cause": "create() applies no allowlist/containment to the operator/UI-supplied source_dir before bind-mounting it read-only and root-copying it (with DAC_OVERRIDE) into the agent-readable /workspace, while the create surface is exposed to a browser session that may have been minted from a sandbox-scoped desktop-view ticket intended to be lower-trust than the control-plane admin, and that same caller also receives the resulting agent token.",
+    "intended_behavior": "The agent must never be able to obtain the human token or other control-plane state; a sandbox source must not include the control plane's own data directory.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/web.py",
+        "line": 150,
+        "scope": "POST /ui/sandboxes -> create() (Depends browser_human=screen_human)",
+        "description": "source_dir arrives as a Form field. screen_human (api.py:119-122) accepts any valid browser session, including one minted from a sandbox-scoped desktop-view ticket; the create response returns the new agent_token to the caller via _created.html (web.py:159). README:363 acknowledges a screen-link session can use the full web UI."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/service.py",
+        "line": 309,
+        "scope": "AgentBox.create_sandbox",
+        "description": "source_dir is logged (service.py:307) and passed unchanged to SandboxManager.create; no validation or allowlist is applied here."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/sandbox.py",
+        "line": 272,
+        "scope": "SandboxManager.create",
+        "description": "src = Path(source_dir).expanduser().resolve(); only is_dir() is checked (sandbox.py:273-274) - no allowlist/containment. src is then bind-mounted read-only at /source in _run_container (sandbox.py:249)."
+      },
+      {
+        "kind": "sink",
+        "file": "agentbox/sandbox.py",
+        "line": 290,
+        "scope": "SandboxManager.create setup exec (user='0:0')",
+        "description": "`cp -a /source/. /workspace/` then `chown -R 1000:1000 /workspace` (sandbox.py:291) run as container root with DAC_OVERRIDE (cap_add, sandbox.py:255; exec user='0:0', sandbox.py:294), copying the bind-mounted host directory into the agent-readable /workspace; read_file/list_dir (sandbox.py:399; safe_path permits /workspace) then expose the copy to the agent_token holder (api.py:187)."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 272,
+        "description": "create() resolves source_dir and checks only is_dir() (273-274); no allowlist or containment on the operator/UI-supplied absolute path."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 249,
+        "description": "_run_container bind-mounts source_dir read-only at /source (volumes mode 'ro')."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 290,
+        "description": "setup exec copies /source into /workspace via `cp -a /source/. /workspace/` and chowns /workspace to uid 1000 (line 291)."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 255,
+        "description": "sandbox container is granted DAC_OVERRIDE (with CHOWN/FOWNER/SETUID/SETGID); the setup exec runs as user='0:0' (sandbox.py:294), so container-root can read bind-mount files regardless of DAC if it is host-root-equivalent."
+      },
+      {
+        "file": "agentbox/web.py",
+        "line": 159,
+        "description": "create() returns the new sandbox's agent_token to the browser caller via _created.html (which renders {{ token }})."
+      },
+      {
+        "file": "agentbox/web.py",
+        "line": 150,
+        "description": "POST /ui/sandboxes takes source_dir as a Form field under Depends(browser_human=screen_human), which accepts any valid browser session."
+      },
+      {
+        "file": "agentbox/desktop.py",
+        "line": 106,
+        "description": "redeem() returns new_session() for any ticket whose stored scope matches; new_session (desktop.py:108-116) mints an unscoped 12h UI session carrying no scope column."
+      },
+      {
+        "file": "agentbox/api.py",
+        "line": 281,
+        "description": "GET /sandboxes/{sid}/desktop redeems a sandbox-scoped desktop-view ticket (issued only by the human-token holder, desktop_ticket api.py:272-276) into a session cookie."
+      },
+      {
+        "file": "agentbox/api.py",
+        "line": 187,
+        "description": "POST /sandboxes/{sid}/tools/{tool} lets an agent-token holder call read_file/list_dir on its own sandbox (read_file at sandbox.py:399; safe_path permits /workspace and /source)."
+      },
+      {
+        "file": "agentbox/config.py",
+        "line": 84,
+        "description": "home directory (default ./data, config.py:29) holds human_token (written mode 0600, config.py:89) and agentbox.db (config.py:76); deploy/docker-compose.yml bind-mounts home at the same absolute path, so naming it as source_dir would copy these into /workspace."
+      },
+      {
+        "file": "README.md",
+        "line": 363,
+        "description": "project's 2026-10-22 review acknowledges a screen-link (ticket) session can use the entire web UI, contradicting the documented screen-paths-only property at README:190 and corroborating P5 reachability of the create surface."
+      },
+      {
+        "file": "README.md",
+        "line": 365,
+        "description": "project acknowledges source_dir has no allowed-path restriction and that the data folder can be named, but assumes only a human-token holder can specify it."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "Caller holds only the per-sandbox agent token (Principal kind=agent) of its own sandbox."
+      },
+      {
+        "kind": "user_interaction",
+        "description": "The operator (human token) chooses a source_dir equal to, inside, or containing the agentbox data directory - e.g. '.' when serving from a project folder with the default AGENTBOX_HOME=./data."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "Human token stored in AGENTBOX_HOME/human_token (default; not set via AGENTBOX_HUMAN_TOKEN). Docker runtime without userns remap (runc default)."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "An agent wants to approve its own blocked requests and gain the operator's admin API.",
+      "payloads": [
+        "read_file /workspace/data/human_token",
+        "POST /approvals/{id} {decision: approve} with the leaked token"
+      ],
+      "instructions": [
+        "Operator: in a project folder, start agentbox with default AGENTBOX_HOME and create a sandbox with source_dir='.'.",
+        "Agent: read_file /workspace/data/human_token; request 'rm -f /workspace/report.md' (goes to approval); approve it using the leaked token.",
+        "Separately confirm the copy mechanic with the exact capability set on a 0600 file owned by uid 4242 inside a 0700 directory."
+      ],
+      "observed_result": "The agent read the exact human token, approved its own rm request with it (HTTP 200, status executed), and could list data/sources of other sandboxes. The capability-set check copied the uid-4242 0600 file and uid 1000 read 'secret-4242'. After the fix, creating the sandbox with source_dir='.' returns 400."
+    },
+    "remediation": {
+      "strategy": "Fixed in e56e2a9: create() refuses a user-supplied source_dir that equals, is inside, or contains settings.home or the DB directory (400). Other host paths remain the operator's responsibility and are documented in README known limitations (copied as root, so 0600 files become agent-readable).",
+      "code_changes": [
+        {
+          "file_name": "agentbox/sandbox.py",
+          "fixed_code": "for d in {self.settings.home.resolve(), self.settings.db_path.resolve().parent}:\n    if src == d or d in src.parents or src in d.parents:\n        raise SandboxError(...)"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "Requires an operator choice, but a natural one: serving from a project folder and sandboxing that folder with the default ./data home."
+      },
+      "impact": {
+        "score": "high",
+        "reason": "Agent obtains the human token: approves its own requests (defeating the approval model) and gains the full admin API, including creating sandboxes with arbitrary host source_dir and deleting other sandboxes."
+      },
+      "overall_severity": "high"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "End-to-end reproduction through the API plus a capability-exact container check of the DAC bypass."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "fingerprint": "agentbox/sandbox.py:exec-output-buffered-unbounded-before-truncate",
+    "title": "Agent exec output is fully buffered in control-plane memory before the 64KB cap, enabling shared-service memory exhaustion",
+    "description": "SandboxManager.exec used docker-py's non-streaming exec_run(demux=True), which accumulates every stdout/stderr frame in control-plane memory for the whole exec timeout before _truncate keeps the first 64 KB. An allowlisted producer such as 'cat /dev/zero' runs without approval. Validated in run-2 (2026-10-22) on Docker 29.9.1 (runc, overlayfs/containerd snapshotter, no userns remap, cgroup v1), 4 vCPU / 15 GB host, agentbox at the fix commits listed in remediation; images buildpack-deps:noble-curl and agentbox-desktop:0.1 built from images/desktop.",
+    "root_cause": "The output-size limit (_OUT_LIMIT via _truncate) is enforced only after the untrusted container stdout is fully materialized in control-plane memory by docker-py's non-streaming exec_run(stream=False), with no pre-read byte cap and only a time-based timeout; combined with cat/head/tr being on the read-only ALLOW allowlist so an unbounded stdout producer needs no approval.",
+    "intended_behavior": "Per-call output kept by the control plane should be bounded by _OUT_LIMIT (64 KB per stream) regardless of how much the sandboxed command writes.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/api.py",
+        "line": 188,
+        "scope": "call_tool POST /sandboxes/{sid}/tools/{tool}",
+        "description": "Agent-token principal (p.kind=='agent', enforced against its own sandbox at line 189) invokes the exec tool; actor='agent' is passed to box.call_tool."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/service.py",
+        "line": 85,
+        "scope": "AgentBox._run_tool",
+        "description": "Dispatches to sb.exec(sid, command). Policy.decide marks exec ALLOW (rule read-only-exec, default_policy.yaml:22-29) when every program is in the read-only allowlist; the pure-function harness confirms cat/head/tr -> allow with no approval."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "scope": "SandboxManager.exec",
+        "description": "c.exec_run(['timeout','-k','5','60','bash','-c',...], demux=True) uses docker-py default stream=False; exec_start(stream=False) -> _read_from_socket -> consume_socket_output concatenates every frame (out[0]+=frame[0]) into one in-memory (stdout,stderr) bytes tuple before returning, with no byte ceiling."
+      },
+      {
+        "kind": "sink",
+        "file": "agentbox/sandbox.py",
+        "line": 385,
+        "scope": "SandboxManager.exec / _truncate",
+        "description": "_truncate(out) applies b[:_OUT_LIMIT] (64KB; _OUT_LIMIT at sandbox.py:36, slice at sandbox.py:96) only AFTER the full container stdout buffer already exists in control-plane memory, so the cap never limits control-plane memory consumption."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "description": "exec() calls c.exec_run(..., demux=True) with docker-py's default stream=False (non-streaming). Verified against the pinned docker-py (>=7.0) source: api/client.py _read_from_socket for stream=False 'Wait for all frames, concatenate them, and return the result' via utils/socket.py consume_socket_output, which does out[0] += frame[0] for every frame with demux=True — the whole stdout is buffered in the control-plane process."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 36,
+        "description": "_OUT_LIMIT = 64 * 1024 is the only output size cap; it is referenced solely by _truncate."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 93,
+        "description": "_truncate slices b[:_OUT_LIMIT] at line 96 only after receiving the complete bytes argument, so the cap is post-hoc and cannot bound the memory already consumed by exec_run."
+      },
+      {
+        "file": "agentbox/config.py",
+        "line": 43,
+        "description": "exec_timeout default 60; the exec wrapper 'timeout -k 5 60' (sandbox.py:379) bounds elapsed time only, never the number of bytes produced within that window."
+      },
+      {
+        "file": "agentbox/config.py",
+        "line": 38,
+        "description": "mem_limit default '512m' is applied to the container cgroup at sandbox.py:251-252 (mem_limit/memswap_limit); it bounds container RAM, not the control-plane Python process that buffers the exec stream."
+      },
+      {
+        "file": "agentbox/default_policy.yaml",
+        "line": 22,
+        "description": "read-only-exec rule allowlists cat/head/tr (lines 25-27). Pure-function harness: decide('exec',{'command':'cat /dev/zero'}) -> allow/read-only-exec (same for 'head -c 999999999 /dev/zero' and \"tr '\\0' a < /dev/zero\"); 'yes' and 'cat /dev/zero > /workspace/x' -> require_approval. So an unbounded stdout producer is reachable with no human in the loop."
+      },
+      {
+        "file": "agentbox/service.py",
+        "line": 188,
+        "description": "Single shared control plane that is also the fail-closed audit writer: AuditWriteError -> ServiceError(503) 'cannot record, not executed'. The one process serving all sandboxes buffers the exec output, so its OOM denies tool calls for every tenant (shared blast radius)."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "Caller holds only the per-sandbox agent token (Principal kind=agent) of its own sandbox."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "Shipped default_policy.yaml (default: allow, read-only-exec allowlist)."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "Default AGENTBOX_EXEC_TIMEOUT=60; impact scales with control-plane memory limit (a small VM or a compose memory limit would OOM-kill the single control-plane process)."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "An agent wants to exhaust control-plane memory, taking down approvals, the web UI and every other sandbox served by the single process.",
+      "payloads": [
+        "cat /dev/zero"
+      ],
+      "instructions": [
+        "Run 'agentbox serve' and create a cli sandbox.",
+        "With the agent token, POST tools/exec {command: 'cat /dev/zero'} once, then 16 times concurrently, sampling /proc/<pid>/status VmRSS of the server."
+      ],
+      "observed_result": "One call: server RSS 66 MB -> 217 MB (+151 MB; ~3.3 MB/s through docker-py for 60 s, all discarded after the 64 KB cut). 16 concurrent calls with the same agent token: +1153 MB (peak 1.2 GB), growth bounded only by control-plane CPU throughput x timeout. After the fix: one call +0 MB, 16 concurrent calls +3 MB (4 run, 12 rejected with 429)."
+    },
+    "remediation": {
+      "strategy": "Fixed in c6a0a3c: stream the exec (exec_create + exec_start(stream=True, demux=True)), keep only the first 64 KB of each stream while counting the rest (_Head), read the exit code via exec_inspect, and cap concurrent tool calls per sandbox (AGENTBOX_TOOL_CONCURRENCY, default 4, excess -> 429). The output format is unchanged.",
+      "code_changes": [
+        {
+          "file_name": "agentbox/sandbox.py",
+          "fixed_code": "out, err = _Head(), _Head()\nfor o, e in api.exec_start(ex[\"Id\"], stream=True, demux=True):\n    out.add(o)\n    err.add(e)\ncode = api.exec_inspect(ex[\"Id\"])[\"ExitCode\"]"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "Trivial allowlisted command, but reaching OOM needs concurrency and a control plane with modest memory; a 15 GB host survived 16 concurrent calls."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Can OOM-kill the single shared control-plane process (all sandboxes, approvals and UI down) on memory-constrained deployments; no data compromise and recoverable by restart."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Measured RSS on a real uvicorn server before and after the fix with identical workloads."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "fingerprint": "agentbox/sandbox.py:gui-tools-uid1001-terminal-bypasses-exec-allowlist",
+    "title": "Desktop GUI tools (key/type) open xfce4-terminal and run arbitrary commands as uid 1001, bypassing the exec allowlist, approval and AP-2 snapshot",
+    "description": "In a desktop-template sandbox the GUI tools screenshot/click/type/key have no policy rule and resolve to default:allow. The shipped Xfce session binds Ctrl+Alt+T to the terminal emulator (and the panel dock has a terminal launcher), so an agent can open xfce4-terminal with key('ctrl+alt+t'), type an arbitrary shell command and press Return. The command runs as the desktop user (uid 1001, member of group agent) with write access to the setgid group-writable /workspace, entirely outside the exec tool: no exec allowlist check, no approval card, and no pre-delete snapshot. Validated in run-2 (2026-10-22) on Docker 29.9.1 (runc, overlayfs/containerd snapshotter, no userns remap, cgroup v1), 4 vCPU / 15 GB host, agentbox at the fix commits listed in remediation; images buildpack-deps:noble-curl and agentbox-desktop:0.1 built from images/desktop.",
+    "root_cause": "GUI tools are not subjected to the exec policy and run as a uid that can execute arbitrary programs via an installed terminal emulator, so the approval/allowlist/snapshot boundary that governs exec and delete_file does not cover the uid 1001 code-execution path.",
+    "intended_behavior": "Destructive or non-allowlisted command execution against /workspace should go through the exec policy (approval for anything beyond read-only commands) and be preceded by an AP-2 snapshot; the GUI tools are documented only as screen/input tools that are 'allowed', not as an unrestricted command channel.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/service.py",
+        "line": 94,
+        "scope": "AgentBox._run_tool (GUI branch)",
+        "description": "An agent-issued type/key/click call reaches the GUI dispatch branch; it is reached only after call_tool's policy.decide returned ALLOW (service.py:185,219), and the default policy returns ALLOW with rule_id=None for all four GUI tools, so no approval/allowlist/snapshot gate applies."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/sandbox.py",
+        "line": 568,
+        "scope": "SandboxManager.type_text",
+        "description": "xdotool type --clearmodifiers --delay 12 -- <text> injects up to 2000 chars of attacker-chosen text (via _x, user=DESKTOP_USER) into the focused window as uid 1001."
+      },
+      {
+        "kind": "sink",
+        "file": "images/desktop/Dockerfile",
+        "line": 19,
+        "scope": "desktop image package set",
+        "description": "xfce4-terminal (also thunar, mousepad) is installed; typing a command followed by Return into a focused terminal would execute as uid 1001, outside the exec allowlist/approval/AP-2 snapshot. Whether a terminal is reachable via the GUI tools in the shipped session is the unresolved runtime blocker."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/default_policy.yaml",
+        "line": 10,
+        "description": "default: allow; no rule's tool matches screenshot/click/type/key. Confirmed with the pure-function harness (python3 -I importing agentbox/policy.py): policy.decide returns action=allow, rule_id=None for each GUI tool, versus require_approval for exec 'rm -rf' and delete_file."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 521,
+        "description": "SandboxManager._x runs every GUI action (xdotool type/key/click) with user=DESKTOP_USER and the desktop X cookie; DESKTOP_USER='desktop' = uid 1001 (sandbox.py:39, Dockerfile:27), so GUI input executes as uid 1001, not the agent uid 1000."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 566,
+        "description": "type_text accepts up to 2000 chars of arbitrary text per call and passes it verbatim to xdotool type; nothing restricts the content (e.g. a shell command plus a Return via the key tool)."
+      },
+      {
+        "file": "images/desktop/Dockerfile",
+        "line": 19,
+        "description": "xfce4-terminal, thunar and mousepad are installed in the desktop image, providing a command-executing GUI app on the desktop the agent drives."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 291,
+        "description": "/workspace is chown'd to the agent uid and made group-writable (chmod -R g+rwX) with setgid directories (line 292); the desktop user uid 1001 is in the agent group (Dockerfile:27), so a uid-1001 process can create/overwrite/delete /workspace files - the same files AP-2 snapshots protect on the exec/delete_file path."
+      },
+      {
+        "file": "agentbox/service.py",
+        "line": 109,
+        "description": "_check_control raises HumanControl (HTTP 423) for a NEW GUI tool call during human takeover; it gates the GUI call, not a uid-1001 process already launched, which continues running."
+      },
+      {
+        "file": "images/desktop/Dockerfile",
+        "line": 19,
+        "description": "xfce4-terminal, thunar and the full Xfce session (xfce4-settings with default keyboard shortcuts) are installed in the desktop image."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authentication_level",
+        "description": "Caller holds only the per-sandbox agent token (Principal kind=agent) of its own sandbox."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "Shipped default_policy.yaml (default: allow, read-only-exec allowlist)."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "Sandbox created from the desktop template (agentbox-desktop image); no human takeover lease active (otherwise GUI tools return 423)."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "A prompt-injected agent in a desktop sandbox wants to delete or rewrite /workspace files without approval and without leaving a restore point.",
+      "payloads": [
+        "key ctrl+alt+t",
+        "type: id > /workspace/outbox/gui-id.txt; rm -f /workspace/victim.txt",
+        "key Return"
+      ],
+      "instructions": [
+        "As a human, create a desktop sandbox whose source contains victim.txt and hand its agent token to the agent.",
+        "With the agent token only, call POST /sandboxes/{id}/tools/key {keys: 'ctrl+alt+t'}, wait ~4 s, then tools/type with the payload command and tools/key {keys: 'Return'}.",
+        "List /workspace, read outbox/gui-id.txt, and count approvals and snapshots for the sandbox."
+      ],
+      "observed_result": "All GUI calls returned 200. A terminal window titled 'Terminal - desktop@...' appeared (screenshot), victim.txt was deleted, outbox/gui-id.txt contained 'uid=1001(desktop) gid=1001(desktop) groups=1001(desktop),1000(agent)', and the sandbox had 0 approvals and 0 snapshots. The audit log records the typed text as a tool_request/type event, but no policy gate or snapshot applied."
+    },
+    "remediation": {
+      "strategy": "Not yet fixed - product decision pending (see run-2/VALIDATION.md). Removing the terminal is not a boundary (Applications menu 'Run Program', Thunar executing files, autostart entries remain). Recommended: document that desktop GUI tools are equivalent to unrestricted uid-1001 execution inside the container, and restore AP-2 recoverability by taking an automatic snapshot before GUI input bursts (subject to AGENTBOX_SNAPSHOT_QUOTA). Stronger alternative: make click/type/key require approval in the default policy (high usability cost)."
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "Three default-allowed GUI calls using a default Xfce shortcut; reproduced first try with the shipped image."
+      },
+      "impact": {
+        "score": "high",
+        "reason": "Fully bypasses the exec approval gate and the AP-2 pre-delete snapshot for desktop sandboxes, allowing unapproved arbitrary execution and unrecoverable destruction of /workspace. Bounded by the container (network=none, read-only /source, cap_drop ALL, no-new-privileges), hence high, not critical."
+      },
+      "overall_severity": "high"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Reproduced end-to-end through the HTTP API against a live desktop sandbox with screenshot, file-system and approval/snapshot-count evidence."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "fingerprint": "agentbox/sandbox.py:outbox_list:unguarded-int-float-on-container-filename",
+    "title": "Container-controlled outbox file name crashes control-plane outbox listing via unguarded int()/float()",
+    "description": "outbox_list parses the output of `find ... -printf \"%f\\t%s\\t%T@\\n\"` by splitting each line on TAB and calling int(parts[1]) and float(parts[2]) with no error handling. The sandbox agent (a lower-trust producer) controls outbox file names, and find prints %f (the basename) verbatim including control bytes. A basename containing a newline plus TAB-separated tokens injects a synthetic 3-field line whose numeric fields are attacker text, raising ValueError. Neither guard() (api.py) nor the web outbox fragment catches ValueError, and there is no global exception handler, so the operator's outbox listing for that sandbox returns HTTP 500.",
+    "root_cause": "The control plane treats container-produced, agent-controlled bytes (outbox basenames printed raw by find -printf %f) as well-formed numeric records: it tab-splits the listing and runs int()/float() on positional fields with no try/except, no field validation, and no rejection of names containing control bytes.",
+    "intended_behavior": "Listing an outbox that an agent has written to should always succeed (or skip malformed entries), never fault the control-plane request, regardless of what names the agent created.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "scope": "SandboxManager.exec",
+        "description": "The lower-trust sandbox agent's exec tool passes its command string verbatim to `bash -c` as uid 1000. The default policy's read-only-exec allowlist includes touch/mkdir, so the agent can run `touch 'outbox/<name>'` with a literal-newline, TAB-bearing basename with no human approval, placing a poisoned-name file in /workspace/outbox."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/api.py",
+        "line": 260,
+        "scope": "GET /sandboxes/{sid}/outbox -> outbox()",
+        "description": "The operator (screen_human) lists the outbox; guard() (api.py:124-130) wraps the call but catches only ServiceError/SandboxError, and there is no global exception handler, so a ValueError raised downstream becomes an HTTP 500 (web.py:205-214 outbox_frag catches only SandboxError/APIError, the same 500)."
+      },
+      {
+        "kind": "propagation",
+        "file": "agentbox/sandbox.py",
+        "line": 488,
+        "scope": "SandboxManager.outbox_list",
+        "description": "find {OUTBOX} -mindepth 1 -maxdepth 1 -type f -printf \"%f\\t%s\\t%T@\\n\" prints the agent-controlled basename (%f) raw, including embedded newline/tab bytes, so one file can emit multiple physical lines including a forged TAB-delimited record."
+      },
+      {
+        "kind": "sink",
+        "file": "agentbox/sandbox.py",
+        "line": 494,
+        "scope": "SandboxManager.outbox_list parse loop",
+        "description": "for each splitlines() line: parts = line.split('\\t'); if len(parts)==3: int(parts[1]) (line 494) / float(parts[2]) (line 495) — unguarded numeric conversion of the attacker-forged split fields raises ValueError, which propagates uncaught to a 500."
+      }
+    ],
+    "evidence": [
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 494,
+        "description": "out.append({\"name\": parts[0], \"bytes\": int(parts[1]), ... float(parts[2]) ...}) inside the per-line loop (491-496) with no try/except around the conversion."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 488,
+        "description": "find -printf \"%f\\t%s\\t%T@\\n\" prints the basename raw; verified with GNU findutils 4.9.0 that a filename containing LF/TAB is emitted verbatim, forging extra lines."
+      },
+      {
+        "file": "agentbox/sandbox.py",
+        "line": 379,
+        "description": "exec() runs [\"timeout\",...,\"bash\",\"-c\",\"umask 002\\n\"+command] as uid 1000, executing the agent's command string verbatim, so it can create a file with an arbitrary (newline/TAB) basename."
+      },
+      {
+        "file": "agentbox/default_policy.yaml",
+        "line": 27,
+        "description": "read-only-exec rule only_commands allowlist includes touch and mkdir with action allow; pure-function Policy.decide harness returned action=allow (rule read-only-exec) for `touch 'outbox/<LF/TAB name>'`, so no human approval is required."
+      },
+      {
+        "file": "agentbox/api.py",
+        "line": 127,
+        "description": "guard() catches only ServiceError and SandboxError; a ValueError from outbox_list propagates to FastAPI's default 500 handler."
+      },
+      {
+        "file": "agentbox/web.py",
+        "line": 209,
+        "description": "outbox_frag catches only SandboxError and APIError; a ValueError propagates, returning HTTP 500 for the UI outbox fragment as well."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authorization_role",
+        "description": "A running sandbox whose agent (uid 1000) can run file-creating tools; the default policy allows touch/mkdir without human approval (confirmed via the pure-function policy harness), so no operator interaction is needed to plant the file."
+      },
+      {
+        "kind": "data_state",
+        "description": "The agent has placed at least one regular file directly in /workspace/outbox whose basename embeds a newline followed by a TAB-separated record with a non-numeric middle token (the outbox directory is created agent-owned at sandbox init, sandbox.py:291)."
+      },
+      {
+        "kind": "user_interaction",
+        "description": "An operator subsequently lists that sandbox's outbox: GET /sandboxes/{sid}/outbox (screen_human) or a load of the /ui/sandboxes/{sid}/outbox fragment."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "A sandbox agent (lower-trust, often driven by injected content) that can run file-creating tools wants to break or hide the operator's view of what it dropped in the outbox.",
+      "payloads": [
+        "exec command (literal newline/tab inside single quotes, no $/backtick/redirection so it stays on the read-only allowlist): touch 'outbox/a<LF>FAKE<TAB>NOTANUM<TAB>NOTFLOAT<LF>b'"
+      ],
+      "instructions": [
+        "As the agent, call the exec tool once to create a single regular file in /workspace/outbox whose basename embeds a newline followed by three TAB-separated tokens with a non-numeric middle token (allowed unapproved by the default policy's read-only-exec rule).",
+        "Have the operator list that sandbox's outbox via GET /sandboxes/{sid}/outbox or by loading the UI outbox fragment."
+      ],
+      "observed_result": "Bounded local reproduction: the pure-function policy harness (python3 -I importing agentbox/policy.py) returned action=allow (rule read-only-exec) for the touch command, so it runs without approval. A real GNU find (4.9.0) `-mindepth 1 -maxdepth 1 -type f -printf \"%f\\t%s\\t%T@\\n\"` over a dummy file with that basename produced a forged line `FAKE\\tNOTANUM\\tNOTFLOAT`; feeding that real output through the verbatim outbox_list parse loop raised `ValueError: invalid literal for int() with base 10: 'NOTANUM'`. Since guard() and web.outbox_frag do not catch ValueError and no global handler exists, the endpoint returns HTTP 500 and the outbox listing (the only enumeration path) stays broken while the file exists, concealing other outbox contents from the operator. The end-to-end container execution is the same `bash -c`/`find` wrapper shown in source; the live Docker exec_run itself was not run."
+    },
+    "remediation": {
+      "strategy": "Parse the container listing defensively: wrap the per-line int()/float() conversion in try/except and skip malformed lines. Prefer a record delimiter that cannot occur in file names, e.g. put the attacker-controlled %f last and NUL-frame fields (`find ... -printf '%s\\t%T@\\t%f\\0'`) so embedded newlines/tabs cannot forge records, or reject names containing control bytes. Also broaden control-plane error handling (guard() and outbox_frag) so a parse fault degrades to an empty/partial listing rather than an HTTP 500.",
+      "code_changes": [
+        {
+          "file_name": "agentbox/sandbox.py",
+          "fixed_code": "# In outbox_list, split %f-last NUL-framed records and guard the conversion:\n# script = f'... find {OUTBOX} -mindepth 1 -maxdepth 1 -type f -printf \"%s\\\\t%T@\\\\t%f\\\\0\"'\nout = []\nfor rec in (res.output[0] or b\"\").split(b\"\\0\"):\n    if not rec:\n        continue\n    try:\n        size_b, mtime_b, name_b = rec.split(b\"\\t\", 2)\n        size = int(size_b)\n        mtime = float(mtime_b)\n    except ValueError:\n        continue  # skip malformed / forged entries\n    name = name_b.decode(\"utf-8\", errors=\"replace\")\n    out.append({\"name\": name, \"bytes\": size,\n                \"mtime\": datetime.fromtimestamp(mtime, timezone.utc).isoformat(timespec=\"seconds\")})\nreturn sorted(out, key=lambda x: x[\"name\"])"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "high",
+        "reason": "Creating an outbox file with an arbitrary byte name is squarely within the agent's normal capability: the outbox is the agent's result drop, the directory is created agent-owned at init, and the pure-function policy harness confirms `touch` with a newline/TAB name is allowed with no human approval. Only the operator-triggered listing is required to fault, which is the routine way operators view results."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Breaks the operator's outbox listing for the affected sandbox (HTTP 500 on both the JSON endpoint and the UI fragment) and can conceal exfiltrated files from the only enumeration path. It is a read-only control-plane feature with per-request/per-sandbox blast radius; the server process stays up and other sandboxes are unaffected, so it is a scoped availability/visibility issue, not code execution or data corruption."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "The crash is reproduced end-to-end with real GNU find output run through the verbatim parse loop, the unapproved file-creation is confirmed by the pure-function policy harness, and the uncaught-ValueError -> 500 path is source-evident (guard catches only ServiceError/SandboxError, outbox_frag only SandboxError/APIError, no global handler). Only the live Docker exec_run is not dynamically executed, and it is the same bash -c/find wrapper shown in source."
+    }
+  }
+]
