@@ -1,0 +1,36 @@
+agentbox imported from /tmp/claude-0/-home-user-agentbox/1357e46b-55dd-58a4-b1d6-d791486808ee/scratchpad/src-audited/agentbox
+== template cli
+  policy: allow | pids before: (2, 256)
+  agent exec: status 200 exit 254 after 17s | pids (254, 256)
+  pids 5s later: (254, 256)
+  agent exec 'echo hi': ok (0.1s) (200, "{'status': 'executed', 'result': {'exit_code': 0, 'stdout': 'hi\\n', 'stderr': '', 'timed_out': False}}")
+  agent read_file: FAILED (0.1s) ServiceError: _: 1: Cannot fork
+
+  agent list_dir: ok (0.1s) (200, "{'status': 'executed', 'result': {'path': '/workspace', 'listing': 'total 16\\ndrwxrwxr-x 3 ubuntu ubuntu 4096 Oct 22 22:")
+  other sandbox exec: ok (0.1s) (200, "{'status': 'executed', 'result': {'exit_code': 0, 'stdout': 'other\\n', 'stderr': '', 'timed_out': False}}")
+  human snapshot: ok (0.5s) snap_df492434
+  human pause: ok (0.0s) None
+  human resume: ok (0.0s) None
+  pids after pause/resume: ok (0.0s) (254, 256)
+  human restore: ok (0.3s) running
+  pids after restore: ok (0.0s) (2, 256)
+  agent exec after restore: ok (0.1s) (200, "{'status': 'executed', 'result': {'exit_code': 0, 'stdout': 'back\\n', 'stderr': '', 'timed_out': False}}")
+  human delete: ok (0.1s) None
+== template desktop
+  policy: allow | pids before: (22, 1024)
+  agent exec: status 200 exit 254 after 34s | pids (1022, 1024)
+  pids 5s later: (1022, 1024)
+  agent exec 'echo hi': ok (0.1s) (200, "{'status': 'executed', 'result': {'exit_code': 0, 'stdout': 'hi\\n', 'stderr': '', 'timed_out': False}}")
+  agent read_file: FAILED (0.1s) ServiceError: _: 1: Cannot fork
+
+  agent list_dir: ok (0.1s) (200, "{'status': 'executed', 'result': {'path': '/workspace', 'listing': 'total 16\\ndrwxrwxr-x 3 agent agent 4096 Oct 22 22:29")
+  other sandbox exec: ok (0.1s) (200, "{'status': 'executed', 'result': {'exit_code': 0, 'stdout': 'other\\n', 'stderr': '', 'timed_out': False}}")
+  human snapshot: ok (2.6s) snap_61e81a58
+  human pause: ok (0.0s) None
+  human resume: ok (0.0s) None
+  pids after pause/resume: ok (0.0s) (1022, 1024)
+  human restore: ok (0.4s) running
+  pids after restore: ok (0.0s) (8, 1024)
+  agent exec after restore: ok (0.1s) (200, "{'status': 'executed', 'result': {'exit_code': 0, 'stdout': 'back\\n', 'stderr': '', 'timed_out': False}}")
+  human delete: ok (0.1s) None
+done

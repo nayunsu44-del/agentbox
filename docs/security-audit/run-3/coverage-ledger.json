@@ -37,15 +37,14 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 3,
-  "status": "deferred",
-  "agent_id": null,
+  "status": "in_progress",
+  "agent_id": "h-autostart",
   "reviewed_paths": [],
   "local_checks": [],
   "result_fingerprints": [],
-  "unresolved": [
-   "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 3. Desktop session start on restore honours ~/.config/autostart written by uid 1001; never in gui_changes; needs live-image validation."
-  ],
-  "x_source": "critic-2 missing_units"
+  "unresolved": [],
+  "x_source": "critic-2 missing_units",
+  "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 3. Desktop session start on restore honours ~/.config/autostart written by uid 1001; never in gui_changes; needs live-image validation."
  },
  {
   "coverage_id": "agent%20tool%20calls%20that%20require%20approval%20%28POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%20-%3E%20REQUIRE_APPROVAL%29%20on%20desktop%20templates::agentbox%2Fservice.py%23_call_tool%20approval%20creation%3A%20no%20per-sandbox%20pending-approval%20cap%2C%20plus%20a%20per-approval%20PNG%20written%20to%20settings.home%2Fcaptures%20that%20is%20never%20removed%20on%20decision%2C%20expiry%20or%20sandbox%20delete::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
@@ -90,15 +89,14 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 3,
-  "status": "deferred",
-  "agent_id": null,
+  "status": "in_progress",
+  "agent_id": "h-queue",
   "reviewed_paths": [],
   "local_checks": [],
   "result_fingerprints": [],
-  "unresolved": [
-   "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 2. Every gated call creates an approval, preview and captures/{aid}.png with no pending cap; no code removes captures; host disk grows without a quota and the queue renders every card."
-  ],
-  "x_source": "critic-2 missing_units"
+  "unresolved": [],
+  "x_source": "critic-2 missing_units",
+  "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 2. Every gated call creates an approval, preview and captures/{aid}.png with no pending cap; no code removes captures; host disk grows without a quota and the queue renders every card."
  },
  {
   "coverage_id": "agent-controlled%20audit%20content%20%28tool%20args%2C%20file%20names%2C%20process%20args%29::agentbox%2Faudit.py%23hash%20chain%20%2B%20append-only%20triggers%20%2B%20event%20provenance::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Business%20logic",
@@ -2231,15 +2229,14 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 3,
-  "status": "deferred",
-  "agent_id": null,
+  "status": "in_progress",
+  "agent_id": "h-preview",
   "reviewed_paths": [],
   "local_checks": [],
   "result_fingerprints": [],
-  "unresolved": [
-   "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 1. The approval-binding unit did not read sandbox.py preview or templates: impact list built by newline-splitting container output (agent-chosen names with newlines add/displace rows), only rm/curl recognised, 'could not compute' note only when both lists are empty, 200-row truncation; captures of an agent-controlled screen presented as system-taken."
-  ],
-  "x_source": "critic-2 missing_units"
+  "unresolved": [],
+  "x_source": "critic-2 missing_units",
+  "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 1. The approval-binding unit did not read sandbox.py preview or templates: impact list built by newline-splitting container output (agent-chosen names with newlines add/displace rows), only rm/curl recognised, 'could not compute' note only when both lists are empty, 200-row truncation; captures of an agent-controlled screen presented as system-taken."
  },
  {
   "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs::agentbox%2Fsandbox.py::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",

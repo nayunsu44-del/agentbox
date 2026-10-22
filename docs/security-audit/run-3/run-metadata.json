@@ -13,8 +13,8 @@
  "scope_paths": [
   "."
  ],
- "budget": 63,
- "budget_note": "Parent-proposed (the owner did not set a strict cap). Planned 40; extended to 45 after wave 2 produced 14 candidates so every candidate gets Phase 3 and Phase 5 verification. Three critic-2 units deferred for budget. Owner raised the cap to 50 and then 60 in the resuming session (Phase 3 re-runs, Phase 5 one verifier per record). In the Phase 5 session the owner approved Sonnet record verifiers, Opus re-verifiers for material replacements, and a cap of up to 63.",
+ "budget": 80,
+ "budget_note": "Parent-proposed (the owner did not set a strict cap). Planned 40; extended to 45 after wave 2 produced 14 candidates so every candidate gets Phase 3 and Phase 5 verification. Three critic-2 units deferred for budget. Owner raised the cap to 50 and then 60 in the resuming session (Phase 3 re-runs, Phase 5 one verifier per record). In the Phase 5 session the owner approved Sonnet record verifiers, Opus re-verifiers for material replacements, and a cap of up to 63. After the reports the owner asked to raise the budget and finish the remaining work; the parent set the cap to 80 (wave-3 hunters for the 3 deferred units, post-wave and final-clean critics, Phase 3/5 for the parent-observed lead and any new candidates).",
  "execution_policy": "sandboxed-source-and-local-only",
  "execution_note": "Agent-run target code (pure-function harnesses, unit tests) runs only through the parent's sbx wrapper: docker run --network none --read-only, host /usr and target mounted read-only, writes only to agents/<id>/scratch, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB memory, 1 CPU, 64 pids, 32 MiB file size, 120 s wall clock, explicit env allowlist (HOME, TMPDIR, PATH, PYTHONPATH, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE). Checks that need the real Docker-backed control plane (sandbox containers, desktop image) are run by the parent with dummy principals in a scratch AGENTBOX_HOME on loopback inside this disposable cloud container, as the owner requested; such checks are labelled parent-live in the ledger. Promotion uses the parent-side promote.py (no-follow dir_fd walk, single-link regular files, 256 KiB per file, 1 MiB per agent).",
  "companions_selected": [],
@@ -37,7 +37,7 @@
   }
  ],
  "shared_file_owner": "parent",
- "run_status": "incomplete",
+ "run_status": "in_progress",
  "agents_spent_so_far": {
   "recon": 4,
   "hunt_wave1": 11,
@@ -52,7 +52,7 @@
   "phase5_record_verifiers_sonnet": 13,
   "phase5_reverifiers_opus": 4
  },
- "run_status_note": "Phases 1-6 done for every candidate except one parent-observed lead (see incomplete_reason). Reports: REPORT.md, FINDINGS-DETAIL.md, NEEDS-VALIDATION.md.",
+ "run_status_note": "Resumed after the first set of reports: wave 3 (h-preview, h-queue, h-autostart), v16 for the parent-observed lead, then critics, Phase 3-6 for new work.",
  "agents_spent_total": 62,
  "incomplete_reason": "validation_budget_exhausted: every Phase 2 candidate went through Phase 3 and every retained record passed Phase 5, but the parent-live lead agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion (exec ledger unit, observed in l9 after Phase 3) had no independent candidate verifier: it needs two more agents (Phase 3 + Phase 5) and one remained of the owner-approved 63. It is not in findings.json. Also: three units proposed by critic-2 stayed deferred (budget_cannot_reserve_critics_and_validation) and no distinct final-clean critic ran, so the run makes no clean-coverage claim.",
  "phase3_format_discards": [
