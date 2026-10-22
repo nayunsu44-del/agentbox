@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import posixpath
 import re
 import secrets
@@ -225,6 +226,18 @@ def gui_strays(procs: list[dict[str, Any]], window_pids: set[int], baseline: set
     return sorted(out)
 
 
+def overlaps(a: Path, b: Path) -> bool:
+    """두 폴더가 같거나 한쪽이 다른 쪽 안에 있는가. 경로 문자열이 아니라 파일 시스템의 실체(장치·inode)로
+    비교한다. 대소문자를 가리지 않는 파일 시스템(WSL2 /mnt/c 등)의 다른 철자나 바인드 마운트처럼
+    심볼릭 링크가 아닌 다른 이름도 같은 폴더로 본다."""
+    def same(x: Path, y: Path) -> bool:
+        try:
+            return x == y or os.path.samefile(x, y)
+        except OSError:
+            return False
+    return any(same(x, b) for x in (a, *a.parents)) or any(same(a, y) for y in (b, *b.parents))
+
+
 def safe_path(path: str) -> str:
     """에이전트가 준 경로를 /workspace 또는 /source 아래로 제한한다."""
     p = path.strip() or WORKSPACE
@@ -401,7 +414,7 @@ class SandboxManager:
             # 원본은 컨테이너 root가 권한 검사 없이(DAC_OVERRIDE) 복사해 에이전트 소유로 바꾼다.
             # 데이터 폴더와 겹치면 사람 토큰·DB·다른 샌드박스 원본이 에이전트에게 넘어간다.
             for d in {self.settings.home.resolve(), self.settings.db_path.resolve().parent}:
-                if src == d or d in src.parents or src in d.parents:
+                if overlaps(src, d):
                     raise SandboxError(f"원본 폴더가 agentbox 데이터 폴더({d})와 겹침. 데이터 폴더 밖의 폴더를 고를 것")
         else:
             src = (self.settings.home / "sources" / sid).resolve()

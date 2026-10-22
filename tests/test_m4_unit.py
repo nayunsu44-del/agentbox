@@ -165,3 +165,39 @@ def test_runtime_problem():
     assert "runc" in runtime_problem("runc", exposed=True)
     for strong in ("runsc", "kata-fc", "kata-qemu-firecracker"):
         assert runtime_problem(strong, exposed=True) is None
+
+
+def test_overlap_uses_filesystem_identity(tmp_path, monkeypatch):
+    # run-3 v06: 경로 문자열만 비교해서, 같은 폴더의 다른 이름(대소문자를 가리지 않는 파일 시스템의 다른 철자,
+    # 바인드 마운트)은 데이터 폴더와 겹쳐도 통과했다.
+    import os
+    from agentbox.sandbox import overlaps
+    proj = tmp_path / "Users" / "Me" / "proj"
+    (proj / "data").mkdir(parents=True)
+    (tmp_path / "users" / "me" / "proj").mkdir(parents=True)
+    other = tmp_path / "other"
+    other.mkdir()
+    data = proj / "data"
+    assert overlaps(proj, data) and overlaps(data, data) and overlaps(data / "x", data)
+    assert not overlaps(other, data)
+    real = os.path.samefile
+    monkeypatch.setattr(os.path, "samefile", lambda a, b: str(a).lower() == str(b).lower() or real(a, b))
+    assert overlaps(tmp_path / "users" / "me" / "proj", data)   # 대소문자만 다른 철자
+    assert not overlaps(other, data)
+
+
+def test_overlap_sees_bind_mount_alias(tmp_path):
+    import os
+    import subprocess
+    from agentbox.sandbox import overlaps
+    if os.geteuid() != 0:
+        pytest.skip("바인드 마운트는 root가 필요")
+    proj, alias = tmp_path / "proj", tmp_path / "alias"
+    (proj / "data").mkdir(parents=True)
+    alias.mkdir()
+    if subprocess.run(["mount", "--bind", str(proj), str(alias)]).returncode != 0:
+        pytest.skip("바인드 마운트를 만들 수 없음")
+    try:
+        assert overlaps(alias, proj / "data")
+    finally:
+        subprocess.run(["umount", str(alias)])
