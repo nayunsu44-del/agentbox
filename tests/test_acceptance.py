@@ -339,3 +339,29 @@ def test_source_dir_overlapping_data_dir_refused(env):
     r = e.c.post("/sandboxes", json={"source_dir": str(e.src)}, headers=e.H)
     assert r.status_code == 201
     e.c.delete(f"/sandboxes/{r.json()['id']}", headers=e.H)
+
+
+# 에이전트가 만든 FIFO를 읽게 해도 도구 호출·사람의 내려받기가 멈추지 않는다
+def test_fifo_read_does_not_hang(env):
+    e = env
+    c = e.box.sandboxes._container(e.sid)
+    assert c.exec_run(["sh", "-c", "mkfifo /workspace/pipe /workspace/outbox/pipe"], user="1000:1000").exit_code == 0
+
+    def within(fn, limit=15):
+        """멈추면 테스트가 끝없이 기다리지 않고 실패하도록 다른 스레드에서 부른다."""
+        out = []
+        t = threading.Thread(target=lambda: out.append(fn()), daemon=True)
+        t.start()
+        t.join(limit)
+        assert out, f"{limit}초 안에 끝나지 않음"
+        return out[0]
+
+    def read(path):
+        return within(lambda: e.c.post(f"/sandboxes/{e.sid}/tools/read_file", json={"args": {"path": path}},
+                                       headers=e.A))
+
+    r = read("/workspace/pipe")
+    assert r.status_code == 400 and "일반 파일이 아님" in r.json()["detail"]
+    assert read("/workspace/outbox").status_code == 400                    # 폴더도 일반 파일이 아님
+    assert within(lambda: e.c.get(f"/sandboxes/{e.sid}/outbox/pipe", headers=e.H)).status_code == 400
+    assert "오래된" in read("/workspace/old-report.md").json()["result"]["content"]
