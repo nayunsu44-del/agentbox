@@ -74,7 +74,9 @@ def command_names(command: str) -> set[str]:
 
 
 # 출력을 버리는 리다이렉션은 파일을 바꾸지 않으므로 읽기 전용 판정에서 빼고 본다.
-_DEVNULL = re.compile(r"\d*>>?\s*/dev/null|\d*>&\d")
+# 단, '/dev/null' 뒤나 'N>&M' 뒤에 파일 이름 글자가 이어지면(예: '>&2evil', '>/dev/nullx')
+# 그건 진짜 파일 리다이렉션이므로 벗겨내지 않는다(뒤의 '>' 검사가 승인으로 보내도록).
+_DEVNULL = re.compile(r"\d*>>?\s*/dev/null(?![\w./-])|\d*>&\d+(?![\w./-])")
 
 # bash에서 '#'이 주석을 여는 자리(줄 맨 앞, 또는 따옴표 밖 공백·구분자 바로 뒤).
 _COMMENT_BOUNDARY = set(" \t\n\r;&|()")

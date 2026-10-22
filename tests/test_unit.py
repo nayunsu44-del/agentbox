@@ -156,3 +156,25 @@ def test_parse_outbox_skips_malformed_numeric():
 
 def test_parse_outbox_empty():
     assert _parse_outbox(b"") == []
+
+
+# --- 검수 반영: _DEVNULL 이 '>&<숫자>파일' 리다이렉트를 벗겨 승인을 건너뛰던 문제 ---
+@pytest.mark.parametrize("cmd", [
+    "echo DATA >&2evil",          # 파일 '2evil' 로 리다이렉트 → 승인
+    "echo x >/dev/nullevil",      # '/dev/null' 로 시작하는 다른 파일 → 승인
+    "echo x >/dev/null/../out",   # /dev/null 아래 경로처럼 보이는 것 → 승인
+    "echo x >&1foo",              # fd 복제가 아닌 파일 리다이렉트 → 승인
+])
+def test_devnull_lookalike_redirect_needs_approval(cmd):
+    assert simple_programs(cmd) is None
+    assert ALLOWLIST.decide("exec", {"command": cmd}).action == "require_approval"
+
+
+@pytest.mark.parametrize("cmd,progs", [
+    ("echo ok > /dev/null", {"echo"}),     # 진짜 버리기
+    ("ls 2>/dev/null", {"ls"}),            # stderr 버리기
+    ("echo hi >&2", {"echo"}),             # stderr 로 fd 복제 (파일 안 만듦)
+    ("cat a 2>&1", {"cat"}),               # fd 복제
+])
+def test_devnull_and_fd_dup_still_read_only(cmd, progs):
+    assert simple_programs(cmd) == progs
