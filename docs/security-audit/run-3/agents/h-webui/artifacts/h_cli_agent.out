@@ -1,0 +1,7 @@
+captured stdout bytes (repr):
+b'LLM: openai m @ https://api.openai.com/v1   \xec\x83\x8c\xeb\x93\x9c\xeb\xb0\x95\xec\x8a\xa4: sb_dummy\n[\xec\x82\xac\xec\x9a\xa9\xec\x9e\x90] do task\n[\xec\x97\x90\xec\x9d\xb4\xec\xa0\x84\xed\x8a\xb8] model says\x1b[2J\n  \xe2\x86\x92 read_file({"path": "/workspace/README"})\nline1\x1b[2K\x1b[1A\x1b[2K[forged] all good\x1b]52;c;ZWNobyBwd25lZA==\x07\n  \xe2\x86\x92 list_dir({"path": "/workspace"})\nevil\x1b[31mname\n  \xe2\x86\x92 exec({"command": "cat x"})\n{\n  "exit_code": 0,\n  "stdout": "out\xc2\x9b2K\xc2\x9b1Ahidden"\n}\n\xeb\x8f\x84\xea\xb5\xac \xed\x98\xb8\xec\xb6\x9c 3\xed\x9a\x8c, LLM \xed\x98\xb8\xec\xb6\x9c 2\xed\x9a\x8c\n'
+raw ESC (0x1b) bytes in operator stdout: 6
+raw C1 CSI (U+009B as c2 9b) in operator stdout: 2
+OSC 52 clipboard sequence present raw: True
+for comparison cli._safe(read_file content) = line1\x1b[2K\x1b[1A\x1b[2K[forged] all good\x1b]52;c;ZWNobyBwd25lZA==\x07
+cli._safe escapes ESC: True  escapes C1: True

@@ -1445,13 +1445,68 @@
   "prior_status": "prior_covered_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-webui",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/cli.py",
+   "agentbox/desktop.py",
+   "agentbox/templates/_created.html",
+   "agentbox/web.py",
+   "deploy/Caddyfile"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-webui",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/api.py",
+     "agentbox/desktop.py"
+    ],
+    "invariant": "Every cookie-authenticated state-changing route rejects cross-origin requests (SameSite=Strict + same_origin).",
+    "method": "source",
+    "result": "POST /login and /logout call same_origin (web.py:118,130); POST /ui/sandboxes, /ui/approvals/{aid}/{decision}, snapshots/restore/delete use browser_human=screen_human (api.py:437, web.py:160-256); POST files uses screen_human; takeover/handback use desktop_human; all go through screen_principal -> same_origin (api.py:115-124). No method override, no CORS. Cookie HttpOnly, SameSite=Strict, Secure under TLS. Gap: Origin comparison ignores scheme (candidate).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-webui",
+    "reviewed_paths": [
+     "agentbox/api.py"
+    ],
+    "invariant": "same_origin accepts only the server's own origin.",
+    "method": "local",
+    "result": "same_origin() copied verbatim from api.py:108-110 run in sbx: accepts http://agentbox.example.com vs Host agentbox.example.com and http://H:8765 vs H:8765; accepts missing Origin; rejects sibling same-site, other localhost port, null. Scheme never checked.",
+    "artifact": "agents/h-webui/artifacts/h_origin.out"
+   },
+   {
+    "agent_id": "h-webui",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/desktop.py",
+     "agentbox/cli.py",
+     "deploy/Caddyfile",
+     "agentbox/templates/_created.html"
+    ],
+    "invariant": "Login CSRF / ticket redemption cannot bind a victim to an attacker-chosen session; Host/forwarded headers cannot redirect credentials.",
+    "method": "source",
+    "result": "Holds: tickets one-time, hashed, 60 s, scope-checked, human-minted; POST /login needs the 192-bit token; AGENTBOX_URL in _created.html from the human's own same-origin POST; DNS rebinding gets no host-bound cookie; proxy_headers affects only scheme/client of the requester's own request.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-webui"
+  "x_planned_hunter": "h-webui",
+  "x_hardening": [
+   "Same-site no-Origin GETs with side effects (GET outbox file writes file_exported; GET /ui/verify appends audit_verified) triggerable from a same-site page via <img>; check Sec-Fetch-Site or make audit-writing actions POST.",
+   "POST /login has no rate limit and logs each failure.",
+   "No TrustedHostMiddleware and no HSTS.",
+   "cli._safe misses U+061C.",
+   "Web approval card shows non-exec args via short(400); show full args if more tools become gated.",
+   "cmd_snapshots and _check print without _safe (control-plane strings today).",
+   "capture.png lacks X-Content-Type-Options: nosniff."
+  ]
  },
  {
   "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs::agentbox%2Fsandbox.py::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",
@@ -1855,13 +1910,111 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-webui",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/agent.py",
+   "agentbox/api.py",
+   "agentbox/cli.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/static/htmx.min.js",
+   "agentbox/templates/_approvals.html",
+   "agentbox/templates/_audit.html",
+   "agentbox/templates/_error.html",
+   "agentbox/templates/_notify.html",
+   "agentbox/templates/_outbox.html",
+   "agentbox/templates/_sandboxes.html",
+   "agentbox/templates/_snapshots.html",
+   "agentbox/templates/_verify.html",
+   "agentbox/templates/base.html",
+   "agentbox/templates/sandbox.html",
+   "agentbox/web.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-webui",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/templates/_approvals.html",
+     "agentbox/templates/_audit.html",
+     "agentbox/templates/_outbox.html",
+     "agentbox/templates/_notify.html",
+     "agentbox/templates/_error.html",
+     "agentbox/templates/_snapshots.html",
+     "agentbox/templates/_sandboxes.html",
+     "agentbox/templates/_verify.html"
+    ],
+    "invariant": "Container/agent strings reach the browser only through escaped text or quoted attributes.",
+    "method": "source",
+    "result": "Starlette 1.7.0 Jinja2Templates uses select_autoescape(); all templates .html; no |safe/Markup; describe/_short plain str escaped; container strings only in text or double-quoted attributes (outbox td/data-notify/data-text/download, urlencoded href; approvals args/preview; errors); only inline-script value is integer broken_at. No HTML/script injection. Bidi controls survive escaping (candidate).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-webui",
+    "reviewed_paths": [
+     "agentbox/templates/base.html",
+     "agentbox/templates/sandbox.html",
+     "agentbox/static/htmx.min.js",
+     "agentbox/desktop.py",
+     "agentbox/api.py"
+    ],
+    "invariant": "Client JS does not move container data into an executing DOM sink.",
+    "method": "source",
+    "result": "Notification body / sessionStorage / textContent only; ids server-generated; htmx 2.0.11 selfRequestsOnly; noVNC from the trusted image; outbox downloads attachment+octet-stream+nosniff. No DOM XSS.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-webui",
+    "reviewed_paths": [
+     "agentbox/cli.py",
+     "agentbox/service.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Terminal paths carrying agent/container strings use cli._safe.",
+    "method": "source",
+    "result": "_show_approval, approve results, audit detail use _safe; raw prints (event, tool validated against TOOLS, actor, human source_dir, control-plane snapshot reasons, server _check messages) carry no lower-trust content. Exception: cmd_agent log() (candidate).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-webui",
+    "reviewed_paths": [
+     "agentbox/cli.py",
+     "agentbox/agent.py"
+    ],
+    "invariant": "agentbox agent does not write container bytes raw to the operator terminal.",
+    "method": "local",
+    "result": "Fake LLM + fake ToolClient harness: cli.main(['agent',...]) wrote 6 raw ESC, 2 raw C1 CSI (U+009B) and a full OSC 52 sequence to stdout from read_file content, list_dir names, exec stdout (json.dumps ensure_ascii=False keeps C1) and model text; _safe escapes the same strings.",
+    "artifact": "agents/h-webui/artifacts/h_cli_agent.out"
+   },
+   {
+    "agent_id": "h-webui",
+    "reviewed_paths": [
+     "agentbox/templates/_approvals.html",
+     "agentbox/cli.py"
+    ],
+    "invariant": "Web approval card neutralises the display-reordering characters the terminal approver escapes.",
+    "method": "local",
+    "result": "cli._safe turns U+2067/U+2069 into visible escapes; <pre>{{ a.args.command }}</pre> applies HTML escaping only and the bidi controls survive (html.escape stood in for markupsafe). Side: _safe misses U+061C.",
+    "artifact": "agents/h-webui/artifacts/h_bidi.out"
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe",
+   "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-webui"
+  "x_planned_hunter": "h-webui",
+  "x_hardening": [
+   "Same-site no-Origin GETs with side effects (GET outbox file writes file_exported; GET /ui/verify appends audit_verified) triggerable from a same-site page via <img>; check Sec-Fetch-Site or make audit-writing actions POST.",
+   "POST /login has no rate limit and logs each failure.",
+   "No TrustedHostMiddleware and no HSTS.",
+   "cli._safe misses U+061C.",
+   "Web approval card shows non-exec args via short(400); show full args if more tools become gated.",
+   "cmd_snapshots and _check print without _safe (control-plane strings today).",
+   "capture.png lacks X-Content-Type-Options: nosniff."
+  ]
  },
  {
   "coverage_id": "every%20audit%20append%20%28tool%20args%2C%20results%2C%20errors%2C%20GUI%20records%29::agentbox%2Faudit.py%23mask_text%20%2B%20_mask::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",

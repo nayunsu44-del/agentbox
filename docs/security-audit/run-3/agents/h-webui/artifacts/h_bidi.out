@@ -1,0 +1,4 @@
+web card sink: <pre>{{ a.args.command }}</pre>
+terminal approver shows: echo 'listing done \u2067' ; sh /workspace/x.sh ; echo '\u2069'
+HTML-escaped text still contains bidi controls: ['0x2067', '0x2069']
+cli._safe covers U+061C ARABIC LETTER MARK: False
