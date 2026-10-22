@@ -76,3 +76,28 @@ pytest                                                 # 160 passed
 - `run-2/findings.json`: 현재 기준 전체 10건 구조화 레코드(확정 9 · 기각 1, 검증기 통과). 트레이스 줄 번호는 감사 기준 커밋 `7fc501f` 기준이다.
 - `run-2/repro/`: 재현 스크립트 8개. `run-2/n1-terminal-via-gui-tools.png`: N-1 증거 스크린샷.
 - `run-1/`: 1차 감사 산출물(REPORT, FINDINGS-DETAIL, NEEDS-VALIDATION, findings, coverage-ledger, architecture, run-metadata). 기록으로 두고 고치지 않는다.
+
+## 3차 감사(run-3) 진행 상태 — 다음 세션이 여기서 이어받는다
+
+작업 브랜치: `ccr-df7eb88d-1nmb5q` (PR #6 브랜치 `ccr-e10bee8e-6wt669`의 커밋 18개 + 이후 커밋). **PR #6 브랜치에는 아직 반영하지 않았다**(사용자 허락 필요). 사용량 한도로 3단계 중간에 멈췄다(한도 해제 15:30 UTC).
+
+### 3단계 결과 (후보 14개)
+| 검증자 | 후보(fingerprint 요약) | 상태 |
+|---|---|---|
+| v02 | audit.py:list 타임라인 5000행 고정 | **확정 medium** — `agents/v02/result.json` 저장·승격 완료 |
+| v04 | cli.py runtime_problem runc 별칭 | **기각** (운영자 설정, 경계 없음) — 방어 강화 메모: 거부 목록→허용 목록 |
+| v05 | desktop.py 사람 토큰 교체해도 브라우저 세션 유지 | **확정 medium** — 저장·승격 완료 (패치 초안 `agents/v05/artifacts/desktop_fixed.py`) |
+| v07 | gui_strays _NET_WM_PID | 이전 세션이 **기각**했으나 레코드가 소실됨 → **v15로 재검증 필요** (`agents/v15/prompt.md` 준비됨) |
+| v12 | service.py GUI 구간 상태가 restore/pause에서 유실 | 검증자는 **확정 low**를 냈으나 trace에 `sink` 2개로 스키마 위반 → 폐기. 내용은 `agents/v12/result.rejected-by-validator.json`에 참고용 보존. **새 검증자로 재실행** |
+| v01 v03 v08 v09 v10 v11 v13 v14 | — | 한도로 중도 종료(결과 없음). **새로 실행** (v08은 확정 직전이었음) |
+| v06 | source_dir 대소문자 우회 | 아직 실행 안 함. 이 커널은 대소문자 무시 FS가 없어 로컬 재현 불가 → needs_validation 유력 |
+
+에이전트 사용: 이전 19 + v07(소실) 1 + 이번 세션 12(완료 4 + 중도 종료 8) = **32회**. 남은 일을 하려면 재실행 10(v01,v03,v06,v08,v09,v10,v11,v12,v13,v14)+v15, 5단계 재검증이 더 필요해 40~45를 넘길 수 있다 → 사용자에게 상한을 다시 확인할 것.
+
+### 이어서 하는 법
+1. 환경: `nohup dockerd &` → `pip install -e '.[test]'` → 이미지는 Docker Hub가 429면 `mirror.gcr.io/library/<이미지>`로 받아 `docker tag`(buildpack-deps:noble-curl, ubuntu:24.04) → `docker build -t agentbox-desktop:0.1 images/desktop`. 스킬은 `git clone --depth 1 https://github.com/cloudflare/security-audit-skill`. 베이스라인 pytest 205개 통과 확인됨.
+2. 도구는 `docs/security-audit/run-3/tools/`: `sbx`(격리 실행기), `promote.py`(부모 전용 승격, no-follow), `ingest.py`(검증자 결과 엄격 파싱·스키마 검증·승격). 파일 안의 절대 경로(스크래치패드, 스킬 경로)를 새 세션 값으로 고칠 것. 검증자별 `agents/vNN/scratch`는 `chown 65534`로 미리 만들어 둔다.
+3. 검증자는 `agents/vNN/prompt.md`를 읽고 따르게 하고, `sbx` 경로만 새 위치를 알려준다. v09는 부모 실측 `agents/parent-live/artifacts/l7_burst_open.{py,out}`(pid 압력 시 구간이 빈 기준으로 조용히 기록되고 gui_changes가 실제 변경을 가림)를 추가 증거로 알려 줄 것(단 압력 프로세스가 exec로 떴다는 한계도 함께).
+4. 결과가 다 모이면 장부(`coverage-ledger.json`)에 검증자 check와 `x_decisions` 반영(v07 때 형식 참고) → 4단계 `findings.json` → 두 검증기 → 5단계 독립 재검증 → 보고서 → 확정 건 수정.
+5. 확정 건의 수정 방향(검증자 제안): v02는 `AuditLog.recent()`로 최신 N건+실제 총계, CLI는 `after_id` 페이징. v05는 사람 토큰 지문(gen)을 세션·티켓에 묶고 시작 시 불일치 행 삭제 + owner용 revoke-all. 둘 다 회귀 테스트 필요.
+6. 부수 관찰: 구간 기준(pid 집합)이 낡은 상태에서 닫으면 `gui_strays`가 새로 뜬 데스크톱 세션 전체를 죽인다(컨테이너 재시작 후 실험에서 확인). v12 후보와 같은 뿌리라 검증자에게 알릴 것.

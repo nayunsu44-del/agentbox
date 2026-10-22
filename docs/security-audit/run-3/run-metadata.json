@@ -43,6 +43,10 @@
     "hunt_wave1": 11,
     "critic_post_wave1": 1,
     "hunt_wave2": 2,
-    "critic_post_wave2": 1
-  }
+    "critic_post_wave2": 1,
+    "phase3_verifiers_prior_session_record_lost": 1,
+    "phase3_verifiers_this_session_completed": 4,
+    "phase3_verifiers_this_session_aborted_rate_limit": 8
+  },
+  "run_status_note": "Paused at Phase 3 (usage limit). See docs/security-audit/HANDOFF.md section 'run-3 진행 상태'."
 }
