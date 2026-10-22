@@ -65,7 +65,7 @@ docker compose exec agentbox agentbox ui --base-url https://agentbox.example.com
 
 - `AGENTBOX_SITE`가 공개 도메인이면 Caddy가 인증서를 자동으로 받는다 (80·443 포트가 열려 있어야 함). 비우면 `localhost`로 뜨고 Caddy 내부 CA로 서명한다 (개발용, 브라우저 경고). 포트는 `AGENTBOX_HTTPS_PORT`·`AGENTBOX_HTTP_PORT`로 바꾼다.
 - 데이터 폴더(compose 변수 `AGENTBOX_HOME_DIR`, 기본 `/var/lib/agentbox`. 컨테이너 안에서는 이 값이 `AGENTBOX_HOME`이 된다)는 호스트와 컨테이너에서 같은 경로로 마운트한다. 샌드박스의 `/source`를 호스트 Docker 데몬이 마운트하기 때문이다. 파일은 웹 UI로 넣는다.
-- 컨트롤 플레인 컨테이너는 `/var/run/docker.sock`을 쓴다. 이 소켓은 호스트 root 권한과 같으므로 이 컨테이너만 쓰게 둔다. gVisor 등 격리 런타임은 호스트 데몬에 설치한다.
+- 컨트롤 플레인 컨테이너는 `/var/run/docker.sock`을 쓴다. 이 소켓은 호스트 root 권한과 같으므로 이 컨테이너만 쓰게 둔다. gVisor 등 격리 런타임은 호스트 데몬에 설치한다. 설치하지 않으면 컨트롤 플레인이 뜨지 않는다 (아래 참고).
 - 에이전트 쪽 MCP 설정은 `AGENTBOX_URL=https://agentbox.example.com`. 내부 CA를 쓰면 `SSL_CERT_FILE`로 그 루트 인증서를 믿게 한다 (`docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt`).
 
 `agentbox serve`는 TLS 없이 127.0.0.1 밖에 열지 않는다. 직접 열 때는 셋 중 하나를 고른다.
@@ -77,6 +77,8 @@ docker compose exec agentbox agentbox ui --base-url https://agentbox.example.com
 | 평문 (권장하지 않음) | `agentbox serve --host 0.0.0.0 --insecure` → 경고를 띄우고 연다 | Secure 없음 |
 
 옵션 없이 `--host 0.0.0.0`만 주면 이유를 출력하고 뜨지 않는다. `AGENTBOX_SECURE_COOKIE=1`로 Secure를 강제할 수도 있다.
+
+밖에 열 때(위 세 방법, compose 포함)는 격리 런타임도 확인한다. Docker에 gVisor(runsc)나 Kata 같은 강한 런타임이 없어 runc로 돌게 되면, 호스트 커널을 그대로 공유하는 샌드박스를 다른 컴퓨터에 내놓게 되므로 이유를 출력하고 뜨지 않는다. 위험을 알고 쓰려면 `--allow-runc`(compose는 `AGENTBOX_ALLOW_RUNC=1`)로 경고만 띄우고 연다. 127.0.0.1에서만 여는 개발용 `agentbox serve`는 지금처럼 경고만 하고 뜬다.
 
 이미지는 `AGENTBOX_IMAGE`로 바꿀 수 있다. `bash`, `coreutils`(timeout, ls, head, find)가 있고 uid 1000 사용자가 쓸 수 있으면 된다.
 
@@ -259,6 +261,7 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 | `AGENTBOX_HUMAN_TOKEN` | (파일에 생성) | 사람 토큰 지정 |
 | `AGENTBOX_IMAGE` | `buildpack-deps:noble-curl` | cli 템플릿 이미지 |
 | `AGENTBOX_RUNTIME` | `auto` | 격리 런타임 (`runsc`, `runc` 등으로 고정 가능) |
+| `AGENTBOX_ALLOW_RUNC` | (없음) | `1`이면 강한 격리 런타임이 없어도 runc로 밖에 연다 (`serve --allow-runc`와 같음, 권장하지 않음) |
 | `AGENTBOX_MEM` · `AGENTBOX_CPUS` · `AGENTBOX_PIDS` | `512m` · `1.0` · `256` | cli 샌드박스 자원 상한 |
 | `AGENTBOX_DISK` | (없음) | 디스크 상한 (xfs+pquota일 때만) |
 | `AGENTBOX_EXEC_TIMEOUT` | `60` | exec 한 번의 제한 시간(초) |
@@ -332,7 +335,7 @@ Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테
 | SB-3 스냅샷·복원 | 완료 | `docker commit`, 작업 폴더가 컨테이너 레이어에 있어 스냅샷에 포함됨 |
 | SB-4 네트워크 차단 | 완료 | `network=none` |
 | SB-5 자원 상한 | 일부 | CPU·메모리·프로세스 수 적용. 디스크는 `AGENTBOX_DISK` (overlay가 xfs+pquota일 때만 동작) |
-| SB-6 격리 백엔드 감지 | 완료 | Docker에 등록된 런타임 중 kata-fc → runsc(gVisor) → runc 순으로 강한 것 선택. runc와 runsc(systrap)에서 검증, Firecracker(kata-fc)는 미검증 |
+| SB-6 격리 백엔드 감지 | 완료 | Docker에 등록된 런타임 중 kata-fc → runsc(gVisor) → runc 순으로 강한 것 선택. runc와 runsc(systrap)에서 검증, Firecracker(kata-fc)는 미검증. 밖에 열 때 runc밖에 없으면 뜨지 않음(`--allow-runc`로 허용) |
 | TL-1 도구 | 완료 | `exec`, `read_file`, `list_dir`, `write_file`, `delete_file` |
 | TL-2 GUI 도구 | 완료 | `screenshot`, `click`, `type`, `key` (xdotool, scrot) |
 | PL-1 YAML 정책 | 완료 | allow / deny / require_approval |
@@ -371,7 +374,6 @@ Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테
 - 데스크톱 이미지는 약 1.35GB이고, 데스크톱 샌드박스 하나가 메모리 1.5GB·CPU 2개를 상한으로 쓴다.
 - 검수(2026-10-22)에서 나온 것 중 아직 고치지 않은 것:
   - 데스크톱 템플릿의 GUI 도구(`click`·`type`·`key`)는 컨트롤 플레인이 막지 않는 실행 경로다. 에이전트가 터미널을 열어(예: Ctrl+Alt+T) uid 1001로 명령을 실행하거나 파일 관리자·편집기로 `/workspace`를 바꿀 수 있고, exec 허용 목록과 승인은 적용되지 않는다. 대신 GUI 구간마다 스냅샷을 떠서 되돌릴 수 있고, 바뀐 파일은 `gui_changes`로 기록된다(막지는 않는다). 되돌리면 그 구간의 정상 작업도 같이 사라진다. GUI로 띄운 백그라운드 프로세스는 구간이 끝난 뒤에도 돌며 파일을 바꿀 수 있고, 이때는 마지막 스냅샷까지만 되돌릴 수 있다. 감사 로그에는 입력한 문자열이 남는다.
-  - gVisor가 없으면 경고만 하고 runc로 돈다 (`AGENTBOX_RUNTIME=runsc`로 고정하면 없을 때 실패한다).
   - `source_dir`는 데이터 폴더와 겹치는 경로만 거부한다. 그 밖의 경로(예: 홈 폴더)는 그대로 복사되고, 컨테이너 root가 권한 검사 없이 복사하므로 0600 파일도 에이전트가 읽게 된다. 에이전트에게 보여도 되는 폴더만 고를 것.
 - 승인 화면의 영향 파일 계산은 `rm`과 `curl`만 안다. 그 밖의 명령이 규칙에 걸리면 "자동 계산 못 함"을 표시하고 명령 원문을 보여준다.
 

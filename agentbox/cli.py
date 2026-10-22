@@ -78,6 +78,16 @@ def bind_problem(host: str, tls: bool, behind_tls_proxy: bool) -> str | None:
             "--behind-tls-proxy를 쓸 것 (deploy/의 docker compose 참고)")
 
 
+def runtime_problem(runtime: str, exposed: bool) -> str | None:
+    """밖에 여는 컨트롤 플레인이 runc로 샌드박스를 돌리면 문제가 있다는 이유를 돌려준다.
+    runc 컨테이너는 호스트 커널을 그대로 쓰므로, 커널 취약점 하나로 샌드박스를 벗어날 수 있다."""
+    if runtime != "runc" or not exposed:
+        return None
+    return ("격리 런타임이 runc다 (호스트 커널을 그대로 공유, 개발 전용). 다른 컴퓨터에서 붙는 컨트롤 플레인은 "
+            "gVisor(runsc) 등 강한 격리 런타임으로만 띄운다. README의 'gVisor로 더 강하게 격리하기'대로 설치하거나, "
+            "위험을 알고 쓰려면 --allow-runc (또는 AGENTBOX_ALLOW_RUNC=1)")
+
+
 def cmd_serve(a: argparse.Namespace) -> None:
     import uvicorn
 
@@ -95,6 +105,17 @@ def cmd_serve(a: argparse.Namespace) -> None:
     s = Settings()
     s.secure_cookie = s.secure_cookie or tls or behind
     app, box, token = build(s)
+    exposed = tls or behind or not is_loopback(a.host)
+    allow_runc = a.allow_runc or os.environ.get("AGENTBOX_ALLOW_RUNC", "") in ("1", "true", "yes")
+    problem = runtime_problem(box.sandboxes.runtime, exposed)
+    if problem and not allow_runc:
+        box.close()
+        sys.exit(f"{RED}{problem}{RESET}")
+    if problem:
+        print(f"{RED}{BOLD}경고: --allow-runc로 runc 샌드박스를 밖에 연다.{RESET} {problem}", file=sys.stderr)
+    elif box.sandboxes.runtime == "runc":
+        print(f"{YELLOW}! 격리 런타임이 runc다. 개발 전용 (호스트 커널을 그대로 공유). "
+              f"127.0.0.1에서만 열린다.{RESET}", file=sys.stderr)
     scheme = "https" if tls else "http"
     print(f"{BOLD}agentbox 컨트롤 플레인{RESET}  {scheme}://{a.host}:{a.port}"
           + ("  (TLS 프록시 뒤)" if behind else ""))
@@ -365,6 +386,8 @@ def main(argv: list[str] | None = None) -> None:
                    help="TLS는 앞단 프록시(Caddy 등)가 맡는다. 쿠키에 Secure를 붙인다")
     s.add_argument("--insecure", action="store_true",
                    help="TLS 없이 127.0.0.1 밖에 연다 (경고만 하고 허용, 권장하지 않음)")
+    s.add_argument("--allow-runc", action="store_true",
+                   help="강한 격리 런타임(gVisor 등)이 없어도 runc로 밖에 연다 (경고만 하고 허용, 권장하지 않음)")
     s.set_defaults(fn=cmd_serve)
 
     s = sub.add_parser("create", help="샌드박스 생성")

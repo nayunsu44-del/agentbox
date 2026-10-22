@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from agentbox.cli import bind_problem, is_loopback
+from agentbox.cli import bind_problem, is_loopback, runtime_problem
 from agentbox.config import Settings
 from agentbox.policy import Policy, simple_programs
 from agentbox.desktop import DesktopControl
@@ -121,3 +121,10 @@ def test_simple_programs():
     assert DEFAULT.decide("list_dir", {"path": "/workspace"}).action == "allow"
     assert DEFAULT.decide("write_file", {"path": "/workspace/a"}).action == "allow"
     assert DEFAULT.decide("delete_file", {"path": "/workspace/a"}).action == "require_approval"
+
+
+def test_runtime_problem():
+    assert runtime_problem("runc", exposed=False) is None          # 127.0.0.1 개발용
+    assert "runc" in runtime_problem("runc", exposed=True)
+    for strong in ("runsc", "kata-fc", "kata-qemu-firecracker"):
+        assert runtime_problem(strong, exposed=True) is None
