@@ -1,0 +1,8 @@
+token mode 0o600
+REFUSED  /scratch/w/Users/Me/proj
+REFUSED  /scratch/w/Users/Me/proj/data
+REFUSED  /scratch/w/Users
+ACCEPTED /scratch/w/users/me/proj -> bind {'/scratch/w/users/me/proj': {'bind': '/source', 'mode': 'ro'}}
+samefile(alias, proj) under simulation: True
+identity-alias: ACCEPTED -> bind {'/scratch/w/users/me/proj': {'bind': '/source', 'mode': 'ro'}}
+create() mentions samefile/st_ino/casefold: False

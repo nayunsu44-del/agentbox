@@ -3,8 +3,8 @@
   "verdict": "needs_validation",
   "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
   "title": "same_origin ignores the scheme, so a plaintext http:// page on the same host passes the CSRF origin check of a TLS deployment",
-  "description": "Every cookie-authenticated UI mutation ultimately relies on same_origin() (api.py:108-110), which compares only urlsplit(Origin).netloc with the Host header and never the scheme. Verified in-sandbox: http://H, http://H:8765, and http://agentbox.example.com are all accepted against the matching Host, while sibling same-site, wrong port, and null are rejected. In a TLS deployment a page served as plaintext http://H (forgeable by an active network attacker; no Strict-Transport-Security is set anywhere in agentbox/ or deploy/, and Caddy's reverse_proxy adds none) has a different web origin from https://H but passes this check. On a browser WITHOUT schemeful same-site, http://H and https://H count as same-site, so a SameSite=Strict Secure cookie (desktop.py:53) is attached to the auto-submitted cross-scheme POST and agentbox accepts it. Id-free actions: POST /logout (ends the server session and hands desktop takeover back to the agent) and POST /ui/sandboxes (creates a sandbox with an attacker-supplied source_dir). Approve/deny additionally needs the 48-bit apr_ approval id. DECISIVE CAVEAT from parent-live evidence (agents/parent-live/artifacts/l3/l4.out): on current Chromium 141 the cross-scheme POST had same_origin accept its Origin but the Secure SameSite=Strict cookie was NOT attached (schemeful same-site is the modern default), so the session-ending and create attacks fail there; the only effect was the unconditional r.delete_cookie on the logout response clearing the browser cookie client-side (forced browser logout) WITHOUT ending the server session. The finding therefore stands only on legacy/non-schemeful browsers; the exploitable browser population and HSTS/active-network-attacker deployment remain the open facts.",
-  "claimed_root_cause": "api.py:108-110: same_origin() accepts when urlsplit(origin).netloc == headers['host'] with no scheme comparison, so the cross-origin defence degrades to the browser treating http/https of one host as cross-site; nothing in source emits Strict-Transport-Security (deploy/Caddyfile and all of agentbox/ set none), so an active network attacker can serve http://H.",
+  "description": "Every cookie-authenticated UI mutation ultimately relies on same_origin() (api.py:108-110), which compares only urlsplit(Origin).netloc with the Host header and never the scheme. Verified in-sandbox: http://H, http://H:8765, and http://agentbox.example.com are all accepted against the matching Host, while sibling same-site, wrong port, and null are rejected. In a TLS deployment a page served as plaintext http://H (forgeable by an active network attacker; no Strict-Transport-Security is set anywhere in agentbox/, deploy/ or images/, and Caddy's reverse_proxy adds none) has a different web origin from https://H but passes this check. On a browser WITHOUT schemeful same-site, http://H and https://H count as same-site, so a SameSite=Strict Secure cookie (desktop.py:53) would be attached to the auto-submitted cross-scheme POST and agentbox would accept it. Id-free actions: POST /logout (ends the server session and hands desktop takeover back to the agent) and POST /ui/sandboxes (creates a sandbox with an attacker-supplied source_dir). Approve/deny additionally needs the 48-bit apr_ approval id (approvals.py:51, token_hex(6)), so a blind attacker is limited to the id-free actions. DECISIVE CAVEAT from parent-live evidence (agents/parent-live/artifacts/l3/l4.out, script l4.cjs): on Chromium 141 the cross-scheme POST had same_origin accept its Origin but the Secure SameSite=Strict cookie was NOT attached (schemeful same-site), so the session-ending and create attacks fail there; the only effect was the unconditional r.delete_cookie on the logout response clearing the browser cookie client-side (forced browser logout) WITHOUT ending the server session. Firefox and WebKit were not tested. The finding therefore stands only on browsers without schemeful same-site; the exploitable browser population and the HSTS/active-network-attacker deployment facts remain open.",
+  "claimed_root_cause": "api.py:108-110: same_origin() accepts when urlsplit(origin).netloc == headers['host'] with no scheme comparison, so the cross-origin defence degrades to the browser treating http/https of one host as cross-site; nothing in source emits Strict-Transport-Security (deploy/Caddyfile, agentbox/ and images/ set none), so an active network attacker can serve http://H.",
   "trace": [
    {
     "kind": "entrypoint",
@@ -54,7 +54,7 @@
    {
     "file": "deploy/Caddyfile",
     "line": 4,
-    "description": "reverse_proxy site block emits no Strict-Transport-Security; grep over agentbox/ and deploy/ found no HSTS anywhere, so the browser is not forced to upgrade http://H to https."
+    "description": "reverse_proxy site block emits no Strict-Transport-Security; grep over agentbox/, deploy/ and images/ found no HSTS anywhere, so the browser is not forced to upgrade http://H to https."
    },
    {
     "file": "agentbox/web.py",
@@ -64,17 +64,16 @@
    {
     "file": "docs/security-audit/run-3/agents/parent-live/artifacts/l3/l4.out",
     "line": 4,
-    "description": "Parent-live real Chromium 141: cross-scheme POST http://127.0.0.1 -> https://127.0.0.1/logout had same_origin accept the http Origin (netloc==Host) but the Secure SameSite=Strict cookie was NOT attached (schemeful same-site); server session not ended, only the delete_cookie forced a client-side logout. Resolves the modern-browser case as non-exploitable and narrows the finding to legacy/non-schemeful browsers."
+    "description": "Parent-live (not a verifier reproduction) real Chromium 141, script l4.cjs: cross-scheme POST http://127.0.0.1 -> https://127.0.0.1/logout had same_origin accept the http Origin (netloc==Host) but the Secure SameSite=Strict cookie was NOT attached (schemeful same-site); server session not ended, only the delete_cookie forced a client-side logout. Resolves the Chromium 141 case as non-exploitable; Firefox/WebKit untested."
    }
   ],
   "blockers": [
-   "Browser behaviour (decisive): whether any operator browser lacks schemeful same-site and so attaches a SameSite=Strict Secure cookie to a cross-scheme form POST from http://H to https://H. Parent-live Chromium 141 did NOT attach it (schemeful same-site), so the meaningful attack fails on current Chromium/Firefox/WebKit defaults; the finding depends on legacy/non-schemeful browser versions, which source cannot determine.",
-   "Deployment: whether the production host sends HSTS or is preloaded (none in source), and whether an active on-path network attacker who can serve plaintext http://H is in scope.",
-   "Approve/deny requires the 48-bit apr_ approval id; a blind cross-origin attacker is limited to POST /logout and POST /ui/sandboxes."
+   "Browser behaviour (decisive): whether any operator browser lacks schemeful same-site and so attaches a SameSite=Strict Secure cookie to a cross-scheme form POST from http://H to https://H. Only Chromium 141 was tested (cookie NOT attached, l4.out); Firefox and WebKit current behaviour and the legacy-version cut-offs are untested and cannot be determined from source.",
+   "Deployment: whether the production host sends HSTS or is preloaded (none in source), and whether an active on-path network attacker who can serve plaintext http://H is in scope."
   ],
   "validation_plan": {
-   "local": "Isolated loopback browser lab: map H to 127.0.0.1, run a dummy agentbox with --tls-cert (self-signed, lab-trusted) on 443 and a plaintext http://H listener on 80 auto-submitting forms to https://H/logout and /ui/sandboxes. The parent already ran this on Chromium 141 and the Secure SameSite=Strict cookie was not attached (agents/parent-live/artifacts/l3/l4.out). The remaining local step is a browser/version configured WITHOUT schemeful same-site (legacy Chrome <89 / Firefox <96 or the policy that disables it): log in to https://H, open http://H, and check whether agentbox_session is sent and the POST is accepted (200/303) rather than 403, and whether the server session is actually ended. Regression check on the fix: same_origin({'origin':'http://h','host':'h'}) must return False once the full scheme+netloc origin is compared.",
-   "deployment": "Owner confirms whether the production hostname sends HSTS (or is on the preload list) and which browser versions operators actually use; if all are schemeful-same-site browsers and/or HSTS is present, the finding is not reachable. No live probing of deployed endpoints."
+   "local": "Isolated loopback browser lab: map H to 127.0.0.1, run a dummy agentbox with --tls-cert (self-signed, lab-trusted) on 443 and a plaintext http://H listener on 80 auto-submitting forms to https://H/logout and /ui/sandboxes. The parent already ran this on Chromium 141 and the Secure SameSite=Strict cookie was not attached (agents/parent-live/artifacts/l3/l4.out). Remaining local steps: repeat with current Firefox and WebKit, and with any browser/version or policy that disables schemeful same-site: log in to https://H, open http://H, and check whether agentbox_session is sent and the POST is accepted (303) rather than 403, and whether the server session is actually ended. Regression check on the fix: same_origin({'origin':'http://h','host':'h'}) must return False once the full scheme+netloc origin is compared.",
+   "deployment": "Owner confirms whether the production hostname sends HSTS (or is on the preload list) and which browser engines and versions operators actually use; if all are schemeful-same-site browsers and/or HSTS is present, the finding is not reachable. No live probing of deployed endpoints."
   }
  },
  {
@@ -703,18 +702,19 @@
   }
  },
  {
-  "verdict": "needs_validation",
+  "verdict": "confirmed",
   "fingerprint": "agentbox/sandbox.py:create:source_dir-overlap-guard-case-insensitive-bypass",
-  "title": "source_dir overlap guard compares resolved path strings case-sensitively; on a case-insensitive WSL2 drvfs data dir a case-variant source_dir may bypass it and re-expose the run-2 N-4 human-token copy",
-  "description": "SandboxManager.create (sandbox.py:398-405) resolves source_dir with Path.expanduser().resolve() and rejects it only if src == d, d in src.parents, or src in d.parents for d in {settings.home.resolve(), db_path.resolve().parent}. On Linux, resolve()/posixpath.realpath only follows symlinks and keeps the caller's spelling, and PurePosixPath equality is case-sensitive, so the guard is a pure string decision with no (st_dev, st_ino) or samefile check. v06 reproduced this independently in the sbx sandbox with a fake Docker client: exact, trailing-slash, '..', ancestor and descendant spellings were refused, but '/scratch/ci/C/users/me/proj', '.../users/me/proj/data' and '/scratch/ci/C/USERS/ME/PROJ' were accepted and passed unchanged to the /source bind mount (agents/v06/artifacts/guard_v06.out). That only shows that the string guard accepts the variant. On this case-sensitive kernel the variant is a separate stand-in directory, so the alias itself was not observed. README.md:17 lists Windows WSL2 as supported, and Settings.home defaults to ./data resolved from the server's cwd (config.py:29). If the data dir sits on a drvfs mount (/mnt/<drive>) under parent directories without the per-directory case-sensitivity flag, a source_dir that differs only in letter case (for example the project dir containing ./data, typed or cd'ed with different case and then passed through cli.py:136 os.path.abspath) would name the same directory. The guard would accept it, the daemon would bind-mount it read-only at /source, and the root setup 'cp -a /source/. /workspace/ && chown -R 1000:1000 /workspace' (sandbox.py:421-422, container has DAC_OVERRIDE/CHOWN) would copy the 0600 human_token (config.py:94-99) and agentbox.db into agent-owned /workspace. That is the run-2 N-4 escalation from the lowest-trust principal (the agent token / prompt-injected agent) to full human authority. The trigger is human_only (api.py:152) or a '*'-scope browser session (web.py:161-164 via screen_human, api.py:126-132), so this is a bypass of an operator-mistake safety control, not an attacker-chosen input; an agent cannot set source_dir. The compose deployment fails safe because its control plane sees only /var/lib/agentbox. macOS is not a supported platform per README, so the original macOS/APFS claim is dropped. Same root cause also covers other non-symlink aliases (e.g. bind mounts). Suggested fix: decide overlap on filesystem identity, i.e. reject when any of src and its ancestors is os.path.samefile with a protected dir, or any of a protected dir and its ancestors is samefile with src, instead of comparing Path strings.",
-  "claimed_root_cause": "Overlap containment in SandboxManager.create is decided on resolved, case-preserving path strings (Path ==, .parents membership) instead of filesystem identity (st_dev, st_ino / samefile). Where two spellings name one directory, as on case-insensitive WSL2 drvfs lookups, the guard does not recognise the data directory or its ancestors.",
+  "title": "source_dir overlap guard compares path strings instead of filesystem identity: a second name for the data dir's project folder (bind mount; case variant on case-insensitive drvfs) bypasses it and copies the human token to the agent",
+  "description": "SandboxManager.create (sandbox.py:397-405) resolves source_dir with Path.expanduser().resolve() and refuses it only if src == d, d in src.parents or src in d.parents for d in {settings.home.resolve(), db_path.resolve().parent}. resolve() only follows symlinks and keeps the caller's spelling, and Path equality and .parents membership are string decisions with no (st_dev, st_ino) or samefile check. Any second name for the data directory or one of its ancestors that is not a symlink therefore passes the guard. The accepted string becomes the read-only /source bind (sandbox.py:375, 415). The container's root setup 'cp -a /source/. /workspace/ && ... chown -R 1000:1000 /workspace' (sandbox.py:421-422, with CAP_DAC_OVERRIDE/CHOWN at 381) then copies the 0600 human_token (config.py:94-99) and agentbox.db into agent-owned /workspace. The agent can read them through read_file. That is the run-2 N-4 escalation from the lowest-trust principal (agent token, prompt-injected agent) to full human authority. Observed by the parent against the real Docker daemon with a dummy token, driving the same Service.create_sandbox and Service.call_tool that POST /sandboxes and POST /sandboxes/{sid}/tools/read_file call: a bind mount of the project dir (same inode, not a symlink) was ACCEPTED, and the agent's read_file of /workspace/data/human_token returned the real human token. The exact project path was REFUSED in the same run. v06 and p5r-v06 also showed with a fake Docker client that the string guard accepts case variants of the path, and p5r-v06 showed it still accepts a path that os.path.samefile reports identical to the project dir. On the case-sensitive test FS the case variant is a separate directory. A real case-insensitive alias (WSL2 /mnt/<drive> drvfs, which README.md:17 lists as supported, with ./data under the Windows-hosted project dir as the default per config.py:29) is the plausible natural trigger but was NOT observed. The trigger is operator-supplied (POST /sandboxes human_only, or a '*'-scope browser session via POST /ui/sandboxes). The CLI sends os.path.abspath(source), which keeps the shell's spelling. An agent cannot set source_dir. This is therefore a bypass of an operator-mistake safety control, not an attacker-chosen input. The compose deployment fails safe because its control plane sees only /var/lib/agentbox.",
+  "root_cause": "The overlap check at sandbox.py:403-404 decides containment on resolved, spelling-preserving path strings (Path ==, .parents membership) instead of filesystem identity (os.path.samefile / st_dev+st_ino). Where two names resolve to one directory without being a symlink, such as a bind mount or a case variant on a case-insensitive filesystem, neither the data directory nor its ancestors are recognised, and the protected folder is mounted and copied to the agent.",
+  "intended_behavior": "The comment at sandbox.py:401-402 states the intent: if the source folder overlaps the data folder, the human token, DB and other sandboxes' sources would be handed to the agent, so such a source_dir must be refused. The check should refuse every name for the data directory, its ancestors or its descendants, whatever the spelling or alias.",
   "trace": [
    {
     "kind": "entrypoint",
     "file": "agentbox/api.py",
     "line": 152,
-    "scope": "create_sandbox (POST /sandboxes, human_only); also web.py:161 POST /ui/sandboxes via screen_human ('*' scope)",
-    "description": "Human operator (API/CLI or full-scope browser session) submits source_dir. The CLI sends os.path.abspath(source), which keeps the spelling of $PWD (cli.py:136). Agent tokens and desktop-scoped sessions cannot reach this route."
+    "scope": "create_sandbox (POST /sandboxes, human_only); also web.py:161 POST /ui/sandboxes via browser_human, which api.py:437 wires to screen_human ('*' scope)",
+    "description": "A human operator (API/CLI or full-scope browser session) submits source_dir. The CLI sends os.path.abspath(source) (cli.py:136), which keeps the shell's spelling. Agent tokens and desktop-scoped sessions cannot reach these routes."
    },
    {
     "kind": "propagation",
@@ -728,65 +728,50 @@
     "file": "agentbox/sandbox.py",
     "line": 398,
     "scope": "SandboxManager.create",
-    "description": "src = Path(source_dir).expanduser().resolve(): follows symlinks only and keeps the caller's letter case (verified: realpath returned the lowercase variant)."
+    "description": "src = Path(source_dir).expanduser().resolve() follows symlinks only and keeps the caller's spelling (a bind-mount alias or case variant is preserved)."
    },
    {
     "kind": "propagation",
     "file": "agentbox/sandbox.py",
     "line": 404,
     "scope": "SandboxManager.create overlap guard",
-    "description": "src == d / d in src.parents / src in d.parents against home and DB dir are case-sensitive string comparisons. A case-variant spelling matches no arm and is accepted (reproduced with fake Docker)."
+    "description": "src == d / d in src.parents / src in d.parents for d in {home, DB dir} are string comparisons with no samefile/st_ino check. An alias spelling matches no arm and is accepted."
    },
    {
     "kind": "propagation",
     "file": "agentbox/sandbox.py",
     "line": 375,
     "scope": "SandboxManager._run_container (called at sandbox.py:415 with str(src))",
-    "description": "The accepted variant string becomes the read-only bind source at /source. Whether the daemon resolves it to the same inode as the data dir depends on the host filesystem (unobserved)."
+    "description": "The accepted alias string becomes the read-only bind source at /source, so the daemon mounts the real data directory's parent."
    },
    {
     "kind": "sink",
     "file": "agentbox/sandbox.py",
     "line": 421,
     "scope": "SandboxManager.create workspace setup (exec as 0:0)",
-    "description": "Root 'cp -a /source/. /workspace/' plus chown -R 1000:1000 (sandbox.py:422) with DAC_OVERRIDE copies every file under /source, including a 0600 human_token and agentbox.db if the alias holds, into agent-owned /workspace."
+    "description": "Root 'cp -a /source/. /workspace/' plus chown -R 1000:1000 (line 422) with DAC_OVERRIDE (line 381) copies every file under /source, including the 0600 human_token and agentbox.db, into agent-owned /workspace, where the agent's read_file (sandbox.py:554-570, returned unchanged by api.py:205-211) returns them."
    }
   ],
   "evidence": [
    {
     "file": "agentbox/sandbox.py",
-    "line": 403,
-    "description": "Protected set is {settings.home.resolve(), settings.db_path.resolve().parent}; no samefile/st_ino/casefold anywhere in create() (checked via inspect in harness)."
-   },
-   {
-    "file": "agentbox/sandbox.py",
     "line": 404,
-    "description": "Path ==/.parents comparison is case-sensitive on POSIX (PurePosixPath('/a/Users') != PurePosixPath('/a/users'))."
+    "description": "Guard is 'src == d or d in src.parents or src in d.parents': pure path-string comparison. There is no samefile, st_ino or casefold in sandbox.py."
    },
    {
     "file": "agentbox/sandbox.py",
     "line": 398,
-    "description": "expanduser().resolve() keeps the caller's case; only symlinks are canonicalised."
-   },
-   {
-    "file": "agentbox/sandbox.py",
-    "line": 375,
-    "description": "Accepted src string is the bind-mount source for /source (ro)."
+    "description": "expanduser().resolve() canonicalises symlinks only and keeps the caller's spelling."
    },
    {
     "file": "agentbox/sandbox.py",
     "line": 421,
-    "description": "Root cp -a /source/. /workspace/ then chown -R 1000:1000 (line 422); container has CAP_DAC_OVERRIDE/CHOWN (line 382)."
+    "description": "Root cp -a /source/. /workspace/ then chown -R (line 422). The container has CAP_DAC_OVERRIDE and CAP_CHOWN (line 381), so the 0600 token is copied regardless of mode."
    },
    {
     "file": "agentbox/config.py",
-    "line": 29,
-    "description": "AGENTBOX_HOME defaults to ./data resolved against the server cwd, so a project dir often contains the data dir."
-   },
-   {
-    "file": "agentbox/config.py",
-    "line": 94,
-    "description": "human_token lives in settings.home and is written 0600 (line 99); root copy ignores this."
+    "line": 99,
+    "description": "human_token is written to settings.home/human_token with mode 0600 (lines 94-99). Root copy ignores the mode. AGENTBOX_HOME defaults to ./data (config.py:29), so the project dir often contains the data dir."
    },
    {
     "file": "agentbox/cli.py",
@@ -796,35 +781,94 @@
    {
     "file": "agentbox/api.py",
     "line": 130,
-    "description": "screen_human requires scope '*', so only full human sessions reach POST /ui/sandboxes; agents cannot choose source_dir."
+    "description": "screen_human requires scope '*', so only full human sessions reach POST /ui/sandboxes. Agents cannot choose source_dir."
    },
    {
-    "file": "README.md",
-    "line": 17,
-    "description": "Supported platforms: Linux or Windows WSL2 with Docker. WSL2 /mnt/<drive> drvfs lookups are case-insensitive in directories without the per-directory case-sensitivity flag."
+    "file": "agents/parent-live/artifacts/l8_alias.out",
+    "line": 4,
+    "description": "Parent-live run (l8_alias.py) against the real Docker daemon with a dummy 0600 token, calling Service.create_sandbox and Service.call_tool(actor='agent') in-process: the bind-mount alias is not a symlink but has the same inode as the project dir (line 2). The exact project dir is REFUSED (line 3). The alias is ACCEPTED as sb_5f282ecc, and the agent's read_file /workspace/data/human_token returned status 200 with content equal to the real human token (line 4). The decisive reproduction is the parent's. The script imported /home/user/agentbox, whose agentbox/ tree at the artifact's commit 260e1a9 is identical to the audited tree (same tree object), and the ACCEPTED result itself shows fix 152b8e4 was not active."
    },
    {
     "file": "agents/v06/artifacts/guard_v06.out",
     "line": 7,
-    "description": "sbx harness (fake Docker): exact/trailing/'..'/ancestor/descendant spellings REFUSED; lowercase and uppercase variants ACCEPTED and passed to the bind mount. Run on a case-sensitive FS with a stand-in directory, so the alias is not demonstrated."
+    "description": "v06 harness with a fake Docker client: exact, trailing-slash, '..' and ancestor spellings refused (lines 2-6). Case-variant spellings were accepted and passed unchanged to the /source bind (lines 7-9). This only shows the string guard accepts them. On a case-sensitive FS they are separate directories."
+   },
+   {
+    "file": "agents/p5r-v06/artifacts/guard_p5r_v06.out",
+    "line": 7,
+    "description": "p5r-v06 independent sbx5 harness on the audited tree with a fake Docker client: exact, data-dir and ancestor paths refused; the case variant accepted. With os.stat patched so that os.path.samefile(alias, project) is True (line 6), the alias is still ACCEPTED and bound at /source (line 7), showing the guard never consults filesystem identity."
+   },
+   {
+    "file": "README.md",
+    "line": 17,
+    "description": "Linux or Windows WSL2 with Docker is listed as supported, so the case-insensitive drvfs trigger is plausible but unobserved."
    }
   ],
-  "blockers": [
-   "No case-insensitive filesystem exists in this container/kernel (no casefold ext4, no vfat/ntfs/drvfs mount can be created), so v06 could not observe a case-variant source_dir naming the same inode as the data dir. That is the decisive step; only the string-level guard acceptance was reproduced.",
-   "Deployment fact: whether any real agentbox install keeps AGENTBOX_HOME (or the AGENTBOX_DB directory) under a WSL2 drvfs path (/mnt/<drive>/...) whose ancestor directories are case-insensitive (no per-directory case-sensitivity flag). The default ./data under a Windows-hosted project is plausible but unobserved.",
-   "Whether the Docker daemon used with WSL2 (Docker Desktop WSL integration or native dockerd in the distro) resolves the case-variant bind source to the same directory, so that root cp -a copies the real human_token into /workspace (the copy behaviour itself is source-evident and was observed live for exact-path overlap in run-2 N-4)."
+  "conditions": [
+   {
+    "kind": "authorization_role",
+    "description": "The caller must be a human principal (human token on POST /sandboxes, or a '*'-scope browser session on POST /ui/sandboxes). An agent token cannot choose source_dir, so the lowest-trust principal only receives the result."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "The operator must supply a source_dir that is a non-symlink alias of the data dir's project folder or one of its ancestors: a bind mount (observed), or a case variant on a case-insensitive filesystem such as WSL2 /mnt/<drive> drvfs (plausible, not observed)."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "AGENTBOX_HOME (or the DB directory) is on a filesystem or mount where such an alias exists. The compose deployment is not affected, because its control plane sees only /var/lib/agentbox."
+   },
+   {
+    "kind": "environmental_dependency",
+    "description": "A Docker daemon that resolves the alias string to the same directory (true for the bind-mount case observed live)."
+   }
   ],
-  "validation_plan": {
-   "local": "On an isolated disposable Linux host with root and Docker (not this container), run: truncate -s 64M /tmp/ci.img && mkfs.ext4 -O casefold /tmp/ci.img && mkdir /mnt/ci && mount -o loop /tmp/ci.img /mnt/ci && mkdir /mnt/ci/cf && chattr +F /mnt/ci/cf && mkdir -p /mnt/ci/cf/Users/Me/proj. Alternatively use mkfs.vfat on the loop image and mount it with uid set to the test user. Export AGENTBOX_HOME=/mnt/ci/cf/Users/Me/proj/data with a dummy token (AGENTBOX_HUMAN_TOKEN unset so human_token is written 0600). (1) Run agents/v06/scratch/guard_v06.py adapted to these paths with the fake Docker client and assert that create('/mnt/ci/cf/users/me/proj') is ACCEPTED and that os.stat(src) has the same (st_dev, st_ino) as os.stat(home.parent). (2) With the real daemon and buildpack-deps:noble-curl, create the sandbox with the lowercase path, then as the agent call read_file /workspace/data/human_token and expect the dummy hum_ token. Delete the sandbox and unmount afterwards. Pass criterion: same inode and dummy token readable by uid 1000. Fail criterion: guard refuses or bind source differs.",
-   "deployment": "Owner-observed on a WSL2 host with Docker: in a throwaway Windows-created folder C:\\Users\\<u>\\abx-test, confirm case-insensitivity with 'fsutil.exe file queryCaseSensitiveInfo C:\\Users\\<u>\\abx-test' (expect disabled). cd /mnt/c/Users/<u>/abx-test and start 'agentbox serve' with default AGENTBOX_HOME=./data and a fresh dummy token. Run 'agentbox create /mnt/c/users/<u>/abx-test' (different case). Record whether creation succeeds and whether the agent token's read_file of /workspace/data/human_token returns the dummy token. Then delete the sandbox and the test folder. Do not use a production data directory or real token."
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent with an agent token. It cannot trigger creation. It benefits when the operator creates a sandbox whose source_dir is an alias (for example a bind mount or case-variant spelling) of the folder containing the agentbox data directory. The agent then reads the human token with the ordinary read_file tool.",
+   "payloads": [
+    "source_dir = <non-symlink alias of the directory that contains ./data> (observed: a bind mount of the project dir)",
+    "agent tool call: read_file {\"path\": \"/workspace/data/human_token\"}"
+   ],
+   "instructions": [
+    "Create a disposable project dir P with AGENTBOX_HOME=P/data and a dummy human token written 0600 by Settings (AGENTBOX_HUMAN_TOKEN unset).",
+    "Create a second name for P that is not a symlink (mount --bind P ALIAS).",
+    "Create a sandbox with source_dir=P (POST /sandboxes, or Service.create_sandbox as the parent's script does) and observe the refusal.",
+    "Create a sandbox with source_dir=ALIAS and observe that it is accepted.",
+    "As the new sandbox's agent, call read_file /workspace/data/human_token (POST /sandboxes/{sid}/tools/read_file, or Service.call_tool with actor='agent').",
+    "Delete the sandbox and unmount ALIAS. Reproduction script: agents/parent-live/artifacts/l8_alias.py."
+   ],
+   "observed_result": "Parent-live, real Docker daemon, in-process service calls, dummy token: exact project dir REFUSED with the overlap error. The bind-mount alias was ACCEPTED (sb_5f282ecc), and the agent's read_file of /workspace/data/human_token returned status 200 with content equal to the real human token. p5r-v06 independently reproduced only the guard decision in sbx5 (alias with samefile True still accepted). The case-variant instance on a real case-insensitive filesystem was not observed."
+  },
+  "remediation": {
+   "strategy": "Decide overlap on filesystem identity, not strings. Refuse when src or any of its ancestors is os.path.samefile with a protected directory, or when a protected directory or any of its ancestors is samefile with src. Fix 152b8e4 implements this as overlaps() in sandbox.py and covers the bind-mount and case-variant aliases of src, its ancestors and the data dir's ancestors. It does not look inside src, so a mount of the data dir nested under src would still be copied by cp -a; refusing or skipping submounts during the copy (for example cp -ax, or checking that no path under src is samefile with a protected dir) would close that residual. Add a regression test with a bind mount or a case-insensitive fixture.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/sandbox.py",
+     "fixed_code": "def overlaps(a: Path, b: Path) -> bool:\n    def same(x: Path, y: Path) -> bool:\n        try:\n            return x == y or os.path.samefile(x, y)\n        except OSError:\n            return False\n    return any(same(x, b) for x in (a, *a.parents)) or any(same(a, y) for y in (b, *b.parents))\n\n# in create(): if overlaps(src, d): raise SandboxError(...)"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Only a human operator can choose source_dir, and it must be a non-symlink alias of the data dir's project folder: a bind mount, or a case variant on a case-insensitive drvfs data dir. Both are unusual operator mistakes. The case-insensitive path is unobserved."
+   },
+   "impact": {
+    "score": "high",
+    "reason": "The agent obtains the shared human token and the DB, which is full human authority (approval gate, other sandboxes, audit). Demonstrated live with the bind-mount alias."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Source path re-read line by line in the audited tree, and the string-only guard is unambiguous. The parent's live run shows acceptance of an inode-identical alias and the agent reading the real token, with the exact path refused as a control; its code tree matches the audited tree. p5r-v06 independently confirmed the guard decision in sbx5. The remaining uncertainty is only whether real WSL2 drvfs case variants alias in practice, which affects likelihood, not the root cause."
   }
  },
  {
   "verdict": "needs_validation",
   "fingerprint": "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process",
-  "title": "gui_strays exempts burst-launched uid-1001 processes from the stray kill using the client-declared _NET_WM_PID window property",
-  "description": "At GUI-burst close, AgentBox._stop_gui_strays collects uid-1001 processes and the set of window-owning pids and calls gui_strays. A new (non-baseline, non-exec-rooted) uid-1001 process that lives in a session that existed at burst start (base_sids) is spared whenever it is 'windowed', i.e. its own pid is in window_pids, or a NON-baseline ancestor's pid is in window_pids. window_pids are produced by `xdotool getwindowpid`, which returns the _NET_WM_PID property each X client sets for itself. A burst's own GUI clients can therefore declare which pids count as window owners (including a headless background child's pid), so background work launched during the burst can survive the close and keep modifying /workspace outside any monitored burst, weakening the N-1 partial mitigation. (Children of a PRE-EXISTING windowed baseline app are still killed, because the ancestor clause requires the windowed ancestor to be non-baseline; the surviving path needs a newly-created windowed ancestor in a baseline session, or direct _NET_WM_PID membership.)",
-  "claimed_root_cause": "Window ownership used to exempt a process is derived from a client-settable X property (_NET_WM_PID via xdotool getwindowpid) rather than a control-plane-verifiable link, so target-controlled GUI clients decide which of their processes are treated as windowed apps/helpers.",
+  "title": "gui_strays exempts burst-launched uid-1001 processes from the stray kill based on window ownership, including the client-declared _NET_WM_PID",
+  "description": "At GUI-burst close, AgentBox._stop_gui_strays collects uid-1001 processes and the set of window-owning pids and calls gui_strays. A new (non-baseline, non-exec-rooted) uid-1001 process that lives in a session that existed at burst start (base_sids) is spared whenever it is 'windowed': its own pid is in window_pids, or a NON-baseline ancestor's pid is in window_pids. window_pids come from `xdotool getwindowpid`, which returns the _NET_WM_PID property each X client sets for itself. Two routes can therefore spare background work started during the burst. (a) Without any forgery, a newly opened windowed app in the burst-start session (for example a file manager or editor started during the burst) exempts the scripts and children it spawns, because the ancestor clause only requires the windowed ancestor to be non-baseline. (b) A GUI client that declares another process's pid in _NET_WM_PID makes that process, even a headless one, look windowed. Either way the process can survive the close and keep modifying /workspace outside any monitored burst, which weakens the N-1 partial mitigation. Children of a PRE-EXISTING windowed baseline app are still killed, because the ancestor clause excludes baseline ancestors. Processes in a new session (terminal shells, setsid or nohup) are killed regardless of window (line 218). In the image, Xfce is started by the start script (agentbox-desktop-start:30), so apps launched from Xfce probably inherit a burst-start sid. This is not observable from source. The image has no python, xprop or compiler (Dockerfile:17-21), so route (b) needs a hand-written X client.",
+  "claimed_root_cause": "Whether a new baseline-session process is spared is decided by window presence, derived from X window properties (including the client-settable _NET_WM_PID via xdotool getwindowpid) and a 'new windowed ancestor' heuristic, rather than by a control-plane-verifiable link such as the docker-exec ancestry already tracked. Target-controlled GUI clients, or any legitimately windowed app launched during the burst, therefore decide which of their descendants are treated as windowed apps or helpers and escape the kill.",
   "trace": [
    {
     "kind": "entrypoint",
@@ -852,26 +896,35 @@
    {
     "file": "agentbox/sandbox.py",
     "line": 692,
-    "description": "wins = {int(x) ...} parsed from container-side xdotool getwindowpid output; the exemption input is fully attacker/target-controlled."
+    "description": "wins = {int(x) ...} parsed from container-side xdotool getwindowpid output; the exemption input is controlled by the GUI clients inside the sandbox."
    },
    {
     "file": "agentbox/sandbox.py",
     "line": 221,
-    "description": "windowed = p.pid in window_pids or any(a.pid in window_pids and a.pid not in baseline for a in ancestors(p)); windowed -> not killed."
+    "description": "windowed = p.pid in window_pids or any(a.pid in window_pids and a.pid not in baseline for a in ancestors(p)); windowed -> not killed. The ancestor clause spares helpers of any newly created windowed app even with truthful window pids."
    },
    {
     "file": "agentbox/sandbox.py",
     "line": 189,
-    "description": "Docstring states windowed apps and their helpers (and burst-start processes and docker-exec-launched tools) are intentionally left running; confirms the exemption is by design and that its only gate is window ownership."
+    "description": "Docstring states windowed apps and their helpers (and burst-start processes and docker-exec-launched tools) are intentionally left running, so the only gate for a baseline-session process is window ownership."
+   },
+   {
+    "file": "images/desktop/agentbox-desktop-start",
+    "line": 30,
+    "description": "startxfce4 is launched from the container start script, so Xfce-launched apps likely share a burst-start session id (base_sids) and are not caught by the new-session kill at sandbox.py:218."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 235,
+    "description": "_close_gui_burst pops the burst (233), runs the stray kill (235) and takes a single final manifest (236-240); nothing monitors /workspace afterwards, so any survivor's later writes are unrecorded."
    }
   ],
   "blockers": [
-   "Reachability in agentbox-desktop:0.1: whether, using only GUI tools (click/type/key), a prompt-injected agent can cause a uid-1001 process to run in a session that existed at burst start (base_sids) AND either own a visible window reported by `xdotool getwindowpid`/_NET_WM_PID or be the child of such a newly-created windowed process. The image's session semantics (whether launcher/terminal/WM-spawned apps inherit a burst-start session id vs. get a new setsid session, which line 218 kills regardless) and _NET_WM_PID behaviour are not observable from source. A pure-function harness over the real gui_strays confirms the exemption logic but cannot establish this live process/window layout.",
-   "Whether such a spared process (or its surviving background child) continues to modify /workspace after _close_gui_burst pops the burst, i.e. outside any monitored burst, so that changes escape the gui_changes manifest diff."
+   "Reachability in agentbox-desktop:0.1: whether, using only GUI input (click/type/key), a prompt-injected agent can get a uid-1001 process into a session that existed at burst start (base_sids) that either owns a visible window reported by `xdotool getwindowpid`, or descends from a newly created windowed process (for example a script run from a file manager or app window opened during the burst), or has its pid forged into another client's _NET_WM_PID. Real session ids (whether launcher, terminal or file-manager spawned processes inherit the Xfce start-script sid or get a new setsid session, which line 218 kills regardless) and real _NET_WM_PID values are not observable from source or from a pure-function harness over gui_strays, and the Docker daemon is unavailable offline. The pure-function harness already confirms the exemption logic itself."
   ],
   "validation_plan": {
-   "local": "In a disposable, network-less agentbox-desktop:0.1 sandbox: open a GUI burst with a GUI tool call. Using GUI input only, (a) from a launcher/terminal that belongs to a burst-start session, start a GUI app that opens a visible window and whose background child appends a timestamp to a dummy file /workspace/_v15_probe every ~2s; and (b) separately start a client that sets _NET_WM_PID of its window to the background child's pid. Just before close, record `ps -eo pid=,ppid=,sid=,uid=,args=` and `for w in $(xdotool search --onlyvisible --name .); do xdotool getwindowpid $w; done` to capture the real session ids and window-pid set, and feed them through the verified gui_strays harness to predict survivors. Let the burst close on idle; then read the gui_processes_stopped audit entry and check whether /workspace/_v15_probe's mtime keeps advancing after close. Non-destructive: touches only the dummy probe file; kill the probe and discard the sandbox afterward.",
-   "deployment": "Owner reproduces the same probe on the live deployed image/config to confirm the image's session-id and _NET_WM_PID semantics and that a spared process (or its child) modifies /workspace after burst close; collect the gui_processes_stopped and gui_changes audit entries and the manifest diff as evidence. Fix check: exempt only burst-start (baseline) processes and control-plane docker-exec-launched components, deriving ownership from a control-plane-verifiable link (e.g. the exec/ancestry already tracked) rather than the client-declared _NET_WM_PID. Non-destructive: dummy file only."
+   "local": "In a disposable, network-less agentbox-desktop:0.1 sandbox: open a GUI burst with a GUI tool call. Using GUI input only, (a) open a file manager or editor window during the burst and from it run a script that appends a timestamp to a dummy file /workspace/_v15_probe every ~2s; and (b) separately, with a hand-written X client, set _NET_WM_PID of a window to the pid of a headless background writer started from a burst-start-session launcher. Just before close, record `ps -eo pid=,ppid=,sid=,uid=,args=` and `for w in $(xdotool search --onlyvisible --name .); do xdotool getwindowpid $w; done` to capture the real session ids and window-pid set, and feed them through the real gui_strays to predict survivors. Let the burst close on idle; then read the gui_processes_stopped audit entry and check whether /workspace/_v15_probe's mtime keeps advancing after close. Non-destructive: touches only the dummy probe file; kill the probe and discard the sandbox afterward.",
+   "deployment": "Owner reproduces the same probe on the live deployed image and config to confirm the image's session-id and _NET_WM_PID semantics and that a spared process (or its child) modifies /workspace after burst close; collect the gui_processes_stopped and gui_changes audit entries and the manifest diff as evidence. Fix check: exempt only burst-start (baseline) processes and control-plane docker-exec-launched components, deriving ownership from a control-plane-verifiable link (for example the exec/ancestry already tracked) rather than window presence or the client-declared _NET_WM_PID. Non-destructive: dummy file only."
   }
  },
  {
@@ -995,11 +1048,11 @@
    "observed_result": "logged_args kept the 3,145,728-byte junk key unchanged (write_file content was stripped); the stored row's payload was 3,145,774 bytes; 4 rows totalled 12,583,024 bytes; both DELETE and UPDATE raised sqlite3.IntegrityError 'audit log is append-only'; verify() returned ok=True after re-checking all 4 rows; list(limit=100000) returned all 4 rows with the full 3 MiB payload intact. Independently reproduced in sbx v08 (/scratch DB); see agents/v08/artifacts/repro_v08.out (consistent with the hunter's agents/h-buffer/artifacts/audit_cap.out)."
   },
   "remediation": {
-   "strategy": "Bound the serialized size of agent-supplied args before persistence: when the json-serialized args exceed a fixed limit, store a byte count + sha256 + truncated head (mirroring the existing write_file content handling), either in _logged_args or in a shared helper invoked by audit.append. Add a request-body/args size limit on the tool endpoint (and a request_body max_size in the shipped Caddyfile) as defense in depth.",
+   "strategy": "Bound the serialized size of the agent-supplied args that reach the audit log, after the existing write_file content strip and for every tool, so the cap cannot be sidestepped by combining write_file content with an extra large key. When the json-serialized args exceed a fixed limit, store a byte count, sha256 and a truncated head. Keep content_bytes and content_sha256 in the truncated form, since the approval preview uses them. The same _logged_args also feeds the approval payload (service.py:167 and :408), so the fix covers those rows too. Add a request-body/args size limit on the tool endpoint (and a request_body max_size in the shipped Caddyfile) as defense in depth.",
    "code_changes": [
     {
      "file_name": "agentbox/service.py",
-     "fixed_code": "_MAX_LOGGED_ARGS = 16 * 1024\n\n@staticmethod\ndef _logged_args(tool, args):\n    if tool == \"write_file\" and \"content\" in args:\n        data = str(args.get(\"content\", \"\")).encode(\"utf-8\")\n        return {k: v for k, v in args.items() if k != \"content\"} | {\n            \"content_bytes\": len(data), \"content_sha256\": hashlib.sha256(data).hexdigest()}\n    blob = json.dumps(args, ensure_ascii=False, default=str).encode()\n    if len(blob) > _MAX_LOGGED_ARGS:\n        return {\"args_truncated\": True, \"args_bytes\": len(blob),\n                \"args_sha256\": hashlib.sha256(blob).hexdigest(),\n                \"args_head\": blob[:_MAX_LOGGED_ARGS].decode(errors=\"replace\")}\n    return args"
+     "fixed_code": "# add `import json` at the top of the module\nLOGGED_ARGS_MAX = 64 * 1024    # args kept verbatim in the audit log (JSON bytes)\nLOGGED_ARGS_HEAD = 16 * 1024   # head kept when exceeded\n\n@staticmethod\ndef _logged_args(tool: str, args: dict[str, Any]) -> dict[str, Any]:\n    if tool == \"write_file\" and \"content\" in args:\n        data = str(args.get(\"content\", \"\")).encode(\"utf-8\")\n        args = {k: v for k, v in args.items() if k != \"content\"} | {\n            \"content_bytes\": len(data), \"content_sha256\": hashlib.sha256(data).hexdigest()}\n    # the size cap applies to the result of the write_file strip too, so write_file + small content + huge extra key is also bounded\n    blob = json.dumps(args, ensure_ascii=False, sort_keys=True, default=str).encode(\"utf-8\")\n    if len(blob) <= LOGGED_ARGS_MAX:\n        return args\n    kept = {k: args[k] for k in (\"content_bytes\", \"content_sha256\") if k in args}\n    return kept | {\"args_truncated\": True, \"args_bytes\": len(blob),\n                   \"args_sha256\": hashlib.sha256(blob).hexdigest(),\n                   \"args_head\": blob[:LOGGED_ARGS_HEAD].decode(\"utf-8\", errors=\"replace\")}"
     }
    ]
   },
@@ -1023,8 +1076,8 @@
   "verdict": "needs_validation",
   "fingerprint": "agentbox/service.py:_open_gui_burst:silent-fail-open-without-audit",
   "title": "GUI burst open treats failed container-side collection as success (empty baseline or no burst) with no audit record",
-  "description": "When the first agent GUI input of a burst arrives, AgentBox._snapshot takes a docker-commit snapshot and then calls _open_gui_burst. That method collects the /workspace manifest and the desktop process baseline. Two silent fail-open paths exist. (a) Exit status unchecked (the path observed live): SandboxManager.workspace_manifest runs the root `find ... | head -c` exec and returns `_parse_manifest(res.output[0] or b\"\")` without checking res.exit_code. If the in-container command cannot run, it returns ({}, False) with no exception, and _open_gui_burst records the burst against an empty baseline. desktop_processes and kill_processes ignore exit status in the same way. At close, the diff reports every pre-existing file as added. The audit event carries counts and truncated=True plus only the first 100 sorted paths, so the real GUI-made change can fall outside the listed paths, and nothing records that the baseline collection failed. Parent-live l7 measured this on agentbox-desktop:0.1 with the desktop pids cgroup at 1022-1024/1024: the manifest had 0 entries, the burst was recorded, the audit showed only tool_request/policy_decision/snapshot/tool_result, and close gave gui_changes added=301 with truncated=True while the real change zz_changed_by_gui.txt was absent from the listed 100. (b) Exception swallowed: if either collector raises, the bare `except Exception: return` at service.py:210 records no burst. Later GUI inputs inside the idle/interval window open no new burst, so there is no stray kill and no gui_changes for that window. The same pattern at :221 and :238 skips the kill or the diff at close. A mock reproduces this, but no agent-reachable raising trigger is known: it needs a Docker API error such as the container gone or not running, or the docker client's 60 s read timeout. Correction to the hunter's plan: pid pressure does not reach :210. It reaches the unchecked-exit path (a). Bounds: the burst snapshot is still taken and logged, so the restore point survives. In the measured pid-pressure case ps still ran, so the stray-kill baseline was populated. gui_changes is a detective, partial control: the GUI is approval-free by design (N-1). Agent reachability, not yet run live: the default policy allows an approval-free exec of `tail -f /dev/null & ` x1000 + `tail -f /dev/null` (rule read-only-exec). It runs as uid 1000, which the stray killer never targets. It holds pids until exec_timeout (60 s), and then GNU timeout's group kill releases them. That gives the agent a self-releasing way to apply pressure while it sends a concurrent GUI input. In the parent experiment the pressure came from direct docker exec as uid 1001, not from the agent API.",
-  "claimed_root_cause": "Burst bookkeeping treats a failed container-side collection as a successful one. workspace_manifest (sandbox.py:499-501), desktop_processes (sandbox.py:689-692) and kill_processes (sandbox.py:697) never check exec exit status, and _open_gui_burst/_stop_gui_strays/_close_gui_burst (service.py:210, 221, 238) swallow every exception. In both cases there is no audit event and no fail-closed fallback, such as refusing further GUI input or marking the burst baseline invalid.",
+  "description": "When the first agent GUI input of a burst arrives, AgentBox._snapshot takes a docker-commit snapshot and then calls _open_gui_burst. That method collects the /workspace manifest and the desktop process baseline. Two silent fail-open paths exist. (a) Exit status unchecked (observed live): SandboxManager.workspace_manifest runs the root `find ... | head -c` exec and returns `_parse_manifest(res.output[0] or b\"\")` without checking res.exit_code. If the in-container command cannot run, it returns ({}, False) with no exception, and _open_gui_burst records the burst against an empty baseline. desktop_processes and kill_processes ignore exec status in the same way. At close, the diff reports every pre-existing file as added. The audit event carries counts and truncated=True plus only the first 100 sorted paths, so the real GUI-made change can fall outside the listed paths, and nothing records that the baseline collection failed. Parent-live l7 measured this on agentbox-desktop:0.1 with the pids cgroup at 1022-1024/1024, using pressure created by direct docker exec as uid 1001: the manifest had 0 entries, the burst was recorded, the audit showed only tool_request/policy_decision/snapshot/tool_result, and a close after the pressure ended gave gui_changes added=301, truncated=True, with the real change zz_changed_by_gui.txt absent from the listed 100. (b) Exception swallowed: if either collector raises, the bare `except Exception: return` at service.py:210 records no burst. Later GUI inputs inside the idle/interval window open no new burst, so there is no stray kill and no gui_changes for that window. The same pattern at :221 and :238 skips the kill or the diff at close. A mock reproduces this, but no agent-reachable raising trigger is known. Agent reachability (parent-live l9): an approval-free exec under the default read-only-exec rule (uid 1000) filled the pids cgroup to 1024/1024 within about 1 s, and a concurrent agent GUI input (key shift) still returned 200 and recorded a burst with 0 manifest entries and no audit marker. The pressure did not release itself: the exec ended with exit 254, about 1000 uid-1000 processes survived, pids stayed at 1022/1024 even after a root `pkill -x tail` by the parent, and a close under that pressure logged no gui_changes at all. A sandbox wedged this way can start no new processes, which limits what the agent can do while the condition holds. Not yet shown: an agent-only sequence that ends with a misleading or absent gui_changes record while a real GUI-made change exists. Bounds: the burst snapshot is still taken and logged, so the restore point survives. gui_changes is a detective, partial control, and the GUI is approval-free by design (N-1). Provenance: the l7/l9 scripts imported the working branch /home/user/agentbox rather than the audited tree. The burst, collector and policy code they exercise is byte-identical between the two, so the results apply to the audited source. The decisive live runs are the parent's.",
+  "claimed_root_cause": "Burst bookkeeping treats a failed container-side collection as a successful one. workspace_manifest (sandbox.py:495-501), desktop_processes (sandbox.py:689-692) and kill_processes (sandbox.py:697) never check exec exit status, and _open_gui_burst/_stop_gui_strays/_close_gui_burst (service.py:210, 221, 238) swallow every exception. In both cases there is no audit event and no fail-closed fallback, such as refusing further GUI input or marking the burst baseline invalid.",
   "trace": [
    {
     "kind": "entrypoint",
@@ -1036,7 +1089,7 @@
    {
     "kind": "propagation",
     "file": "agentbox/service.py",
-    "line": 341,
+    "line": 339,
     "scope": "AgentBox._call_tool",
     "description": "On an allowed GUI input that starts a burst (_gui_needs_snapshot true), it calls _snapshot."
    },
@@ -1052,14 +1105,14 @@
     "file": "agentbox/sandbox.py",
     "line": 501,
     "scope": "SandboxManager.workspace_manifest",
-    "description": "Root find exec result is parsed without checking exit_code. A failed exec (e.g. no free pid in the cgroup) returns ({}, False) instead of raising."
+    "description": "Root find exec result is parsed without checking exit_code. A failed exec returns ({}, False) instead of raising."
    },
    {
     "kind": "sink",
     "file": "agentbox/service.py",
     "line": 212,
     "scope": "AgentBox._open_gui_burst",
-    "description": "Burst is recorded with the empty manifest as its baseline, with no audit event marking the collection as failed. The later gui_changes diff therefore reports all existing files as added and can leave the real change out of the 100 listed paths."
+    "description": "Burst is recorded with the empty manifest as its baseline, with no audit event marking the collection as failed. A later gui_changes diff reports all existing files as added and can leave the real change out of the 100 listed paths."
    }
   ],
   "evidence": [
@@ -1080,7 +1133,7 @@
    },
    {
     "file": "agentbox/service.py",
-    "line": 247,
+    "line": 246,
     "description": "gui_changes lists only v[:100] of each sorted diff list plus counts and a truncated flag, so an empty baseline buries the real change."
    },
    {
@@ -1096,7 +1149,7 @@
    {
     "file": "agentbox/default_policy.yaml",
     "line": 22,
-    "description": "read-only-exec allow rule includes tail. simple_programs treats & as a separator, so a 1000-way background `tail -f /dev/null` exec is approval-free."
+    "description": "read-only-exec allow rule includes tail, so the l9 pressure exec is approval-free."
    },
    {
     "file": "agents/parent-live/artifacts/l7_burst_open.out",
@@ -1111,7 +1164,7 @@
    {
     "file": "agents/parent-live/artifacts/l7_burst_open.out",
     "line": 13,
-    "description": "Live: after pressure ends, the next GUI input opens no new burst (needs_snapshot False), so the degraded burst persists."
+    "description": "Live: after pressure ends, the next GUI input opens no new burst, so the degraded burst persists."
    },
    {
     "file": "agents/parent-live/artifacts/l7_burst_open.out",
@@ -1119,46 +1172,76 @@
     "description": "Live: close gives gui_changes added=301, truncated=True, and the real change is not in the listed 100 paths. Control at line 3 shows added=1 with the change listed."
    },
    {
+    "file": "agents/parent-live/artifacts/l9_agent_pressure.out",
+    "line": 4,
+    "description": "Live: the agent's approval-free exec drove pids to 1024/1024 within about 1 s, before the GUI input."
+   },
+   {
+    "file": "agents/parent-live/artifacts/l9_agent_pressure.out",
+    "line": 5,
+    "description": "Live: the agent's GUI input under that pressure returned 200 and recorded a burst with 0 manifest entries."
+   },
+   {
+    "file": "agents/parent-live/artifacts/l9_agent_pressure.out",
+    "line": 6,
+    "description": "Live: the audit shows only tool_request, policy_decision, snapshot and tool_result, with no event marking the failed collection."
+   },
+   {
+    "file": "agents/parent-live/artifacts/l9_agent_pressure.out",
+    "line": 7,
+    "description": "Live: the agent exec ended with exit 254 while pids stayed at 1022/1024, so the pressure is not self-releasing."
+   },
+   {
+    "file": "agents/parent-live/artifacts/l9_agent_pressure.out",
+    "line": 10,
+    "description": "Live: with the pressure persisting, the close logged no gui_changes record, so the end-to-end misleading-diff result via the agent-only path is not shown."
+   },
+   {
+    "file": "agents/parent-live/artifacts/l9_probe.out",
+    "line": 2,
+    "description": "Live: after the exec returned, about 1002 uid-1000 processes remained in state S."
+   },
+   {
+    "file": "agents/parent-live/artifacts/l9_agent_pressure.py",
+    "line": 10,
+    "description": "The script imports the working branch, but the burst/collector/policy code it exercises is byte-identical to the audited tree."
+   },
+   {
     "file": "agents/v09/artifacts/v09_burst.out",
     "line": 2,
-    "description": "Mock: a raising workspace_manifest at open leaves no burst. Lines 3-5 show only the snapshot event, no new burst on the next input, no kill, no gui_changes."
+    "description": "Mock: a raising workspace_manifest at open leaves no burst, with no new burst on the next input, no kill and no gui_changes (lines 3-5)."
    },
    {
     "file": "agents/v09/artifacts/v09_burst.out",
     "line": 8,
-    "description": "Real SandboxManager collectors with a fake container whose exec exits 126: workspace_manifest returns ({}, False), desktop_processes returns ([], set()), and kill_processes returns, all without raising."
+    "description": "Real SandboxManager collectors with a fake container whose exec exits 126 return empty results without raising."
    },
    {
     "file": "agents/v09/artifacts/v09_burst.out",
     "line": 13,
-    "description": "Real _close_gui_burst with an empty baseline: counts added=301, truncated=True, real change not listed. The control on line 15 lists it."
+    "description": "Real _close_gui_burst with an empty baseline: added=301, truncated=True, real change not listed. The control on line 15 lists it."
    },
    {
     "file": "agents/v09/artifacts/v09_policy.out",
     "line": 2,
-    "description": "Default policy decides allow (read-only-exec) for `tail -f /dev/null & ` x1000 + `tail -f /dev/null`."
-   },
-   {
-    "file": "agents/v09/artifacts/v09_policy.out",
-    "line": 3,
-    "description": "Under the same `timeout -k 5 T bash -c` wrapper as SandboxManager.exec, the background tails are killed at timeout (zombies only because the harness's PID 1 does not reap), so the pressure releases itself after exec_timeout."
+    "description": "Default policy decides allow (read-only-exec) for the pressure command."
    }
   ],
   "blockers": [
-   "Not observed on the live image: whether the approval-free agent-API sequence keeps the desktop container's pids cgroup at its 1024 limit while a concurrent first GUI input makes the root find at sandbox.py:499-501 return empty. The sequence is an allowlisted exec of `tail -f /dev/null & ` x~1000 + `tail -f /dev/null` (uid 1000, which the stray killer does not target) with a concurrent GUI input such as key shift. The GUI input must still return 200, and the pressure must then release at exec_timeout. Parent-live l7 showed the empty-baseline effect only with pressure created by direct docker exec as uid 1001, and this verifier has no Docker access.",
-   "No agent-reachable trigger is identified for the exception path at service.py:210/221/238 (a Docker API error, a container not running, or the docker client's 60 s read timeout during collection). This path stays mock-only."
+   "Not observed on the live image: an agent-only sequence that ends with a misleading or absent gui_changes record while a real GUI-made change exists. l9 shows only the first half (agent exec pressure, then agent GUI input, then an empty-baseline burst with no audit marker). The pressure did not release (exit 254, pids stayed at 1022/1024, even after the parent's pkill), so the change step and close ran under full pids and the close logged nothing. Decisive missing facts: (a) whether the pressure can be released, or left with enough headroom for the open to fail while later steps still work; (b) whether a GUI-made change that needs no new process is recorded or silently missed at close. This needs a parent-live Docker observation; the verifiers have no Docker access.",
+   "No agent-reachable trigger is identified for the exception path at service.py:210/221/238 (a Docker API error, a container not running, or the docker client's read timeout during collection). This path stays mock-only."
   ],
   "validation_plan": {
-   "local": "Parent-live, Docker-backed, disposable desktop sandbox, dummy human/agent tokens, scratch AGENTBOX_HOME, loopback only. Delete the sandbox afterwards. (1) As the agent token, create 300 files under /workspace with allowlisted calls (write_file, or exec `touch f1.txt ... f300.txt`), then wait > gui_snapshot_idle. (2) In a background thread, as the agent token, POST tools/exec {command: 'tail -f /dev/null & ' * 1000 + 'tail -f /dev/null'}. Expect policy_decision allow / read-only-exec. Poll the container's pids.current from the host until it is >= pids.max - 2. (3) As the agent token, POST tools/key {keys: 'shift'}. Record the status, whether box._gui_burst[sid] exists, the size of its manifest, and the new audit events. (4) Wait for the exec to return (exit 124, pressure released). Using only agent GUI tools (key/type into an Xfce terminal), create /workspace/zz_changed_by_gui.txt. (5) Wait > gui_snapshot_idle, then GET /audit as the human. Expected if the finding holds: the burst has 0 manifest entries, no audit event mentions the collection failure, and gui_changes shows added≈301, truncated=True, with zz_changed_by_gui.txt absent from added. The control run without step 2 must show added=1 with the file listed. Refuted for this agent path if the exec cannot fill the cgroup, the snapshot or GUI input fails with 503, or the manifest is complete. Fix check: workspace_manifest/desktop_processes/kill_processes raise SandboxError on a nonzero exit, and _open_gui_burst/_stop_gui_strays/_close_gui_burst log a gui_burst_error audit event and mark the burst baseline invalid, or require human approval for further GUI input until a burst opens with a good baseline. Rerun steps 1-5 and expect a gui_burst_error event and no silent empty baseline.",
-   "deployment": "Owner-observed on a non-production desktop sandbox: run the same sequence with the deployment's AGENTBOX_DESKTOP_PIDS, AGENTBOX_EXEC_TIMEOUT and AGENTBOX_GUI_SNAPSHOT_IDLE values. Confirm whether the human-facing timeline (web UI audit fragment / CLI) shows any sign that the burst baseline was lost, and whether the GUI-made change is visible without restoring the burst snapshot."
+   "local": "Parent-live, Docker-backed, disposable desktop sandbox, dummy tokens, scratch AGENTBOX_HOME, loopback only, importing the audited tree. Create 300 workspace files, then reproduce the l9 empty-baseline burst. Restore headroom (record whether an agent-reachable means sufficed or the host had to release it), make a GUI-only change to /workspace/zz_changed_by_gui.txt, wait past gui_snapshot_idle, and read GET /audit as the human. The finding holds if the burst has 0 manifest entries, no event marks the collection failure, and gui_changes shows added about 301, truncated=True, with the change unlisted. The control without pressure must show added=1 with the file listed. Also check the persistent-pressure case: a change made with a shell builtin in an already-open terminal, and whether the close leaves any record. The finding is refuted if the GUI input fails with 503 or the manifest is complete. Fix check: the collectors raise SandboxError on a nonzero exit, and the burst methods log a gui_burst_error audit event and mark the baseline invalid.",
+   "deployment": "Owner-observed on a non-production desktop sandbox with the deployment's pids, exec timeout and GUI idle settings: confirm whether the human-facing timeline shows any sign that the burst baseline was lost, whether the pressure persists after the exec returns, and whether the GUI-made change is visible without restoring the burst snapshot."
   }
  },
  {
   "verdict": "needs_validation",
   "fingerprint": "agentbox/service.py:_run_tool:gui_lock-held-across-untimed-x-exec-blocks-takeover",
-  "title": "Human screen takeover (safety override) can block behind an untimed agent GUI exec holding gui_lock while the in-container X server is unresponsive",
-  "description": "Agent GUI tools (screenshot/click/type/key) run through AgentBox._run_tool, which acquires desktop.gui_lock(sid) and calls SandboxManager._x -> docker exec_run (scrot/xdotool) with no container-side timeout wrapper -- unlike exec (timeout -k 5), read_file and outbox_read (timeout -k 2 30), which bound their execs container-side. takeover and handback acquire the same plain threading.Lock via `with`, with no acquisition deadline. If the X server stops answering while an agent GUI exec is outstanding, that exec blocks inside the held lock and the human takeover -- the safety override meant precisely for a misbehaving screen -- cannot proceed until the exec returns; later takeover/handback/end_desktop calls queue behind it. Source chain fully verified at the cited lines; gui_lock is a plain threading.Lock (desktop.py:155-158). The decisive reproduction is the PARENT's, not mine (I cannot run Docker): parent-live l1_takeover.py created a real desktop sandbox, SIGSTOP'd Xvfb (uid desktop=1001), issued an agent screenshot whose _x scrot hung while holding gui_lock, then started a takeover thread -- l1_takeover.out shows 'takeover returned within 20s: False elapsed 20.0' and that takeover and the screenshot both completed only after SIGCONT. This confirms the serialization and that the exec/lock block the human override for at least the stall duration. It does NOT establish (a) that a prompt-injected agent, using only its own capabilities, can itself drive X into the unresponsive/grabbed state (the parent used an owner SIGSTOP, not an agent action), nor (b) that the hang is truly unbounded rather than capped near the docker SDK client timeout (docker.from_env() default ~60s, sandbox.py:286), which would raise a ReadTimeout and release gui_lock after ~60s; parent-live only measured to 20s before resuming X. Both are decisive and require the live Docker daemon plus agentbox-desktop:0.1.",
-  "claimed_root_cause": "gui_lock is held across SandboxManager._x exec_run with no container-side timeout wrapper (unlike exec/read_file/outbox_read, which use `timeout -k`), and takeover/handback acquire the same plain threading.Lock unconditionally with no acquisition deadline, so a hung GUI exec serializes the human safety override behind it.",
+  "title": "Human screen takeover (safety override) blocks behind an untimed agent GUI exec holding gui_lock while the in-container X server is unresponsive",
+  "description": "Agent GUI tools (screenshot/click/type/key) run through AgentBox._run_tool, which acquires desktop.gui_lock(sid) and calls SandboxManager._x -> docker exec_run (scrot/xdotool) with no container-side timeout wrapper, unlike exec (timeout -k 5), read_file and outbox_read (timeout -k 2 30). takeover and handback acquire the same plain threading.Lock via `with`, with no acquisition deadline. If the X server stops answering while an agent GUI exec is outstanding, that exec blocks inside the held lock, so the human takeover (the safety override for a misbehaving screen) and handback queue behind it. Source chain verified at the cited lines; gui_lock is a plain threading.Lock (desktop.py:155-158). Parent-live evidence (the parent's, not the verifier's; no Docker here): l1_takeover.py SIGSTOPs Xvfb (uid desktop=1001) in a real desktop sandbox, issues an agent screenshot that hangs holding gui_lock, then starts a takeover: it does not return within 20 s. l10_bound.py (after Phase 3) ran the same setup for 150 s: after 151 s both the screenshot and the takeover were still blocked, and both returned only after SIGCONT (screenshot 153 s, takeover 151 s). So the hang is not capped by the docker SDK client timeout and the lock is not released by a ReadTimeout, which settles the bound: the lockout lasts as long as X stays unresponsive. Not yet established: that a prompt-injected agent, using only its own agent-token capabilities, can itself make X unresponsive. The parent's SIGSTOP was a docker exec as uid 1001, standing in for a GUI terminal step (N-1). Source makes it plausible: the type/key tools can drive xfce4-terminal (Dockerfile:19), which runs as the same uid as Xvfb, and a process may signal another process of its own uid.",
+  "claimed_root_cause": "gui_lock is held across SandboxManager._x exec_run with no container-side timeout wrapper (unlike exec/read_file/outbox_read, which use `timeout -k`), and takeover/handback acquire the same plain threading.Lock unconditionally with no acquisition deadline, so a hung GUI exec serializes the human safety override behind it for as long as the in-container X server is unresponsive.",
   "trace": [
    {
     "kind": "entrypoint",
@@ -1203,12 +1286,12 @@
    {
     "file": "agentbox/sandbox.py",
     "line": 531,
-    "description": "By contrast, exec wraps argv in a container-side `timeout -k 5 <t>`; read_file (561) and outbox_read (665) use `timeout -k 2 30` -- _x has no equivalent bound."
+    "description": "By contrast, exec wraps argv in a container-side `timeout -k 5 <t>`; read_file (561) and outbox_read (665) use `timeout -k 2 30`; _x has no equivalent bound."
    },
    {
     "file": "agentbox/sandbox.py",
     "line": 286,
-    "description": "self.client = docker.from_env(): the SDK client timeout (~60s default) may cap the _x exec hang and release gui_lock via a ReadTimeout, so 'indefinite' is unproven."
+    "description": "self.client = docker.from_env() with no explicit timeout; parent-live l10 shows the exec still blocked at 151 s, so this client default does not bound the hang."
    },
    {
     "file": "agentbox/service.py",
@@ -1218,25 +1301,34 @@
    {
     "file": "agentbox/service.py",
     "line": 464,
-    "description": "takeover acquires gui_lock with the inline comment that it waits until the running GUI tool finishes -- no timeout/409 path."
+    "description": "takeover acquires gui_lock with the inline comment that it waits until the running GUI tool finishes; no timeout/409 path."
    },
    {
     "file": "agentbox/desktop.py",
     "line": 155,
-    "description": "gui_lock(sid) returns self._gui.setdefault(sid, threading.Lock()) -- a plain threading.Lock acquired only via `with` (no timeout) everywhere it is used."
+    "description": "gui_lock(sid) returns self._gui.setdefault(sid, threading.Lock()), a plain threading.Lock acquired only via `with` (no timeout) everywhere it is used."
    },
    {
     "file": "images/desktop/agentbox-desktop-start",
     "line": 22,
     "description": "`as_desktop Xvfb :0 ...` runs the X server as uid 1001 (desktop), the same account as GUI-launched programs."
+   },
+   {
+    "file": "images/desktop/Dockerfile",
+    "line": 19,
+    "description": "The desktop image ships xfce4-terminal, so the agent's key/type tools (sandbox.py:740, 749) can reach a shell running as uid 1001, the same uid as Xvfb."
+   },
+   {
+    "file": "agents/parent-live/artifacts/l10_bound.out",
+    "line": 1,
+    "description": "Parent-live: with Xvfb stopped, after 151 s the agent screenshot and the human takeover were both still blocked; they returned only after SIGCONT (153 s / 151 s). Stand-in: the stop was done by docker exec as uid 1001, not by the agent."
    }
   ],
   "blockers": [
-   "Whether a prompt-injected agent, using only its own agent-token capabilities (screenshot/click/type/key executed as uid 1001 desktop, and exec as uid 1000 agent), can itself drive the in-container X server into an unresponsive or grabbed state so that a subsequent _x scrot/xdotool exec hangs -- in agentbox-desktop:0.1. Parent-live l1_takeover.py induced the stall with an owner-side `kill -STOP` on Xvfb, not an agent action, so attacker-triggerability of the hang is unproven and needs the live Docker daemon and desktop image.",
-   "Whether the _x exec hang is truly unbounded (indefinite takeover lockout) or is capped by the docker SDK client timeout (docker.from_env() default ~60s, sandbox.py:286), which would raise a ReadTimeout and release gui_lock after ~60s (distinguishing a permanent lockout from a repeatable ~60s safety-override outage). Parent-live measured only to 20s before resuming X, so the ceiling past 60s is unobserved; needs the live daemon and image."
+   "Whether a prompt-injected agent, using only its own agent-token calls (key/type/click to open a GUI terminal as uid 1001 and run e.g. `kill -STOP $(pgrep -x Xvfb)`), can itself make the in-container X server unresponsive so that a following agent GUI call hangs holding gui_lock. The parent-live runs (l1_takeover.py, l10_bound.py) induced the stall with a docker-exec SIGSTOP as uid 1001 as a stand-in for that GUI step. It decides between an agent-triggerable lockout of the human override and an owner-induced X freeze, and needs the live Docker daemon and agentbox-desktop:0.1."
   ],
   "validation_plan": {
-   "local": "Disposable desktop sandbox on a real Docker daemon with agentbox-desktop:0.1 (loopback only, dummy tokens): (1) Attacker-trigger test -- with the agent token only, attempt to make a subsequent GUI exec hang using agent-reachable means (e.g. drive type/key into a terminal running as uid 1001 to issue an X server grab or saturate the X request queue) rather than an owner SIGSTOP; issue one agent screenshot, then POST takeover from a UI session and record whether it returns before the agent action is undone. (2) Bound test -- repeat the parent's SIGSTOP(Xvfb) setup but let the agent exec and the takeover block run past 90s before SIGCONT, recording whether exec_run raises a ReadTimeout near 60s and releases gui_lock (bounded ~60s, repeatable) or blocks indefinitely (permanent lockout). Keep all runs disposable and bounded. Fix check: wrap _x argv in a container-side `timeout -k 2 N` exactly as exec/read_file/outbox_read do, and have takeover/handback use gui_lock.acquire(timeout=...) returning 409/503 on contention so the human override is never serialized unboundedly behind an agent GUI exec."
+   "local": "Disposable desktop sandbox on a real Docker daemon with agentbox-desktop:0.1 (loopback only, dummy tokens), driven only through box.call_tool / POST /sandboxes/{sid}/tools/{tool} with the agent token (no docker exec after create): (1) call key `ctrl+alt+t` (or click the panel terminal launcher), then type `kill -STOP $(pgrep -x Xvfb)` followed by key `Return`; (2) issue one agent screenshot and record whether it hangs; (3) start a takeover from a UI session and record whether it returns within 60 s. Then SIGCONT Xvfb with docker exec as cleanup and record the elapsed times. If the keybinding fails, use an equivalent agent-reachable step (panel launcher click). A pass reproduces the l10 result with no owner-side signal and promotes the record to confirmed. Fix check: wrap _x argv in a container-side `timeout -k 2 N` as exec/read_file/outbox_read do, and have takeover/handback use gui_lock.acquire(timeout=...) returning 409/503 on contention so the human override is never serialized unboundedly behind an agent GUI exec."
   }
  },
  {

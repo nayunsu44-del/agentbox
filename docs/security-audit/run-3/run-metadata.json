@@ -1,72 +1,101 @@
 {
-  "run_id": "agentbox-run-3",
-  "repo": "nayunsu44-del/agentbox",
-  "target": "/home/user/agentbox",
-  "source_ref": {
-    "commit": "0e4b9582965217f31dd8b5c5add902ca9f60be95",
-    "branch": "ccr-e10bee8e-6wt669",
-    "dirty": false,
-    "dirty_note": "Only docs/security-audit/run-3/ (this run's output) is added during the run; no target source is modified.",
-    "note": "PR #5 merged to main as 8e4db9e during reconnaissance; agentbox/, images/, deploy/ and tests/ are byte-identical to 0e4b958. Branch restarted from main."
+ "run_id": "agentbox-run-3",
+ "repo": "nayunsu44-del/agentbox",
+ "target": "/home/user/agentbox",
+ "source_ref": {
+  "commit": "0e4b9582965217f31dd8b5c5add902ca9f60be95",
+  "branch": "ccr-e10bee8e-6wt669",
+  "dirty": false,
+  "dirty_note": "Only docs/security-audit/run-3/ (this run's output) is added during the run; no target source is modified.",
+  "note": "PR #5 merged to main as 8e4db9e during reconnaissance; agentbox/, images/, deploy/ and tests/ are byte-identical to 0e4b958. Branch restarted from main."
+ },
+ "profile": "standard",
+ "scope_paths": [
+  "."
+ ],
+ "budget": 63,
+ "budget_note": "Parent-proposed (the owner did not set a strict cap). Planned 40; extended to 45 after wave 2 produced 14 candidates so every candidate gets Phase 3 and Phase 5 verification. Three critic-2 units deferred for budget. Owner raised the cap to 50 and then 60 in the resuming session (Phase 3 re-runs, Phase 5 one verifier per record). In the Phase 5 session the owner approved Sonnet record verifiers, Opus re-verifiers for material replacements, and a cap of up to 63.",
+ "execution_policy": "sandboxed-source-and-local-only",
+ "execution_note": "Agent-run target code (pure-function harnesses, unit tests) runs only through the parent's sbx wrapper: docker run --network none --read-only, host /usr and target mounted read-only, writes only to agents/<id>/scratch, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB memory, 1 CPU, 64 pids, 32 MiB file size, 120 s wall clock, explicit env allowlist (HOME, TMPDIR, PATH, PYTHONPATH, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE). Checks that need the real Docker-backed control plane (sandbox containers, desktop image) are run by the parent with dummy principals in a scratch AGENTBOX_HOME on loopback inside this disposable cloud container, as the owner requested; such checks are labelled parent-live in the ledger. Promotion uses the parent-side promote.py (no-follow dir_fd walk, single-link regular files, 256 KiB per file, 1 MiB per agent).",
+ "companions_selected": [],
+ "prior_runs": [
+  {
+   "path": "docs/security-audit/run-1",
+   "source_ref": "7fc501f61ae084af92edb66ca7c26832b16266bc",
+   "files": [
+    "coverage-ledger.json",
+    "findings.json"
+   ]
   },
-  "profile": "standard",
-  "scope_paths": [
-    "."
-  ],
-  "budget": 60,
-  "budget_note": "Parent-proposed (the owner did not set a strict cap). Planned 40; extended to 45 after wave 2 produced 14 candidates so every candidate gets Phase 3 and Phase 5 verification. Three critic-2 units deferred for budget. Owner raised the cap to 50 and then 60 in the resuming session (Phase 3 re-runs, Phase 5 one verifier per record).",
-  "execution_policy": "sandboxed-source-and-local-only",
-  "execution_note": "Agent-run target code (pure-function harnesses, unit tests) runs only through the parent's sbx wrapper: docker run --network none --read-only, host /usr and target mounted read-only, writes only to agents/<id>/scratch, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB memory, 1 CPU, 64 pids, 32 MiB file size, 120 s wall clock, explicit env allowlist (HOME, TMPDIR, PATH, PYTHONPATH, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE). Checks that need the real Docker-backed control plane (sandbox containers, desktop image) are run by the parent with dummy principals in a scratch AGENTBOX_HOME on loopback inside this disposable cloud container, as the owner requested; such checks are labelled parent-live in the ledger. Promotion uses the parent-side promote.py (no-follow dir_fd walk, single-link regular files, 256 KiB per file, 1 MiB per agent).",
-  "companions_selected": [],
-  "prior_runs": [
-    {
-      "path": "docs/security-audit/run-1",
-      "source_ref": "7fc501f61ae084af92edb66ca7c26832b16266bc",
-      "files": [
-        "coverage-ledger.json",
-        "findings.json"
-      ]
-    },
-    {
-      "path": "docs/security-audit/run-2",
-      "source_ref": "7fc501f61ae084af92edb66ca7c26832b16266bc (validation run; fixes landed afterwards)",
-      "files": [
-        "findings.json"
-      ],
-      "note": "run-2 has no coverage-ledger.json; it re-validated run-1 records live."
-    }
-  ],
-  "shared_file_owner": "parent",
-  "run_status": "incomplete",
-  "agents_spent_so_far": {
-    "recon": 4,
-    "hunt_wave1": 11,
-    "critic_post_wave1": 1,
-    "hunt_wave2": 2,
-    "critic_post_wave2": 1,
-    "phase3_verifiers_prior_session_record_lost": 1,
-    "phase3_verifiers_this_session_completed": 4,
-    "phase3_verifiers_this_session_aborted_rate_limit": 8,
-    "phase3_verifiers_resume_session": 11,
-    "phase3_reruns_after_format_discard": 2
+  {
+   "path": "docs/security-audit/run-2",
+   "source_ref": "7fc501f61ae084af92edb66ca7c26832b16266bc (validation run; fixes landed afterwards)",
+   "files": [
+    "findings.json"
+   ],
+   "note": "run-2 has no coverage-ledger.json; it re-validated run-1 records live."
+  }
+ ],
+ "shared_file_owner": "parent",
+ "run_status": "incomplete",
+ "agents_spent_so_far": {
+  "recon": 4,
+  "hunt_wave1": 11,
+  "critic_post_wave1": 1,
+  "hunt_wave2": 2,
+  "critic_post_wave2": 1,
+  "phase3_verifiers_prior_session_record_lost": 1,
+  "phase3_verifiers_this_session_completed": 4,
+  "phase3_verifiers_this_session_aborted_rate_limit": 8,
+  "phase3_verifiers_resume_session": 11,
+  "phase3_reruns_after_format_discard": 2,
+  "phase5_record_verifiers_sonnet": 13,
+  "phase5_reverifiers_opus": 4
+ },
+ "run_status_note": "Phases 1-6 done for every candidate except one parent-observed lead (see incomplete_reason). Reports: REPORT.md, FINDINGS-DETAIL.md, NEEDS-VALIDATION.md.",
+ "agents_spent_total": 62,
+ "incomplete_reason": "validation_budget_exhausted: every Phase 2 candidate went through Phase 3 and every retained record passed Phase 5, but the parent-live lead agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion (exec ledger unit, observed in l9 after Phase 3) had no independent candidate verifier: it needs two more agents (Phase 3 + Phase 5) and one remained of the owner-approved 63. It is not in findings.json. Also: three units proposed by critic-2 stayed deferred (budget_cannot_reserve_critics_and_validation) and no distinct final-clean critic ran, so the run makes no clean-coverage claim.",
+ "phase3_format_discards": [
+  "v12 (first attempt: two sink entries)",
+  "v03 (extra field execution.affected)",
+  "v03 (unbalanced JSON)"
+ ],
+ "new_unvalidated_leads": [
+  {
+   "fingerprint_proposal": "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion",
+   "summary": "An allowlisted exec such as 'tail -f /dev/null & ' x1100 fills the sandbox pids cgroup; bash then fails to fork and exits 254 before GNU timeout fires, so the group kill never happens and ~1000 uid-1000 tail processes stay. The sandbox remains at pids.max after the exec returns (even a root docker exec pkill could not run), which also keeps GUI-burst collection failing (v09).",
+   "evidence": [
+    "agents/parent-live/artifacts/l9_agent_pressure.out",
+    "agents/parent-live/artifacts/l9_probe.out"
+   ],
+   "status": "ledger candidate on the exec unit (unresolved: validation_budget_exhausted); not validated"
+  }
+ ],
+ "phase5": {
+  "source_checked": "worktree at 8e4db9e (agentbox/, images/, deploy/, tests/ identical to source_ref 0e4b958); later fixes on the branch were shown only for the remediation check",
+  "sandbox": "tools/sbx with /target pointed at that worktree (sbx5); same limits as sbx",
+  "results": {
+   "verified": [
+    "v02",
+    "v03",
+    "v05",
+    "v11",
+    "v12",
+    "v13",
+    "v14"
+   ],
+   "non_material_replacement_applied": [
+    "v01 (wording)",
+    "v08 (remediation)"
+   ],
+   "material_replacement_re_verified": [
+    "v06 -> confirmed low (p5r-v06 non-material correction)",
+    "v09 (p5r-v09 non-material correction)",
+    "v10 (p5r-v10 verified)",
+    "v15 (p5r-v15 verified)"
+   ]
   },
-  "run_status_note": "Paused after Phase 4. See docs/security-audit/HANDOFF.md section 'run-3 진행 상태'.",
-  "agents_spent_total": 45,
-  "incomplete_reason": "Phase 3 and Phase 4 are complete (14 records in findings.json, both validators pass). Phase 5 independent record verification and Phase 6 reports were not run: the owner paused the run at a usage limit and asked to finish at verification. Records are therefore Phase-3 decisions only; parent-live evidence l8-l10 gathered after Phase 3 is not yet reflected in the records.",
-  "phase3_format_discards": [
-    "v12 (first attempt: two sink entries)",
-    "v03 (extra field execution.affected)",
-    "v03 (unbalanced JSON)"
-  ],
-  "new_unvalidated_leads": [
-    {
-      "fingerprint_proposal": "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion",
-      "summary": "An allowlisted exec such as 'tail -f /dev/null & ' x1100 fills the sandbox pids cgroup; bash then fails to fork and exits 254 before GNU timeout fires, so the group kill never happens and ~1000 uid-1000 tail processes stay. The sandbox remains at pids.max after the exec returns (even a root docker exec pkill could not run), which also keeps GUI-burst collection failing (v09).",
-      "evidence": [
-        "agents/parent-live/artifacts/l9_agent_pressure.out",
-        "agents/parent-live/artifacts/l9_probe.out"
-      ],
-      "status": "parent observation only; needs independent candidate validation"
-    }
-  ]
+  "format_discards": [],
+  "applied_by": "tools/apply5.py"
+ }
 }

@@ -242,7 +242,9 @@
   "x_decisions": {
    "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines": "confirmed"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines": "verified [p5-v02]"
+  }
  },
  {
   "coverage_id": "agentbox%2Fagent.py%23LLM%20loop%20%2B%20agentbox%2Fmcp_server.py%20tools::agentbox%2Fagent.py%23prompt-injection%20to%20tool%20action%20%28approval%20is%20only%20control%29::agentbox%2Fagent.py::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
@@ -384,7 +386,9 @@
   "x_decisions": {
    "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe": "confirmed"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe": "verified [p5-v03]"
+  }
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%20%2B%20takeover%2Fhandback%20%2B%20state::agentbox%2Fdesktop.py%23ticket%20redeem%20%2B%20session%20scope%20%2B%20lease::agentbox%2Fdesktop.py::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
@@ -542,7 +546,9 @@
   "x_decisions": {
    "agentbox/desktop.py:ui_sessions:human-token-rotation-does-not-revoke-browser-sessions": "confirmed"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/desktop.py:ui_sessions:human-token-rotation-does-not-revoke-browser-sessions": "verified [p5-v05]"
+  }
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fapprovals%2F%7Baid%7D%20%2B%20agentbox%2Fcli.py%23cmd_approve::agentbox%2Fservice.py%23decide%20executes%20the%20agent%27s%20original%20args%20after%20human%20approval::agentbox%2Fservice.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
@@ -778,9 +784,11 @@
    "exists()/is_dir() run test without the timeout wrapper; uniform hardening."
   ],
   "x_decisions": {
-   "agentbox/sandbox.py:create:source_dir-overlap-guard-case-insensitive-bypass": "needs_validation"
+   "agentbox/sandbox.py:create:source_dir-overlap-guard-case-insensitive-bypass": "confirmed"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/sandbox.py:create:source_dir-overlap-guard-case-insensitive-bypass": "replace (material: promotion needs_validation -> confirmed low, parent-live l8); re-verifier p5r-v06 returned a non-material correction (lines, provenance, own sbx5 guard check, residual of fix 152b8e4), applied [p5-v06]"
+  }
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Ftakeover%20%2B%20handback%20%2B%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%20%2B%20DELETE%20%2Fsandboxes%2F%7Bsid%7D%20%28end_desktop%29::agentbox%2Fservice.py%23desktop.gui_lock%20held%20across%20untimed%20_x%20GUI%20execs%20%2B%20desktop%20lifecycle%20serialization%20%28takeover%2Fhandback%2Fend_desktop%2Frestore%29::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
@@ -878,7 +886,9 @@
   "x_decisions": {
    "agentbox/service.py:_run_tool:gui_lock-held-across-untimed-x-exec-blocks-takeover": "needs_validation"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/service.py:_run_tool:gui_lock-held-across-untimed-x-exec-blocks-takeover": "replace (material: l10 answers the bound blocker); re-verified by p5r-v10 (verified) [p5-v10]"
+  }
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%2Cscreenshot%7D::agentbox%2Fservice.py%23GUI%20burst%20snapshot%20%2B%20gui_changes%20%2B%20stray%20kill%20%28N-1%20partial%20mitigation%29::agentbox%2Fservice.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
@@ -1020,7 +1030,9 @@
   "x_decisions": {
    "agentbox/service.py:_open_gui_burst:silent-fail-open-without-audit": "needs_validation"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/service.py:_open_gui_burst:silent-fail-open-without-audit": "replace (material: l9 refutes self-release, answers blocker 1); re-verifier p5r-v09 returned a non-material correction (trace line 341 -> 339, provenance note), applied [p5-v09]"
+  }
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D::agentbox%2Fapi.py%23tool_pool%20%2B%20agentbox%2Fservice.py%23call_tool%20tool_concurrency::agentbox%2Fapi.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
@@ -1145,7 +1157,9 @@
   "x_decisions": {
    "agentbox/service.py:close_idle_gui_bursts:cross-sandbox-untimed-exec-outside-tool-concurrency": "confirmed"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/service.py:close_idle_gui_bursts:cross-sandbox-untimed-exec-outside-tool-concurrency": "verified [p5-v11]"
+  }
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bwrite_file%2Cdelete_file%2CGUI%7D::agentbox%2Fservice.py%23snapshot%20quota%20%2B%20_snap_locks%20%2B%20GUI%20burst%20snapshots::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
@@ -1319,7 +1333,7 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "covered",
+  "status": "candidate",
   "agent_id": "h-policy",
   "reviewed_paths": [
    "agentbox/default_policy.yaml",
@@ -1349,17 +1363,38 @@
     "method": "source",
     "result": "Allowlist has no deleting/truncating program. Basename stripping (./ls) is unreachable: write_file/upload create 0664 files, touch creates non-exec files, no chmod/install allowlisted; only human /source files keep exec bits.",
     "artifact": null
+   },
+   {
+    "agent_id": "parent-live",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/default_policy.yaml"
+    ],
+    "invariant": "An allowed exec cannot leave processes behind that keep the sandbox at its pids limit after the exec returns",
+    "method": "local",
+    "result": "Parent-live, unvalidated: an approval-free exec of 'tail -f /dev/null & ' x1100 filled pids to 1024/1024; bash failed to fork and exited 254 before timeout fired, so no group kill ran; ~1000 uid-1000 tails stayed and pids stayed at 1022/1024 after the exec returned and after a root docker exec pkill.",
+    "artifact": "agents/parent-live/artifacts/l9_agent_pressure.out"
    }
   ],
-  "result_fingerprints": [],
-  "unresolved": [],
+  "result_fingerprints": [
+   "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion"
+  ],
+  "unresolved": [
+   "validation_budget_exhausted: parent-live observation after Phase 3 (l9); no independent candidate verifier ran because the owner-approved budget (63) was spent. Not a finding."
+  ],
   "x_planned_hunter": "h-policy",
   "x_hardening": [
    "policy.py reduces program names to basename (./ls, /workspace/cat count as allowlisted); latent bypass if the agent ever gets an executable in /workspace or an interpreter is allowlisted. Match resolved program or reject operands with '/'.",
    "default_policy.yaml lists bare true/false, which yaml.safe_load parses as booleans -> 'True'/'False', so true/false are not actually allowlisted. Quote them.",
    "`file -C -m <name>` writes a .mgc file and `touch -d` mutates existing mtimes without AP-2; consider dropping file or gating -C.",
    "Approval preview.affected is computed at creation and can go stale before execution (globs re-expand); recompute at decision time or flag dynamic globs."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion": "unvalidated"
+  },
+  "x_phase5": {
+   "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion": "not run (no Phase 3 validation)"
+  }
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws::agentbox%2Fapi.py%23cookie%20session%20%2B%20same_origin%20%2B%20lease%20on%20WebSocket::agentbox%2Fapi.py::CLIENT-SIDE.md%23Cross-site%20WebSocket%20request%20use",
@@ -1877,7 +1912,9 @@
   "x_decisions": {
    "agentbox/cli.py:runtime_problem:runc-alias-io.containerd.runc.v2-bypasses-exposed-runc-guard": "rejected"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/cli.py:runtime_problem:runc-alias-io.containerd.runc.v2-bypasses-exposed-runc-guard": "rejected in Phase 3; Phase 5 verifies confirmed and needs_validation records only"
+  }
  },
  {
   "coverage_id": "agentbox%2Fweb.py%23%2Fui%20%28approval%20approve%2Fdeny%20buttons%2C%20restore%2Fdelete%2Fsnapshot%20forms%29%20%2B%20agentbox%2Fdesktop.py%23page%20%28takeover%2Fhandback%20controls%29%20rendered%20in%20a%20frame::absence%20of%20frame-ancestors%2FX-Frame-Options%20on%20cookie-authenticated%20pages%20%2B%20SameSite%3DStrict%20%2B%20same_origin::agentbox%2Fweb.py::CLIENT-SIDE.md%23Clickjacking",
@@ -2009,7 +2046,9 @@
   "x_decisions": {
    "agentbox/web.py:register:cookie-ui-frameable-no-frame-ancestors-single-click-approve": "needs_validation"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/web.py:register:cookie-ui-frameable-no-frame-ancestors-single-click-approve": "verified [p5-v14]"
+  }
  },
  {
   "coverage_id": "agentbox%2Fweb.py%23%2Fui%2F%2A%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fapi.py%23same_origin%20%2B%20SameSite%3DStrict%20HttpOnly%20cookie::agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
@@ -2144,7 +2183,9 @@
   "x_decisions": {
    "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare": "needs_validation"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare": "replace (non-material wording: browsers tested, unsupported version cut-offs, apr_ id moved from blockers to description); applied directly [p5-v01]"
+  }
  },
  {
   "coverage_id": "approval%20card%20impact%20table%20and%20request-time%20screen%20capture%20for%20gated%20exec%2FGUI%20calls%20%28agentbox%2Fsandbox.py%23preview%2C%20agentbox%2Fservice.py%23_preview%2F_capture%2C%20agentbox%2Ftemplates%2F_approvals.html%2C%20agentbox%2Fcli.py%23_show_approval%29::agentbox%2Fsandbox.py%23preview%20%2B%20_split_segments%20%2B%20_expand%20%2B%20_walk%3A%20the%20system-computed%20%27affected%27%20list%20and%20%27system-captured%27%20screenshot%20shown%20to%20the%20human%20must%20reflect%20what%20the%20stored%20args%20will%20actually%20do::agentbox%2Fsandbox.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
@@ -2445,7 +2486,9 @@
   "x_decisions": {
    "agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap": "confirmed"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap": "replace (remediation only: proposed fix returned early for write_file); applied directly [p5-v08]"
+  }
  },
  {
   "coverage_id": "container%20output%3A%20ps%2C%20xdotool%20getwindowpid%2C%20find%20-printf%20manifest::agentbox%2Fsandbox.py%23_parse_ps%20%2B%20gui_strays%20%2B%20_parse_manifest%20%2B%20diff_manifest::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Business%20logic",
@@ -2596,7 +2639,9 @@
   "x_decisions": {
    "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process": "needs_validation"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process": "replace (material: root cause widened to window-presence heuristic); re-verified by p5r-v15 (verified) [p5-v15]"
+  }
  },
  {
   "coverage_id": "container-controlled%20strings%20rendered%20to%20humans%20%28outbox%20names%2C%20gui_changes%20paths%2C%20ps%20args%2C%20exec%20output%2C%20errors%29::agentbox%2Fweb.py%23describe%20%2B%20Jinja%20autoescape%20%2B%20agentbox%2Fcli.py%23_safe::agentbox%2Fweb.py::AI-AND-LLM.md%23Insecure%20output%20rendering",
@@ -2774,7 +2819,10 @@
    "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe": "confirmed",
    "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized": "confirmed"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe": "verified [p5-v03]",
+   "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized": "verified [p5-v13]"
+  }
  },
  {
   "coverage_id": "every%20audit%20append%20%28tool%20args%2C%20results%2C%20errors%2C%20GUI%20records%29::agentbox%2Faudit.py%23mask_text%20%2B%20_mask::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
@@ -3209,6 +3257,9 @@
    "agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause": "confirmed",
    "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines": "confirmed"
   },
-  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
+  "x_phase5": {
+   "agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause": "verified [p5-v12]",
+   "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines": "verified [p5-v02]"
+  }
  }
 ]
