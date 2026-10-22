@@ -254,6 +254,7 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 | `AGENTBOX_MEM` · `AGENTBOX_CPUS` · `AGENTBOX_PIDS` | `512m` · `1.0` · `256` | cli 샌드박스 자원 상한 |
 | `AGENTBOX_DISK` | (없음) | 디스크 상한 (xfs+pquota일 때만) |
 | `AGENTBOX_EXEC_TIMEOUT` | `60` | exec 한 번의 제한 시간(초) |
+| `AGENTBOX_TOOL_CONCURRENCY` | `4` | 샌드박스 하나가 동시에 돌릴 수 있는 도구 호출 수. 넘으면 429 (`0`이면 끔) |
 | `AGENTBOX_SNAPSHOT_QUOTA` | `50` | 샌드박스 하나의 스냅샷이 이만큼 쌓이면 에이전트의 덮어쓰기·삭제는 모두 승인을 거침 (`0`이면 끔). 샌드박스를 지우면 스냅샷 이미지도 지워짐 |
 | `AGENTBOX_MAX_UPLOAD` | 50MB | 파일 넣기 하나의 상한 |
 | `AGENTBOX_APPROVAL_TIMEOUT` | `300` | 승인 대기 상한(초) |

@@ -44,6 +44,8 @@ class Settings:
     # 샌드박스 하나의 스냅샷이 이만큼 쌓이면, 에이전트의 덮어쓰기·삭제는 허용 규칙이어도 승인을 거친다.
     # docker commit은 매번 쓰기 레이어 전체를 복사하므로 사람 없이 호스트 디스크를 채우지 못하게 한다. 0이면 끔.
     snapshot_quota: int = field(default_factory=lambda: int(_env("AGENTBOX_SNAPSHOT_QUOTA", "50")))
+    # 샌드박스 하나가 동시에 돌릴 수 있는 도구 호출 수. 0이면 끔.
+    tool_concurrency: int = field(default_factory=lambda: int(_env("AGENTBOX_TOOL_CONCURRENCY", "4")))
     max_read_bytes: int = 256 * 1024
     max_write_bytes: int = 1024 * 1024
     # UX-3, UX-4 사람이 넣고 받는 파일 하나의 상한

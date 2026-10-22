@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,9 +75,14 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     )
     box.recover_takeovers()
     novnc_dir = settings.home / "novnc"
+    # 도구 호출은 사람 API와 다른 스레드 풀에서 돈다. exec는 제한 시간 내내 스레드를 붙잡으므로,
+    # 같은 풀을 쓰면 에이전트가 승인·삭제 같은 사람 API를 멈춰 세울 수 있다.
+    tool_pool = ThreadPoolExecutor(max_workers=32, thread_name_prefix="agentbox-tool")
+
     @asynccontextmanager
     async def lifespan(_app):
         yield
+        tool_pool.shutdown(wait=False, cancel_futures=True)
         box.close()
 
     app = FastAPI(title="agentbox", version="0.1.0", lifespan=lifespan)
@@ -185,10 +191,11 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     # ---- 도구 ----------------------------------------------------------
     @app.post("/sandboxes/{sid}/tools/{tool}")
-    def call_tool(sid: str, tool: str, body: ToolCall, p: Principal = Depends(principal)):
+    async def call_tool(sid: str, tool: str, body: ToolCall, p: Principal = Depends(principal)):
         if p.kind == "agent" and p.sandbox_id != sid:
             raise HTTPException(403, "이 에이전트 토큰은 다른 샌드박스용")
-        out = guard(lambda: box.call_tool(sid, tool, body.args, actor=p.kind))
+        out = await asyncio.get_running_loop().run_in_executor(
+            tool_pool, lambda: guard(lambda: box.call_tool(sid, tool, body.args, actor=p.kind)))
         return JSONResponse(out.body, status_code=out.status)
 
     # ---- 승인 ----------------------------------------------------------

@@ -90,13 +90,34 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _truncate(b: bytes | None) -> str:
+def _truncate(b: bytes | None, total: int | None = None) -> str:
+    """total은 잘라 낸 뒤 b만 들고 있을 때의 원래 길이."""
     if not b:
         return ""
+    total = len(b) if total is None else total
     s = b[:_OUT_LIMIT].decode("utf-8", errors="replace")
-    if len(b) > _OUT_LIMIT:
-        s += f"\n…({len(b) - _OUT_LIMIT} bytes 생략)"
+    if total > _OUT_LIMIT:
+        s += f"\n…({total - _OUT_LIMIT} bytes 생략)"
     return s
+
+
+class _Head:
+    """스트림 앞쪽 _OUT_LIMIT 바이트만 들고 나머지는 세기만 한다 (컨트롤 플레인 메모리 상한)."""
+
+    def __init__(self) -> None:
+        self.buf = bytearray()
+        self.total = 0
+
+    def add(self, chunk: bytes | None) -> None:
+        if not chunk:
+            return
+        self.total += len(chunk)
+        room = _OUT_LIMIT + 1 - len(self.buf)
+        if room > 0:
+            self.buf += chunk[:room]
+
+    def text(self) -> str:
+        return _truncate(bytes(self.buf), self.total)
 
 
 def _parse_outbox(raw: bytes) -> list[dict[str, Any]]:
@@ -410,14 +431,20 @@ class SandboxManager:
         c = self._require_running(sid)
         t = self.settings.exec_timeout
         # umask 002: 데스크톱 계정도 에이전트가 만든 파일을 고칠 수 있게
-        res = c.exec_run(["timeout", "-k", "5", str(t), "bash", "-c", "umask 002\n" + command],
-                         user=AGENT_UID, workdir=WORKSPACE, demux=True)
-        out, err = res.output if isinstance(res.output, tuple) else (res.output, b"")
-        code = res.exit_code
+        # 출력은 스트림으로 받아 앞부분만 남긴다. 한꺼번에 받으면 제한 시간 동안 나온 전부가
+        # 컨트롤 플레인 메모리에 쌓인다 (cat /dev/zero 하나로 수백 MB).
+        api = self.client.api
+        ex = api.exec_create(c.id, ["timeout", "-k", "5", str(t), "bash", "-c", "umask 002\n" + command],
+                             user=AGENT_UID, workdir=WORKSPACE)
+        out, err = _Head(), _Head()
+        for o, e in api.exec_start(ex["Id"], stream=True, demux=True):
+            out.add(o)
+            err.add(e)
+        code = api.exec_inspect(ex["Id"])["ExitCode"]
         return {
             "exit_code": code,
-            "stdout": _truncate(out),
-            "stderr": _truncate(err),
+            "stdout": out.text(),
+            "stderr": err.text(),
             "timed_out": code in (124, 137),
         }
 

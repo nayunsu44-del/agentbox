@@ -3,7 +3,12 @@
 최소 증명 데모 범위 밖인 항목(웹 UI, 결과함 화면, 화면 인수)은 건너뛴다고 명시한다.
 """
 
+import os
+import socket
 import sqlite3
+import subprocess
+import sys
+import threading
 import time
 
 import pytest
@@ -14,6 +19,7 @@ try:
 except Exception:  # pragma: no cover
     pytest.skip("Docker 데몬이 없음", allow_module_level=True)
 
+import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 
@@ -235,3 +241,67 @@ def test_snapshot_quota_escalates_and_delete_removes_images(env):
     for img in images:
         with pytest.raises(docker.errors.ImageNotFound):
             e.box.sandboxes.client.images.get(img)
+
+
+# 보안 검수 N-2: exec 출력은 앞부분만 컨트롤 플레인에 남고, 잘린 길이·종료 코드는 그대로 보고된다
+def test_exec_output_streamed_with_cap(env):
+    e = env
+    res = exec_(e, "head -c 300000 /dev/zero").json()["result"]
+    assert res["stdout"].endswith(f"…({300000 - 65536} bytes 생략)") and res["exit_code"] == 0
+    res = exec_(e, "head -c 70000 /dev/zero >&2").json()["result"]
+    assert res["stderr"].endswith(f"…({70000 - 65536} bytes 생략)") and res["stdout"] == ""
+    res = exec_(e, "test -e /nope").json()["result"]
+    assert res["exit_code"] == 1 and not res["timed_out"]
+    res = exec_(e, "echo hi").json()["result"]
+    assert res == {"exit_code": 0, "stdout": "hi\n", "stderr": "", "timed_out": False}
+
+
+# 보안 검수 N-2: 출력 없는 허용 명령으로 스레드를 붙잡아도 사람 API는 멈추지 않는다.
+# TestClient는 요청마다 이벤트 루프·스레드 풀을 따로 만들어 재현되지 않으므로 실제 서버 프로세스로 띄운다.
+def test_blocking_execs_cannot_starve_human_api(tmp_path):
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    env = {**os.environ, "AGENTBOX_HOME": str(tmp_path / "data"), "AGENTBOX_HUMAN_TOKEN": "hum_starve_test",
+           "AGENTBOX_EXEC_TIMEOUT": "6", "AGENTBOX_TOOL_CONCURRENCY": "0"}  # 샌드박스별 상한 없이도 버텨야 한다
+    srv = subprocess.Popen([sys.executable, "-m", "agentbox", "serve", "--port", str(port)], env=env,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    base, H = f"http://127.0.0.1:{port}", {"Authorization": "Bearer hum_starve_test"}
+    try:
+        for _ in range(100):
+            try:
+                httpx.get(f"{base}/sandboxes", headers=H, timeout=1)
+                break
+            except httpx.TransportError:
+                time.sleep(0.2)
+        sb = httpx.post(f"{base}/sandboxes", json={}, headers=H, timeout=60).json()
+        A = {"Authorization": f"Bearer {sb['agent_token']}"}
+        holders = [threading.Thread(target=httpx.post, args=(f"{base}/sandboxes/{sb['id']}/tools/exec",),
+                                    kwargs={"json": {"args": {"command": "tail -f /dev/null"}}, "headers": A,
+                                            "timeout": 60})
+                   for _ in range(45)]
+        for t in holders:
+            t.start()
+        time.sleep(2)
+        t0 = time.time()
+        assert httpx.get(f"{base}/approvals", headers=H, timeout=60).status_code == 200
+        assert time.time() - t0 < 2
+        for t in holders:
+            t.join()
+        httpx.delete(f"{base}/sandboxes/{sb['id']}", headers=H, timeout=60)
+    finally:
+        srv.terminate()
+        srv.wait()
+
+
+# 보안 검수 N-2: 샌드박스 하나가 동시에 돌리는 도구 호출 수는 제한된다
+def test_tool_concurrency_limit_per_sandbox(env):
+    e = env
+    e.box.sandboxes.settings.exec_timeout = 4
+    e.box.sandboxes.settings.tool_concurrency = 1
+    held = threading.Thread(target=exec_, args=(e, "tail -f /dev/null"))
+    held.start()
+    time.sleep(1)
+    assert exec_(e, "echo hi").status_code == 429
+    held.join()
+    assert exec_(e, "echo hi").status_code == 200

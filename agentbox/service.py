@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -60,6 +61,8 @@ class AgentBox:
         self.desktop = desktop or DesktopControl()
         self.approval_timeout = approval_timeout
         self.captures = captures
+        self._busy: dict[str, int] = {}
+        self._busy_lock = threading.Lock()
 
     def capture_path(self, aid: str) -> Path | None:
         if not self.captures or not aid.replace("_", "").isalnum():
@@ -183,6 +186,20 @@ class AgentBox:
 
     # ---- 도구 호출 --------------------------------------------------------
     def call_tool(self, sid: str, tool: str, args: dict[str, Any], actor: str = "agent") -> ToolOutcome:
+        """샌드박스 하나가 동시에 돌리는 도구 호출 수를 제한한다. 출력 없는 허용 명령(tail -f 등)을
+        여러 개 띄워 도구 실행 스레드를 제한 시간 내내 붙잡지 못하게 한다."""
+        limit = self.sandboxes.settings.tool_concurrency
+        with self._busy_lock:
+            if limit > 0 and self._busy.get(sid, 0) >= limit:
+                raise ServiceError(429, f"이 샌드박스의 도구 호출이 이미 {limit}개 실행 중. 끝난 뒤 다시 호출할 것.")
+            self._busy[sid] = self._busy.get(sid, 0) + 1
+        try:
+            return self._call_tool(sid, tool, args, actor)
+        finally:
+            with self._busy_lock:
+                self._busy[sid] -= 1
+
+    def _call_tool(self, sid: str, tool: str, args: dict[str, Any], actor: str) -> ToolOutcome:
         if tool not in TOOLS:
             raise ServiceError(404, f"알 수 없는 도구: {tool}")
         self.sandboxes.get(sid)  # 없으면 SandboxError
