@@ -2498,8 +2498,10 @@
   "status": "candidate",
   "agent_id": "h-gui2",
   "reviewed_paths": [
+   "README.md",
    "agentbox/sandbox.py",
-   "agentbox/service.py"
+   "agentbox/service.py",
+   "docs/security-audit/run-3/agents/h-gui2/artifacts/h.out"
   ],
   "local_checks": [
    {
@@ -2522,6 +2524,19 @@
     "method": "local",
     "result": "Harness: a new process in a baseline session is killed when its pid is absent from window_pids and spared when present; window_pids come from xdotool getwindowpid (client-set _NET_WM_PID). Reachability of a baseline-session launch needs the live image.",
     "artifact": "agents/h-gui2/artifacts/h.out"
+   },
+   {
+    "agent_id": "v07",
+    "reviewed_paths": [
+     "README.md",
+     "agentbox/sandbox.py",
+     "agentbox/service.py",
+     "docs/security-audit/run-3/agents/h-gui2/artifacts/h.out"
+    ],
+    "invariant": "Phase 3 independent candidate validation of agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process",
+    "method": "source",
+    "result": "decision=rejected: gui_strays spares burst-launched processes based on the client-declared _NET_WM_PID window property",
+    "artifact": null
    }
   ],
   "result_fingerprints": [
@@ -2533,7 +2548,10 @@
    "sandbox.restore has no deleted check and restore/delete run without gui_lock/_snap_locks; add both.",
    "_parse_manifest truncation flag correct; add cap-1/cap/cap+1 tests.",
    "workspace_manifest diffs /workspace only; /home/desktop session state written during a burst is never in gui_changes though snapshots carry it."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process": "rejected"
+  }
  },
  {
   "coverage_id": "container-controlled%20strings%20rendered%20to%20humans%20%28outbox%20names%2C%20gui_changes%20paths%2C%20ps%20args%2C%20exec%20output%2C%20errors%29::agentbox%2Fweb.py%23describe%20%2B%20Jinja%20autoescape%20%2B%20agentbox%2Fcli.py%23_safe::agentbox%2Fweb.py::AI-AND-LLM.md%23Insecure%20output%20rendering",
