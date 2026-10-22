@@ -1,0 +1,1571 @@
+[
+ {
+  "coverage_id": "agent-controlled%20audit%20content%20%28tool%20args%2C%20file%20names%2C%20process%20args%29::agentbox%2Faudit.py%23hash%20chain%20%2B%20append-only%20triggers%20%2B%20event%20provenance::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "agent-controlled audit content (tool args, file names, process args)",
+   "boundary": "agentbox/audit.py#hash chain + append-only triggers + event provenance",
+   "subsystem": "agentbox/audit.py",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "agent-controlled audit content (tool args, file names, process args)",
+  "boundary": "agentbox/audit.py#hash chain + append-only triggers + event provenance",
+  "subsystem": "agentbox/audit.py",
+  "attack_class": "ATTACK-CLASSES.md#Business logic",
+  "starting_paths": [
+   "agentbox/audit.py",
+   "agentbox/service.py",
+   "agentbox/web.py",
+   "agentbox/cli.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-audit",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-audit"
+ },
+ {
+  "coverage_id": "agentbox%2Fagent.py%23LLM%20loop%20%2B%20agentbox%2Fmcp_server.py%20tools::agentbox%2Fagent.py%23prompt-injection%20to%20tool%20action%20%28approval%20is%20only%20control%29::agentbox%2Fagent.py::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
+  "canonical_refs": {
+   "surface": "agentbox/agent.py#LLM loop + agentbox/mcp_server.py tools",
+   "boundary": "agentbox/agent.py#prompt-injection to tool action (approval is only control)",
+   "subsystem": "agentbox/agent.py",
+   "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content"
+  },
+  "surface": "agentbox/agent.py#LLM loop + agentbox/mcp_server.py tools",
+  "boundary": "agentbox/agent.py#prompt-injection to tool action (approval is only control)",
+  "subsystem": "agentbox/agent.py",
+  "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+  "starting_paths": [
+   "agentbox/agent.py",
+   "agentbox/mcp_server.py",
+   "agentbox/cli.py",
+   "demo"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+   "AI-AND-LLM.md#MCP server and tool identity confusion",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_same_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-wild",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-wild"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%20%2B%20takeover%2Fhandback%20%2B%20state::agentbox%2Fdesktop.py%23ticket%20redeem%20%2B%20session%20scope%20%2B%20lease::agentbox%2Fdesktop.py::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#GET /sandboxes/{sid}/desktop + takeover/handback + state",
+   "boundary": "agentbox/desktop.py#ticket redeem + session scope + lease",
+   "subsystem": "agentbox/desktop.py",
+   "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation"
+  },
+  "surface": "agentbox/api.py#GET /sandboxes/{sid}/desktop + takeover/handback + state",
+  "boundary": "agentbox/desktop.py#ticket redeem + session scope + lease",
+  "subsystem": "agentbox/desktop.py",
+  "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+  "starting_paths": [
+   "agentbox/desktop.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/service.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+   "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Account switch, logout, and device restore leakage",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_rejected_claim_changed",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-session",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-session"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fapprovals%2F%7Baid%7D%20%2B%20agentbox%2Fcli.py%23cmd_approve::agentbox%2Fservice.py%23decide%20executes%20the%20agent%27s%20original%20args%20after%20human%20approval::agentbox%2Fservice.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /approvals/{aid} + agentbox/cli.py#cmd_approve",
+   "boundary": "agentbox/service.py#decide executes the agent's original args after human approval",
+   "subsystem": "agentbox/service.py",
+   "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding"
+  },
+  "surface": "agentbox/api.py#POST /approvals/{aid} + agentbox/cli.py#cmd_approve",
+  "boundary": "agentbox/service.py#decide executes the agent's original args after human approval",
+  "subsystem": "agentbox/service.py",
+  "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/approvals.py",
+   "agentbox/cli.py",
+   "agentbox/sandbox.py",
+   "agentbox/web.py",
+   "agentbox/templates"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Action-confirmation and approval binding",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-policy",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-policy"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%20source_dir%20%2B%20agentbox%2Fweb.py%23POST%20%2Fui%2Fsandboxes::agentbox%2Fsandbox.py%23create%20source_dir%20overlap%20check::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes source_dir + agentbox/web.py#POST /ui/sandboxes",
+   "boundary": "agentbox/sandbox.py#create source_dir overlap check",
+   "subsystem": "agentbox/sandbox.py",
+   "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes source_dir + agentbox/web.py#POST /ui/sandboxes",
+  "boundary": "agentbox/sandbox.py#create source_dir overlap check",
+  "subsystem": "agentbox/sandbox.py",
+  "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/config.py",
+   "deploy/docker-compose.yml"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Secret exposure across workload boundaries",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-files",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-files"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%2Cscreenshot%7D::agentbox%2Fservice.py%23GUI%20burst%20snapshot%20%2B%20gui_changes%20%2B%20stray%20kill%20%28N-1%20partial%20mitigation%29::agentbox%2Fservice.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{click,type,key,screenshot}",
+   "boundary": "agentbox/service.py#GUI burst snapshot + gui_changes + stray kill (N-1 partial mitigation)",
+   "subsystem": "agentbox/service.py",
+   "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{click,type,key,screenshot}",
+  "boundary": "agentbox/service.py#GUI burst snapshot + gui_changes + stray kill (N-1 partial mitigation)",
+  "subsystem": "agentbox/service.py",
+  "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/sandbox.py",
+   "images/desktop",
+   "agentbox/policy.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Excessive agency and confused-deputy authority",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-gui",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-gui"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D::agentbox%2Fapi.py%23tool_pool%20%2B%20agentbox%2Fservice.py%23call_tool%20tool_concurrency::agentbox%2Fapi.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{tool}",
+   "boundary": "agentbox/api.py#tool_pool + agentbox/service.py#call_tool tool_concurrency",
+   "subsystem": "agentbox/api.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{tool}",
+  "boundary": "agentbox/api.py#tool_pool + agentbox/service.py#call_tool tool_concurrency",
+  "subsystem": "agentbox/api.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/service.py",
+   "agentbox/sandbox.py",
+   "agentbox/config.py",
+   "agentbox/web.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-pool",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-pool"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bwrite_file%2Cdelete_file%2CGUI%7D::agentbox%2Fservice.py%23snapshot%20quota%20%2B%20_snap_locks%20%2B%20GUI%20burst%20snapshots::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{write_file,delete_file,GUI}",
+   "boundary": "agentbox/service.py#snapshot quota + _snap_locks + GUI burst snapshots",
+   "subsystem": "agentbox/service.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{write_file,delete_file,GUI}",
+  "boundary": "agentbox/service.py#snapshot quota + _snap_locks + GUI burst snapshots",
+  "subsystem": "agentbox/service.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/sandbox.py",
+   "agentbox/config.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-pool",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-pool"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2Fexec::agentbox%2Fpolicy.py%23Policy.decide%20read-only-exec%20allowlist::agentbox%2Fpolicy.py::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/exec",
+   "boundary": "agentbox/policy.py#Policy.decide read-only-exec allowlist",
+   "subsystem": "agentbox/policy.py",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/exec",
+  "boundary": "agentbox/policy.py#Policy.decide read-only-exec allowlist",
+  "subsystem": "agentbox/policy.py",
+  "attack_class": "ATTACK-CLASSES.md#Injection",
+  "starting_paths": [
+   "agentbox/policy.py",
+   "agentbox/default_policy.yaml",
+   "agentbox/service.py",
+   "agentbox/sandbox.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Tool-argument injection into a downstream sink",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-policy",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-policy"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws::agentbox%2Fapi.py%23cookie%20session%20%2B%20same_origin%20%2B%20lease%20on%20WebSocket::agentbox%2Fapi.py::CLIENT-SIDE.md%23Cross-site%20WebSocket%20request%20use",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#WebSocket /sandboxes/{sid}/desktop/ws",
+   "boundary": "agentbox/api.py#cookie session + same_origin + lease on WebSocket",
+   "subsystem": "agentbox/api.py",
+   "attack_class": "CLIENT-SIDE.md#Cross-site WebSocket request use"
+  },
+  "surface": "agentbox/api.py#WebSocket /sandboxes/{sid}/desktop/ws",
+  "boundary": "agentbox/api.py#cookie session + same_origin + lease on WebSocket",
+  "subsystem": "agentbox/api.py",
+  "attack_class": "CLIENT-SIDE.md#Cross-site WebSocket request use",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox.py",
+   "agentbox/static"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "CLIENT-SIDE.md#Core discipline",
+   "CLIENT-SIDE.md#Cross-site WebSocket request use",
+   "CLIENT-SIDE.md#Universal moves",
+   "CLIENT-SIDE.md#Validation rules",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#IPC peer-authentication gaps",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-session",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-session"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23all%20JSON%20and%20browser%20routes::agentbox%2Fapi.py%23principal%20%2B%20human_only%20%2B%20screen_human%20%2B%20desktop_human::agentbox%2Fapi.py::ATTACK-CLASSES.md%23Access%20control",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#all JSON and browser routes",
+   "boundary": "agentbox/api.py#principal + human_only + screen_human + desktop_human",
+   "subsystem": "agentbox/api.py",
+   "attack_class": "ATTACK-CLASSES.md#Access control"
+  },
+  "surface": "agentbox/api.py#all JSON and browser routes",
+  "boundary": "agentbox/api.py#principal + human_only + screen_human + desktop_human",
+  "subsystem": "agentbox/api.py",
+  "attack_class": "ATTACK-CLASSES.md#Access control",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/service.py",
+   "agentbox/desktop.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#API-key scope and resource binding",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-access",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-access"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23tools%20read_file%2Fwrite_file%2Fdelete_file%2Flist_dir%20%2B%20POST%20files%20%2B%20GET%20outbox::agentbox%2Fsandbox.py%23safe_path%20%2B%20_workspace_path%20%2B%20clean_name%20%2B%20FIFO%20guard::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#tools read_file/write_file/delete_file/list_dir + POST files + GET outbox",
+   "boundary": "agentbox/sandbox.py#safe_path + _workspace_path + clean_name + FIFO guard",
+   "subsystem": "agentbox/sandbox.py",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "agentbox/api.py#tools read_file/write_file/delete_file/list_dir + POST files + GET outbox",
+  "boundary": "agentbox/sandbox.py#safe_path + _workspace_path + clean_name + FIFO guard",
+  "subsystem": "agentbox/sandbox.py",
+  "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/api.py",
+   "agentbox/web.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-files",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-files"
+ },
+ {
+  "coverage_id": "agentbox%2Fcli.py%23cmd_serve%20%2B%20agentbox%2Fapi.py%23create_app%20factory%20%2B%20deploy%2F%2A::agentbox%2Fcli.py%23bind_problem%20%2B%20runtime_problem%20%2B%20sandbox.py%20runtime%20selection::agentbox%2Fcli.py::CLOUD-AND-DEPLOYMENT.md%23Security-control%20precedence%20drift",
+  "canonical_refs": {
+   "surface": "agentbox/cli.py#cmd_serve + agentbox/api.py#create_app factory + deploy/*",
+   "boundary": "agentbox/cli.py#bind_problem + runtime_problem + sandbox.py runtime selection",
+   "subsystem": "agentbox/cli.py",
+   "attack_class": "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift"
+  },
+  "surface": "agentbox/cli.py#cmd_serve + agentbox/api.py#create_app factory + deploy/*",
+  "boundary": "agentbox/cli.py#bind_problem + runtime_problem + sandbox.py runtime selection",
+  "subsystem": "agentbox/cli.py",
+  "attack_class": "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift",
+  "starting_paths": [
+   "agentbox/cli.py",
+   "agentbox/api.py",
+   "agentbox/sandbox.py",
+   "agentbox/config.py",
+   "deploy",
+   "README.md"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift",
+   "CLOUD-AND-DEPLOYMENT.md#Trusted-proxy and mesh identity bypass",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-deploy",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-deploy"
+ },
+ {
+  "coverage_id": "agentbox%2Fweb.py%23%2Fui%2F%2A%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fapi.py%23same_origin%20%2B%20SameSite%3DStrict%20HttpOnly%20cookie::agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
+  "canonical_refs": {
+   "surface": "agentbox/web.py#/ui/* + /login + /logout",
+   "boundary": "agentbox/api.py#same_origin + SameSite=Strict HttpOnly cookie",
+   "subsystem": "agentbox/web.py",
+   "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF"
+  },
+  "surface": "agentbox/web.py#/ui/* + /login + /logout",
+  "boundary": "agentbox/api.py#same_origin + SameSite=Strict HttpOnly cookie",
+  "subsystem": "agentbox/web.py",
+  "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+  "starting_paths": [
+   "agentbox/web.py",
+   "agentbox/api.py",
+   "agentbox/desktop.py",
+   "agentbox/templates",
+   "agentbox/cli.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+   "WEB-PROTOCOL-AND-AUTH.md#Host and forwarded-header trust",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-webui",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-webui"
+ },
+ {
+  "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs::agentbox%2Fsandbox.py::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",
+  "canonical_refs": {
+   "surface": "code running inside the sandbox container (uid 1000 agent, uid 1001 desktop)",
+   "boundary": "agentbox/sandbox.py#container hardening flags + root-run docker execs",
+   "subsystem": "agentbox/sandbox.py",
+   "attack_class": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure"
+  },
+  "surface": "code running inside the sandbox container (uid 1000 agent, uid 1001 desktop)",
+  "boundary": "agentbox/sandbox.py#container hardening flags + root-run docker execs",
+  "subsystem": "agentbox/sandbox.py",
+  "attack_class": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "images/desktop",
+   "agentbox/service.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-deploy",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-deploy"
+ },
+ {
+  "coverage_id": "container%20output%20and%20agent%20request%20bodies::agentbox%2Fsandbox.py%23_Head%20exec%20cap%20%2B%20read%2Foutbox%2Fmanifest%2Fscreenshot%20caps::agentbox%2Fsandbox.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Unbounded%20buffering%20and%20cardinality",
+  "canonical_refs": {
+   "surface": "container output and agent request bodies",
+   "boundary": "agentbox/sandbox.py#_Head exec cap + read/outbox/manifest/screenshot caps",
+   "subsystem": "agentbox/sandbox.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality"
+  },
+  "surface": "container output and agent request bodies",
+  "boundary": "agentbox/sandbox.py#_Head exec cap + read/outbox/manifest/screenshot caps",
+  "subsystem": "agentbox/sandbox.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/api.py",
+   "agentbox/audit.py",
+   "agentbox/approvals.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-buffer",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-buffer"
+ },
+ {
+  "coverage_id": "container%20output%3A%20ps%2C%20xdotool%20getwindowpid%2C%20find%20-printf%20manifest::agentbox%2Fsandbox.py%23_parse_ps%20%2B%20gui_strays%20%2B%20_parse_manifest%20%2B%20diff_manifest::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "container output: ps, xdotool getwindowpid, find -printf manifest",
+   "boundary": "agentbox/sandbox.py#_parse_ps + gui_strays + _parse_manifest + diff_manifest",
+   "subsystem": "agentbox/sandbox.py",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "container output: ps, xdotool getwindowpid, find -printf manifest",
+  "boundary": "agentbox/sandbox.py#_parse_ps + gui_strays + _parse_manifest + diff_manifest",
+  "subsystem": "agentbox/sandbox.py",
+  "attack_class": "ATTACK-CLASSES.md#Business logic",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "images/desktop"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-gui",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-gui"
+ },
+ {
+  "coverage_id": "container-controlled%20strings%20rendered%20to%20humans%20%28outbox%20names%2C%20gui_changes%20paths%2C%20ps%20args%2C%20exec%20output%2C%20errors%29::agentbox%2Fweb.py%23describe%20%2B%20Jinja%20autoescape%20%2B%20agentbox%2Fcli.py%23_safe::agentbox%2Fweb.py::AI-AND-LLM.md%23Insecure%20output%20rendering",
+  "canonical_refs": {
+   "surface": "container-controlled strings rendered to humans (outbox names, gui_changes paths, ps args, exec output, errors)",
+   "boundary": "agentbox/web.py#describe + Jinja autoescape + agentbox/cli.py#_safe",
+   "subsystem": "agentbox/web.py",
+   "attack_class": "AI-AND-LLM.md#Insecure output rendering"
+  },
+  "surface": "container-controlled strings rendered to humans (outbox names, gui_changes paths, ps args, exec output, errors)",
+  "boundary": "agentbox/web.py#describe + Jinja autoescape + agentbox/cli.py#_safe",
+  "subsystem": "agentbox/web.py",
+  "attack_class": "AI-AND-LLM.md#Insecure output rendering",
+  "starting_paths": [
+   "agentbox/web.py",
+   "agentbox/templates",
+   "agentbox/static",
+   "agentbox/cli.py",
+   "agentbox/service.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Insecure output rendering",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules",
+   "CLIENT-SIDE.md#Core discipline",
+   "CLIENT-SIDE.md#DOM-based XSS",
+   "CLIENT-SIDE.md#Universal moves",
+   "CLIENT-SIDE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-webui",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-webui"
+ },
+ {
+  "coverage_id": "every%20audit%20append%20%28tool%20args%2C%20results%2C%20errors%2C%20GUI%20records%29::agentbox%2Faudit.py%23mask_text%20%2B%20_mask::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+  "canonical_refs": {
+   "surface": "every audit append (tool args, results, errors, GUI records)",
+   "boundary": "agentbox/audit.py#mask_text + _mask",
+   "subsystem": "agentbox/audit.py",
+   "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+  },
+  "surface": "every audit append (tool args, results, errors, GUI records)",
+  "boundary": "agentbox/audit.py#mask_text + _mask",
+  "subsystem": "agentbox/audit.py",
+  "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "starting_paths": [
+   "agentbox/audit.py",
+   "agentbox/service.py",
+   "agentbox/approvals.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/cli.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "selected_companion_blocks": [
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-audit",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-audit"
+ },
+ {
+  "coverage_id": "whole-repo%23basic%20exposures::whole-repo%23obvious%20controls%20%28secrets%2C%20debug%2C%20cookies%2C%20CORS%2C%20redirects%2C%20errors%29::whole-repo::ATTACK-CLASSES.md%23Obvious%20things",
+  "canonical_refs": {
+   "surface": "whole-repo#basic exposures",
+   "boundary": "whole-repo#obvious controls (secrets, debug, cookies, CORS, redirects, errors)",
+   "subsystem": "whole-repo",
+   "attack_class": "ATTACK-CLASSES.md#Obvious things"
+  },
+  "surface": "whole-repo#basic exposures",
+  "boundary": "whole-repo#obvious controls (secrets, debug, cookies, CORS, redirects, errors)",
+  "subsystem": "whole-repo",
+  "attack_class": "ATTACK-CLASSES.md#Obvious things",
+  "starting_paths": [
+   "agentbox",
+   "deploy",
+   "images",
+   ".github",
+   "README.md",
+   ".gitignore"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-access",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-access"
+ },
+ {
+  "coverage_id": "whole-repo%23undocumented%2Fedge%20surfaces::whole-repo%23feature%20interactions%20not%20covered%20by%20other%20units::whole-repo::ATTACK-CLASSES.md%23Wildcard",
+  "canonical_refs": {
+   "surface": "whole-repo#undocumented/edge surfaces",
+   "boundary": "whole-repo#feature interactions not covered by other units",
+   "subsystem": "whole-repo",
+   "attack_class": "ATTACK-CLASSES.md#Wildcard"
+  },
+  "surface": "whole-repo#undocumented/edge surfaces",
+  "boundary": "whole-repo#feature interactions not covered by other units",
+  "subsystem": "whole-repo",
+  "attack_class": "ATTACK-CLASSES.md#Wildcard",
+  "starting_paths": [
+   "agentbox",
+   "images",
+   "deploy",
+   "tests"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-wild",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-wild"
+ }
+]

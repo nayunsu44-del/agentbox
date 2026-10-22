@@ -2,17 +2,39 @@
   "run_id": "agentbox-run-3",
   "repo": "nayunsu44-del/agentbox",
   "target": "/home/user/agentbox",
-  "source_ref": {"commit": "0e4b9582965217f31dd8b5c5add902ca9f60be95", "branch": "ccr-e10bee8e-6wt669", "dirty": false, "dirty_note": "Only docs/security-audit/run-3/ (this run's output) is added during the run; no target source is modified."},
+  "source_ref": {
+    "commit": "0e4b9582965217f31dd8b5c5add902ca9f60be95",
+    "branch": "ccr-e10bee8e-6wt669",
+    "dirty": false,
+    "dirty_note": "Only docs/security-audit/run-3/ (this run's output) is added during the run; no target source is modified.",
+    "note": "PR #5 merged to main as 8e4db9e during reconnaissance; agentbox/, images/, deploy/ and tests/ are byte-identical to 0e4b958. Branch restarted from main."
+  },
   "profile": "standard",
-  "scope_paths": ["."],
+  "scope_paths": [
+    "."
+  ],
   "budget": 40,
   "budget_note": "Maximum agent invocations across all phases, proposed by the parent per the agreed run-3 plan (standard profile, 30-40 subagents).",
   "execution_policy": "sandboxed-source-and-local-only",
   "execution_note": "Agent-run target code (pure-function harnesses, unit tests) runs only through the parent's sbx wrapper: docker run --network none --read-only, host /usr and target mounted read-only, writes only to agents/<id>/scratch, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB memory, 1 CPU, 64 pids, 32 MiB file size, 120 s wall clock, explicit env allowlist (HOME, TMPDIR, PATH, PYTHONPATH, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE). Checks that need the real Docker-backed control plane (sandbox containers, desktop image) are run by the parent with dummy principals in a scratch AGENTBOX_HOME on loopback inside this disposable cloud container, as the owner requested; such checks are labelled parent-live in the ledger. Promotion uses the parent-side promote.py (no-follow dir_fd walk, single-link regular files, 256 KiB per file, 1 MiB per agent).",
   "companions_selected": [],
   "prior_runs": [
-    {"path": "docs/security-audit/run-1", "source_ref": "7fc501f61ae084af92edb66ca7c26832b16266bc", "files": ["coverage-ledger.json", "findings.json"]},
-    {"path": "docs/security-audit/run-2", "source_ref": "7fc501f61ae084af92edb66ca7c26832b16266bc (validation run; fixes landed afterwards)", "files": ["findings.json"], "note": "run-2 has no coverage-ledger.json; it re-validated run-1 records live."}
+    {
+      "path": "docs/security-audit/run-1",
+      "source_ref": "7fc501f61ae084af92edb66ca7c26832b16266bc",
+      "files": [
+        "coverage-ledger.json",
+        "findings.json"
+      ]
+    },
+    {
+      "path": "docs/security-audit/run-2",
+      "source_ref": "7fc501f61ae084af92edb66ca7c26832b16266bc (validation run; fixes landed afterwards)",
+      "files": [
+        "findings.json"
+      ],
+      "note": "run-2 has no coverage-ledger.json; it re-validated run-1 records live."
+    }
   ],
   "shared_file_owner": "parent",
   "run_status": "in_progress"
