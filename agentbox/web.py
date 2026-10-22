@@ -259,15 +259,15 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
     @app.get("/ui/audit", include_in_schema=False)
     def audit_frag(request: Request, sandbox_id: str | None = None, p=Depends(browser_human)):
         box.close_idle_gui_bursts()
-        rows = box.audit.list(sandbox_id=sandbox_id, limit=5000)
-        return render(request, "_audit.html", rows=rows[-400:][::-1], total=len(rows), broken=None)
+        rows, total = box.audit.recent(sandbox_id=sandbox_id, limit=400)
+        return render(request, "_audit.html", rows=rows, total=total, broken=None)
 
     @app.get("/ui/verify", include_in_schema=False)
     def verify_frag(request: Request, sandbox_id: str | None = None, p=Depends(browser_human)):
         v = box.audit.verify()
         here = None
         if v.broken_at is not None and sandbox_id:
-            here = any(r["id"] == v.broken_at for r in box.audit.list(sandbox_id=sandbox_id, limit=100000))
+            here = box.audit.belongs_to(v.broken_at, sandbox_id)
         box._safe_log(sandbox_id, None, "audit_verified", {"ok": v.ok, "checked": v.checked,
                                                            "broken_at": v.broken_at, "session": p.session},
                       actor="human")

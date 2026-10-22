@@ -11,6 +11,8 @@
   화면 경로만 쓸 수 있다. 로그아웃하면 그 세션의 화면 연결을 끊고 인수도 돌려준다.
 
 로그인 세션, 1회용 티켓, 인수 상태는 SQLite에 둔다. 쿠키와 티켓 값은 SHA-256 해시로만 저장한다.
+세션과 티켓에는 그것을 내준 사람 토큰의 지문(token_gen)을 함께 적는다. 사람 토큰을 바꾸고 다시 띄우면
+예전 토큰으로 받은 세션과 티켓은 모두 지워진다(토큰 교체 = 전체 로그아웃).
 서버를 다시 띄우면 로그인은 유지되고, 지난 실행에서 돌려주지 않은 인수는 서비스가 server_restart로
 기록하고 정리한다(화면 연결은 재시작으로 끊기므로 인수를 이어 가지 않는다).
 """
@@ -31,10 +33,10 @@ COOKIE = "agentbox_session"
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS ui_tickets (
-  hash TEXT PRIMARY KEY, scope TEXT NOT NULL, expires REAL NOT NULL);
+  hash TEXT PRIMARY KEY, scope TEXT NOT NULL, expires REAL NOT NULL, gen TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS ui_sessions (
   hash TEXT PRIMARY KEY, public TEXT NOT NULL, created TEXT NOT NULL, expires REAL NOT NULL,
-  scope TEXT NOT NULL DEFAULT '*');
+  scope TEXT NOT NULL DEFAULT '*', gen TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS takeover_leases (
   sandbox_id TEXT PRIMARY KEY, session TEXT NOT NULL, since TEXT NOT NULL, started REAL NOT NULL);
 """
@@ -46,6 +48,11 @@ def _now_iso() -> str:
 
 def _h(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
+
+
+def token_gen(human_token: str) -> str:
+    """사람 토큰의 지문. DB에 남으므로 느린 해시로 만든다(직접 정한 짧은 토큰을 DB에서 되맞히기 어렵게)."""
+    return hashlib.pbkdf2_hmac("sha256", human_token.encode(), b"agentbox-ui-session", 200_000).hex()[:32]
 
 
 def set_cookie(response, value: str, max_age: int, secure: bool) -> None:
@@ -74,7 +81,8 @@ class Conn:
 
 class DesktopControl:
     def __init__(self, ticket_ttl: float = 60, session_ttl: float = 12 * 3600, idle: float = 600,
-                 db_path: str | Path | None = None):
+                 db_path: str | Path | None = None, token_gen: str = ""):
+        self.gen = token_gen      # 이 실행의 사람 토큰 지문. 세션·티켓은 이 값이 같아야 쓸 수 있다
         self.ticket_ttl = ticket_ttl
         self.session_ttl = session_ttl
         self.idle = idle
@@ -88,9 +96,13 @@ class DesktopControl:
             # 범위가 없던 때의 세션은 화면 링크로 받은 것인지 알 수 없다. 버리고 다시 로그인하게 한다.
             self._db.execute("DROP TABLE ui_sessions")
         self._db.executescript(SCHEMA)
+        for table in ("ui_tickets", "ui_sessions"):   # 지문 열이 없던 때의 DB
+            if "gen" not in [r[1] for r in self._db.execute(f"PRAGMA table_info({table})")]:
+                self._db.execute(f"ALTER TABLE {table} ADD COLUMN gen TEXT NOT NULL DEFAULT ''")
         now = time.time()
-        self._db.execute("DELETE FROM ui_tickets WHERE expires < ?", (now,))
-        self._db.execute("DELETE FROM ui_sessions WHERE expires < ?", (now,))
+        # 만료된 것, 그리고 바뀌기 전 사람 토큰으로 받은 것은 버린다
+        self._db.execute("DELETE FROM ui_tickets WHERE expires < ? OR gen != ?", (now, self.gen))
+        self._db.execute("DELETE FROM ui_sessions WHERE expires < ? OR gen != ?", (now, self.gen))
         self._leases: dict[str, Lease] = {}
         self._gui: dict[str, threading.Lock] = {}
         self._conns: dict[str, Conn] = {}
@@ -99,17 +111,19 @@ class DesktopControl:
     def issue_ticket(self, sid: str) -> str:
         t = "tkt_" + secrets.token_urlsafe(24)
         with self._lock:
-            self._db.execute("INSERT INTO ui_tickets VALUES (?, ?, ?)", (_h(t), sid, time.time() + self.ticket_ttl))
+            self._db.execute("INSERT INTO ui_tickets (hash, scope, expires, gen) VALUES (?, ?, ?, ?)",
+                             (_h(t), sid, time.time() + self.ticket_ttl, self.gen))
         return t
 
     def redeem(self, ticket: str, sid: str) -> tuple[str, str] | None:
         """1회용. 맞으면 (쿠키 값, 공개 세션 id). 웹 UI 로그인 티켓은 sid가 '*'이다."""
         with self._lock:
-            row = self._db.execute("SELECT scope, expires FROM ui_tickets WHERE hash = ?", (_h(ticket),)).fetchone()
+            row = self._db.execute("SELECT scope, expires, gen FROM ui_tickets WHERE hash = ?",
+                                   (_h(ticket),)).fetchone()
             if not row:
                 return None
             self._db.execute("DELETE FROM ui_tickets WHERE hash = ?", (_h(ticket),))
-            if row[0] != sid or row[1] < time.time():
+            if row[0] != sid or row[1] < time.time() or row[2] != self.gen:
                 return None
         return self.new_session(sid)
 
@@ -120,8 +134,9 @@ class DesktopControl:
         now = time.time()
         with self._lock:
             self._db.execute("DELETE FROM ui_sessions WHERE expires < ?", (now,))
-            self._db.execute("INSERT INTO ui_sessions (hash, public, created, expires, scope) VALUES (?, ?, ?, ?, ?)",
-                             (_h(cookie), public, _now_iso(), now + self.session_ttl, scope))
+            self._db.execute("INSERT INTO ui_sessions (hash, public, created, expires, scope, gen)"
+                             " VALUES (?, ?, ?, ?, ?, ?)",
+                             (_h(cookie), public, _now_iso(), now + self.session_ttl, scope, self.gen))
         return cookie, public
 
     def end_session(self, cookie: str | None) -> str | None:
@@ -135,11 +150,11 @@ class DesktopControl:
         if not cookie:
             return None
         with self._lock:
-            row = self._db.execute("SELECT public, expires, scope FROM ui_sessions WHERE hash = ?",
+            row = self._db.execute("SELECT public, expires, scope, gen FROM ui_sessions WHERE hash = ?",
                                    (_h(cookie),)).fetchone()
             if not row:
                 return None
-            if row[1] < time.time():
+            if row[1] < time.time() or row[3] != self.gen:
                 self._db.execute("DELETE FROM ui_sessions WHERE hash = ?", (_h(cookie),))
                 return None
             return row[0], row[2]

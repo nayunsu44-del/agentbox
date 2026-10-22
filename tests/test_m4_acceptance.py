@@ -60,6 +60,18 @@ def test_login_survives_restart(home):
     assert c3.get("/ui", follow_redirects=False).status_code in (303, 401)
 
 
+def test_human_token_rotation_logs_out_browsers(home, monkeypatch):
+    c, _, _, human = _build()
+    cookie = c.post("/login", data={"token": human}, follow_redirects=False).cookies.get(COOKIE)
+    assert cookie
+    monkeypatch.setenv("AGENTBOX_HUMAN_TOKEN", "hum_rotated_" + "x" * 24)   # 사람 토큰 교체 후 재시작
+    c2, _, H2, _ = _build()
+    c2.cookies.set(COOKIE, cookie)
+    assert c2.get("/ui", follow_redirects=False).status_code in (303, 401)
+    assert c2.get("/ui/approvals", follow_redirects=False).status_code == 401
+    assert c2.get("/sandboxes", headers=H2).status_code == 200                # 새 토큰은 그대로 쓴다
+
+
 def test_secure_cookie_behind_tls(home, monkeypatch):
     monkeypatch.setenv("AGENTBOX_SECURE_COOKIE", "1")
     c, _, _, human = _build()

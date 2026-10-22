@@ -2,6 +2,7 @@
 
 import sqlite3
 
+import httpx
 import pytest
 
 from agentbox.audit import AuditLog
@@ -84,6 +85,41 @@ def test_secret_masking(tmp_path):
     text = log.list()[0]["payload"]["cmd"]
     assert "abcd1234" not in text and "SuperSecret" not in text and "sk-abcdefghij" not in text
     assert log.verify().ok
+
+
+def test_audit_recent_is_newest_with_real_total(tmp_path):
+    # run-3 v02: 화면은 오래된 5000개에서 멈췄다. recent()는 최신 것과 실제 개수를 돌려준다.
+    log = AuditLog(tmp_path / "a.db")
+    for i in range(5100):
+        log.append(actor="agent", event="e", sandbox_id="sb_a" if i % 10 else "sb_b", payload={"i": i})
+    rows, total = log.recent(limit=400)
+    assert total == 5100 and len(rows) == 400 and rows[0]["id"] == 5100 and rows[-1]["id"] == 4701
+    rows, total = log.recent(sandbox_id="sb_b", limit=3)
+    assert total == 510 and [r["id"] for r in rows] == [5091, 5081, 5071]
+    assert log.belongs_to(5091, "sb_b") and not log.belongs_to(5091, "sb_a")
+
+
+def test_cli_audit_pages_past_5000(monkeypatch, capsys):
+    from agentbox import cli
+    import argparse
+    rows = [{"id": i, "ts": "2026-01-01T00:00:00.000+00:00", "sandbox_id": "sb", "actor": "agent",
+             "event": "e", "tool": None, "payload": {}} for i in range(1, 6101)]
+
+    class Fake:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def get(self, path, params):
+            after, limit = params["after_id"], min(params["limit"], 5000)
+            return httpx.Response(200, json=[r for r in rows if r["id"] > after][:limit])
+
+    monkeypatch.setattr(cli, "_client", Fake)
+    cli.cmd_audit(argparse.Namespace(sandbox=None))
+    out = capsys.readouterr().out.splitlines()
+    assert len(out) == 6100 and out[-1].split()[0].endswith("6100")
 
 
 # --- 검수 반영: 정책 렉서와 bash 해석 불일치 (주석·리다이렉션) ---

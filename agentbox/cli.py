@@ -255,7 +255,13 @@ def cmd_approve(a: argparse.Namespace) -> None:
 def cmd_audit(a: argparse.Namespace) -> None:
     with _client() as c:
         params = {"sandbox_id": a.sandbox} if a.sandbox else {}
-        rows = _check(c.get("/audit", params=params | {"limit": 5000}))
+        rows: list[dict] = []
+        while True:   # /audit는 오래된 것부터 한 번에 최대 5000개라, after_id로 끝까지 넘겨 받는다
+            page = _check(c.get("/audit", params=params | {"limit": 5000,
+                                                         "after_id": rows[-1]["id"] if rows else 0}))
+            if not page:
+                break
+            rows += page
     icons = {"agent": "AI ", "human": "사람", "system": "SYS"}
     for e in rows:
         p = e["payload"]

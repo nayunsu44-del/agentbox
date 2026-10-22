@@ -70,7 +70,8 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         policy=Policy.load(settings.policy_path),
         sandboxes=SandboxManager(settings, settings.db_path),
         approvals=ApprovalStore(settings.db_path),
-        desktop=D.DesktopControl(idle=settings.takeover_idle, db_path=settings.db_path),
+        desktop=D.DesktopControl(idle=settings.takeover_idle, db_path=settings.db_path,
+                                 token_gen=D.token_gen(human_token)),
         approval_timeout=settings.approval_timeout,
         captures=settings.home / "captures",
     )
