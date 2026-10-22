@@ -34,6 +34,8 @@ AGENT_UID = "1000:1000"
 WORKSPACE = "/workspace"
 SOURCE = "/source"
 _OUT_LIMIT = 64 * 1024
+# 파일 읽기 한 번의 제한 시간(초). 일반 파일만 읽지만, 확인과 읽기 사이에 FIFO로 바뀌면 head가 끝없이 기다린다.
+_READ_TIMEOUT = 30
 
 # 데스크톱 템플릿 (images/desktop/Dockerfile과 맞춘다)
 DESKTOP_USER = "desktop"
@@ -498,8 +500,14 @@ class SandboxManager:
         c = self._require_running(sid)
         p = safe_path(path)
         limit = self.settings.max_read_bytes
-        res = c.exec_run(["head", "-c", str(limit + 1), "--", p], user=AGENT_UID, workdir=WORKSPACE, demux=True)
+        # 일반 파일만 읽는다. FIFO를 읽으면 쓰는 쪽이 생길 때까지 끝나지 않는다 (README 알려진 한계였다).
+        script = ('[ -f "$1" ] || { echo "일반 파일이 아님 (폴더·FIFO·소켓 등): $1" >&2; exit 3; }; '
+                  f'head -c {limit + 1} -- "$1"')
+        res = c.exec_run(["timeout", "-k", "2", str(_READ_TIMEOUT), "sh", "-c", script, "_", p],
+                         user=AGENT_UID, workdir=WORKSPACE, demux=True)
         out, err = res.output
+        if res.exit_code in (124, 137):
+            raise SandboxError(f"읽기 시간 초과 ({_READ_TIMEOUT}초): {p}")
         if res.exit_code != 0:
             raise SandboxError(_truncate(err) or f"읽기 실패 ({res.exit_code})")
         data = out or b""
@@ -598,7 +606,11 @@ class SandboxManager:
         limit = self.settings.max_upload_bytes
         script = (f'[ ! -L {OUTBOX} ] && [ -f "$1" ] && [ ! -L "$1" ] || {{ echo "결과함에 없는 파일" >&2; exit 3; }}; '
                   f'head -c {limit + 1} -- "$1"')
-        res = c.exec_run(["sh", "-c", script, "_", p], user=AGENT_UID, demux=True)
+        # 확인과 읽기 사이에 에이전트가 FIFO로 바꿔치기해도 사람의 요청이 멈추지 않게 시간 제한을 둔다.
+        res = c.exec_run(["timeout", "-k", "2", str(_READ_TIMEOUT), "sh", "-c", script, "_", p],
+                         user=AGENT_UID, demux=True)
+        if res.exit_code in (124, 137):
+            raise SandboxError(f"읽기 시간 초과 ({_READ_TIMEOUT}초): {name}")
         if res.exit_code != 0:
             raise SandboxError(_truncate(res.output[1]) or f"읽기 실패 ({res.exit_code})")
         data = res.output[0] or b""
