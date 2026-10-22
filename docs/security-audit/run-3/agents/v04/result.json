@@ -1,0 +1,134 @@
+{
+ "decision": "rejected",
+ "record": {
+  "verdict": "rejected",
+  "fingerprint": "agentbox/cli.py:runtime_problem:runc-alias-io.containerd.runc.v2-bypasses-exposed-runc-guard",
+  "title": "Exposed-serve runc guard checks only the literal runtime name 'runc', so the Docker-registered alias io.containerd.runc.v2 bypasses it and suppresses the dev-only warnings",
+  "description": "Candidate: cmd_serve refuses to expose a control plane whose sandbox runtime is runc unless --allow-runc / AGENTBOX_ALLOW_RUNC is set, but runtime_problem (cli.py:84) and the warning sites (cli.py:116 and 140, api.py:443, base.html:44, desktop.py:342) compare against the literal 'runc'. If the operator pins AGENTBOX_RUNTIME=io.containerd.runc.v2, which Docker lists and _detect_runtime accepts, an exposed plane starts without --allow-runc and the red dev-only badge and healthz dev_only flag disappear. Verification: the mechanism reproduces exactly as described in the sbx sandbox (auto and runc are refused when exposed; the alias is selected, runtime_problem returns None, serve starts silently, healthz dev_only is false, no desktop badge) and every cited line is accurate. What does not hold is the security classification: the selector is operator-controlled, the same operator can already opt in with --allow-runc, and no trust boundary is crossed (see reason).",
+  "claimed_root_cause": "runtime_problem and the dev-only warning sites decide on the runtime name string 'runc' instead of its isolation class, while _detect_runtime accepts any name Docker lists, so runc-class names such as io.containerd.runc.v2 (and crun or nvidia where an operator registers them) are treated as strong isolation.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/config.py",
+    "line": 31,
+    "scope": "Settings.runtime",
+    "description": "AGENTBOX_RUNTIME is read from the launcher's process environment into Settings.runtime. This is operator-controlled, not a lower-trust entrypoint: no agent, UI-session, desktop-link or API principal can set it (no os.environ write in the package, no runtime field in CreateSandbox, compose does not forward it)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 300,
+    "scope": "SandboxManager._detect_runtime",
+    "description": "An explicit pin is accepted whenever Docker's info()['Runtimes'] lists it (io.containerd.runc.v2 is listed on this host); the error at line 301 only enumerates available names. 'auto' (303-306) can never return the alias."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/cli.py",
+    "line": 110,
+    "scope": "cmd_serve",
+    "description": "exposed is computed at line 108 (TLS, behind-proxy or non-loopback bind); runtime_problem(box.sandboxes.runtime, exposed) is consulted and serve exits only when a problem is returned and --allow-runc / AGENTBOX_ALLOW_RUNC is absent (109, 111-113)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/cli.py",
+    "line": 84,
+    "scope": "runtime_problem",
+    "description": "`if runtime != \"runc\" or not exposed: return None` is a literal-name check, so the alias returns None (reproduced); the local warnings at cli.py:116 and 140 use the same literal."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 383,
+    "scope": "SandboxManager._run_container",
+    "description": "Containers are created with runtime=self.runtime (the alias if pinned). healthz (api.py:443), base.html:44 and desktop.py:342 then omit the dev-only indicator while the runtime name itself is still printed (api.py:442, base.html:43, desktop.py:284)."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/cli.py",
+    "line": 84,
+    "description": "Literal-name check that lets io.containerd.runc.v2 through when exposed (reproduced in the sandbox harness)."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 109,
+    "description": "Documented operator opt-out (--allow-runc / AGENTBOX_ALLOW_RUNC=1) starts exposed serve on runc with a loud warning (cli.py:115); the alias reaches the identical state without the flag, so it grants nothing the operator could not already choose."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 122,
+    "description": "The serve banner prints the selected runtime name at startup (reproduced: 'io.containerd.runc.v2' is shown)."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 81,
+    "description": "_RUNTIME_PREFERENCE (kata-fc, kata-qemu-firecracker, runsc, runc) is all that 'auto' can return with the fallback at 303-306; reproduced: auto resolves to runc on this host's runtime list and the guard fires."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 300,
+    "description": "Explicit pin accepted whenever Docker lists the name; on this host the list is io.containerd.runc.v2 and runc (architecture.md section 3)."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 45,
+    "description": "CreateSandbox accepts only source_dir and template: there is no per-request or per-principal runtime selector (human-only endpoint)."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 161,
+    "description": "The UI create form likewise takes only template and source_dir."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 443,
+    "description": "healthz dev_only is the literal comparison; line 442 still reports the runtime name (reproduced via the real function body)."
+   },
+   {
+    "file": "agentbox/templates/base.html",
+    "line": 43,
+    "description": "Every UI page header prints the runtime name next to the isolation label."
+   },
+   {
+    "file": "agentbox/templates/base.html",
+    "line": 44,
+    "description": "The red dev-only badge appears only for the literal 'runc'."
+   },
+   {
+    "file": "agentbox/desktop.py",
+    "line": 342,
+    "description": "Desktop page badge only for the literal 'runc' (reproduced with the real desktop.page); line 284 still prints the runtime name."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 431,
+    "description": "The sandbox_created audit event records the runtime name."
+   },
+   {
+    "file": "deploy/docker-compose.yml",
+    "line": 18,
+    "description": "The compose service forwards only AGENTBOX_HOME, AGENTBOX_BEHIND_TLS_PROXY and AGENTBOX_ALLOW_RUNC; AGENTBOX_RUNTIME is not forwarded (confirmed by a static YAML parse), so the shipped deployment resolves to auto and is refused on this host."
+   },
+   {
+    "file": "README.md",
+    "line": 81,
+    "description": "Documents the guard for the case where no strong runtime exists and the install would fall back to runc, which is the guarded auto path."
+   },
+   {
+    "file": "README.md",
+    "line": 265,
+    "description": "AGENTBOX_RUNTIME is documented as an operator override pinned to runsc or runc."
+   },
+   {
+    "file": "tests/test_m4_unit.py",
+    "line": 126,
+    "description": "The unit test encodes the intended contract: only literal runc is flagged when exposed; runsc, kata-fc and kata-qemu-firecracker pass (lines 127-130)."
+   }
+  ],
+  "reason": "Mechanism reproduced; security classification refuted. No lower-trust principal controls the selector and no trust boundary is crossed, which is the same ground on which run-1 rejected the desktop-ticket claim. REPRODUCED (sbx harness agents/v04/artifacts/v04_alias.py, output agents/v04/artifacts/v04_runtime_alias.out; real cli.runtime_problem and cmd_serve, real SandboxManager._detect_runtime, real desktop.page and healthz body; only Docker info() and uvicorn.run / api.build are stubbed; Docker Runtimes = [io.containerd.runc.v2, runc] per architecture.md section 3): AGENTBOX_RUNTIME unset/auto and runc resolve to runc and 'serve --host 0.0.0.0 --behind-tls-proxy' is refused; AGENTBOX_RUNTIME=io.containerd.runc.v2 is selected, runtime_problem returns None, the same serve command starts with no stderr warning, healthz dev_only is false and the desktop red badge is absent; crun, nvidia and runsc fail at startup on this host because they are not registered. All hunter line numbers and descriptions check out. WHY IT IS NOT A FINDING. (1) The first trace entry is not a lower-trust entrypoint: Settings.runtime comes only from the launcher's process environment (config.py:31). A static scan of the flat agentbox package finds no os.environ write and a single .runtime assignment (sandbox.py:293); POST /sandboxes and the UI create form take only source_dir and template (api.py:45-47, web.py:161); the compose file forwards only AGENTBOX_HOME, AGENTBOX_BEHIND_TLS_PROXY and AGENTBOX_ALLOW_RUNC (docker-compose.yml:18-25). Agent, UI-session, desktop-link and human-token principals cannot influence it, and the candidate itself states that no attacker action is involved. (2) No unauthorized action: the operator who must type the alias can already reach the identical state with --allow-runc / AGENTBOX_ALLOW_RUNC=1 (cli.py:109-115) or the bare uvicorn factory (api.py:448-450), so the bypass grants nothing beyond that documented consent; the alias is Docker's name for the containerd runc shim (runc-class, shared host kernel, as the candidate itself assumes) and the container hardening flags (sandbox.py:374-383) are unchanged. (3) Default and documented paths stay guarded: auto never selects the alias (sandbox.py:81, 303-306), README:81 describes the no-strong-runtime fallback that is guarded, README:265 documents pinning with runsc or runc, and the shipped compose never sets AGENTBOX_RUNTIME. The accident story is weak: the startup error only lists available runtimes and both listed names contain 'runc'. (4) 'Humans are told isolation is not runc' is overstated: the runtime name is printed in the serve banner (cli.py:122), every UI header (base.html:43), the desktop page (desktop.py:284), /healthz (api.py:442), create output (cli.py:139) and the sandbox_created audit event (service.py:431); only the red badge and the dev_only boolean are missing. (5) Impact is not demonstrated: harm needs a separate container-escape bug and equals the already accepted --allow-runc state, so the hunter's low/low/low rating has no lower-trust path to rest on (at most informational); crun and nvidia would pass only if an operator registers them in the Docker daemon. RETAINED AS HARDENING, NOT A FINDING: unlike bind_problem (allowlist-shaped, fails closed for unknown hosts), runtime_problem is a one-name denylist that fails open for unknown runtime names (CWE-184). Suggest one helper built on a strong-runtime allowlist (runsc*, kata*, with an override for custom-named strong runtimes) used at cli.py:84/116/140, api.py:443, base.html:44 and desktop.py:342, plus a regression test that runtime_problem('io.containerd.runc.v2', True) is not None."
+ },
+ "artifacts_to_promote": [
+  "v04_runtime_alias.out",
+  "v04_alias.py"
+ ]
+}

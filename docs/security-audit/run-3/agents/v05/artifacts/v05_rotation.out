@@ -1,0 +1,58 @@
+0.sys.version: 3.13.16
+0.uid: 65534
+0.new DesktopControl(db) -> old session_scope: True
+0.ui_sessions columns: ['hash', 'public', 'created', 'expires', 'scope']
+0.DesktopControl.__init__ signature: (self, ticket_ttl: 'float' = 60, session_ttl: 'float' = 43200, idle: 'float' = 600, db_path: 'str | Path | None' = None)
+0.DesktopControl public API: ['add_conn', 'close', 'close_all', 'close_session', 'drop_conn', 'end_session', 'forget_lease', 'gui_lock', 'idle', 'is_stale', 'issue_ticket', 'lease', 'leases_of', 'leftover_leases', 'may_connect', 'new_session', 'recheck', 'redeem', 'release', 'session', 'session_scope', 'session_ttl', 'state', 'take', 'ticket_ttl', 'touch']
+A1.POST /login(OLD) status: 303
+A1.cookie issued: True
+A1.set-cookie attrs: HttpOnly; Max-Age=43200; Path=/; SameSite=strict
+A1.baseline GET /ui/approvals with cookie_old: 200
+A2.same db file: True
+A2.Bearer OLD  GET /sandboxes: 401
+A2.Bearer NEW  GET /sandboxes (control): 200
+A2.POST /login(OLD) cookie issued: False
+A2.POST /login(NEW) cookie issued (control): True
+A2.forged cookie GET /ui/approvals (control): 401
+A2.forged cookie GET /ui (control): (303, '/login')
+A2.no cookie GET /ui/approvals (control): 401
+A3.dummy approval status before: pending
+A3.STALE cookie_old GET /ui (index): (200, None)
+A3.STALE cookie_old GET /ui/approvals: 200
+A3.STALE cookie_old GET /ui/sandboxes: 200
+A3.STALE cookie_old GET /ui/audit: 200
+A3.STALE cookie_old GET /ui/notify: 200
+A3.STALE cookie_old POST /ui/approvals/<dummy>/deny: 200
+A3.dummy approval after: {'status': 'denied', 'decided_by': 'human'}
+A3.audit approval_decision payload: [{'approval_id': 'apr_bb453f8c1fd7', 'decision': 'denied', 'session': 'hs_c48ae446'}]
+A3.stale session public id: hs_c48ae446
+A3.audit session id == stale cookie's session id: True
+A3.WS view, STALE cookie_old (1011 = passed 4401/4403 gates): closed code=1011
+A3.WS view, no cookie (control, 4401 expected): closed code=4401
+A3.WS view, forged cookie (control, 4401 expected): closed code=4401
+A4.ui_sessions rows (public, scope, seconds_left): [('hs_c48ae446', '*', 43199), ('hs_60c5e7c5', '*', 43199)]
+A4.routes with session/revoke/logout in path: ['/logout']
+A4.DesktopControl/AgentBox attrs with revoke|logout|all_sessions: []
+A4.routes whose auth dependency accepts the cookie principal: ["['GET'] /approvals/{aid}/capture.png <- ['screen_human', 'screen_principal']", "['GET'] /sandboxes/{sid}/desktop/state <- ['screen_principal']", "['GET'] /sandboxes/{sid}/outbox <- ['screen_human', 'screen_principal']", "['GET'] /sandboxes/{sid}/outbox/{name} <- ['screen_human', 'screen_principal']", "['GET'] /ui/approvals <- ['screen_human', 'screen_principal']", "['GET'] /ui/audit <- ['screen_human', 'screen_principal']", "['GET'] /ui/notify <- ['screen_human', 'screen_principal']", "['GET'] /ui/sandboxes <- ['screen_human', 'screen_principal']", "['GET'] /ui/sandboxes/{sid}/outbox <- ['screen_human', 'screen_principal']", "['GET'] /ui/sandboxes/{sid}/snapshots <- ['screen_human', 'screen_principal']", "['GET'] /ui/verify <- ['screen_human', 'screen_principal']", "['POST'] /sandboxes/{sid}/desktop/handback <- ['desktop_human', 'screen_principal']", "['POST'] /sandboxes/{sid}/desktop/takeover <- ['desktop_human', 'screen_principal']", "['POST'] /sandboxes/{sid}/files <- ['screen_human', 'screen_principal']", "['POST'] /ui/approvals/{aid}/{decision} <- ['screen_human', 'screen_principal']", "['POST'] /ui/sandboxes <- ['screen_human', 'screen_principal']", "['POST'] /ui/sandboxes/{sid}/delete <- ['screen_human', 'screen_principal']", "['POST'] /ui/sandboxes/{sid}/restore/{snap_id} <- ['screen_human', 'screen_principal']", "['POST'] /ui/sandboxes/{sid}/snapshots <- ['screen_human', 'screen_principal']"]
+C1.POST /login(NEW) presenting stale cookie: new cookie issued: True
+C1.presented (replaced) session still valid: True
+C2.POST /ui/ticket (Bearer NEW) status: 201
+C2.GET /login?ticket=* presenting cookie: new cookie issued: True
+C2.presented (replaced) session still valid: True
+C3.GET /sandboxes/<sid>/desktop?ticket presenting '*' cookie: scoped cookie issued: True
+C3.presented '*' session still valid: True
+C3.scoped cookie GET /ui/approvals (scope check holds): 403
+C4.POST /logout(cookie X) status: 303
+C4.X valid after logout: False
+C4.other sessions untouched by logout (stale, c_tkt): (True, True)
+D1.after expiry: STALE cookie_old GET /ui/approvals: 401
+B1.login(token1) cookie issued: True
+B2.token regenerated (differs): True
+B2.Bearer token1 GET /sandboxes: 401
+B2.Bearer token2 GET /sandboxes (control): 200
+B2.STALE cookie1 GET /ui/approvals: 200
+B2.STALE cookie1 GET /ui/sandboxes: 200
+E1.(fix prototype) before rotation: cookie GET /ui/approvals: 200
+E2.(fix prototype) after rotation: old cookie GET /ui/approvals: 401
+E3.(fix prototype) new token login works: 200
+E4.(fix prototype) restart without rotation keeps login: 200

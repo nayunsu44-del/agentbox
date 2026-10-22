@@ -1,0 +1,41 @@
+=== A. control (no pressure) ===
+A1 first GUI input -> 200 | burst recorded: True | baseline manifest entries: 300
+   A2 close: gui_changes counts={'added': 1, 'deleted': 0, 'modified': 0} truncated=False | real change visible in added[:100]: True | listed paths=1
+
+=== B. pid pressure, 2 free pid(s) left when the burst opens ===
+pids 1022/1024
+diag pgrep Xvfb: exit=0 out='18'
+workspace_manifest: returned manifest entries=0 truncated=False (no exception)
+desktop_processes: returned procs=986 window_pids=5 (no exception)
+first GUI input -> status 200
+burst recorded: True | baseline manifest entries: 0
+audit events added: [('tool_request', 'key'), ('policy_decision', 'key'), ('snapshot', 'key'), ('tool_result', 'key')]
+after pressure ended (pids 53/1024): next GUI input -> 200 | needs_snapshot: False | burst recorded: True
+audit events added: [('tool_request', 'key'), ('policy_decision', 'key'), ('tool_result', 'key')]
+   close after degraded open: gui_changes counts={'added': 301, 'deleted': 0, 'modified': 0} truncated=True | real change visible in added[:100]: False | listed paths=100
+
+=== B. pid pressure, 1 free pid(s) left when the burst opens ===
+pids 1023/1024
+diag pgrep Xvfb: exit=0 out='21'
+workspace_manifest: returned manifest entries=0 truncated=False (no exception)
+desktop_processes: returned procs=987 window_pids=0 (no exception)
+first GUI input -> status 200
+burst recorded: True | baseline manifest entries: 0
+audit events added: [('tool_request', 'key'), ('policy_decision', 'key'), ('snapshot', 'key'), ('tool_result', 'key')]
+after pressure ended (pids 53/1024): next GUI input -> 200 | needs_snapshot: False | burst recorded: True
+audit events added: [('tool_request', 'key'), ('policy_decision', 'key'), ('tool_result', 'key')]
+   close after degraded open: gui_changes counts={'added': 301, 'deleted': 0, 'modified': 0} truncated=True | real change visible in added[:100]: False | listed paths=100
+
+=== B. pid pressure, 0 free pid(s) left when the burst opens ===
+pids 1024/1024
+diag pgrep Xvfb: exit=0 out='19'
+workspace_manifest: returned manifest entries=0 truncated=False (no exception)
+desktop_processes: returned procs=988 window_pids=0 (no exception)
+first GUI input -> status 200
+burst recorded: True | baseline manifest entries: 0
+audit events added: [('tool_request', 'key'), ('policy_decision', 'key'), ('snapshot', 'key'), ('tool_result', 'key')]
+after pressure ended (pids 53/1024): next GUI input -> 200 | needs_snapshot: False | burst recorded: True
+audit events added: [('tool_request', 'key'), ('policy_decision', 'key'), ('tool_result', 'key')]
+   close after degraded open: gui_changes counts={'added': 301, 'deleted': 0, 'modified': 0} truncated=True | real change visible in added[:100]: False | listed paths=100
+
+done

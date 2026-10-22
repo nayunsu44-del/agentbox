@@ -1,0 +1,62 @@
+python 3.13.16 euid 65534
+
+== A. _detect_runtime + cli.runtime_problem ==
+-- Docker Runtimes = ['io.containerd.runc.v2', 'runc']  [this host (arch.md s3)]
+   AGENTBOX_RUNTIME=unset                      -> selected='runc'                     guard_fires(exposed)=True  guard_fires(local)=False
+   AGENTBOX_RUNTIME='auto'                     -> selected='runc'                     guard_fires(exposed)=True  guard_fires(local)=False
+   AGENTBOX_RUNTIME='runc'                     -> selected='runc'                     guard_fires(exposed)=True  guard_fires(local)=False
+   AGENTBOX_RUNTIME='io.containerd.runc.v2'    -> selected='io.containerd.runc.v2'    guard_fires(exposed)=False guard_fires(local)=False
+   AGENTBOX_RUNTIME='crun'                     -> startup error: SandboxError: 요청한 런타임 crun이 Docker에 없음. 가능한 것: ['io.containerd.runc.v2', 'runc']
+   AGENTBOX_RUNTIME='nvidia'                   -> startup error: SandboxError: 요청한 런타임 nvidia이 Docker에 없음. 가능한 것: ['io.containerd.runc.v2', 'runc']
+   AGENTBOX_RUNTIME='runsc'                    -> startup error: SandboxError: 요청한 런타임 runsc이 Docker에 없음. 가능한 것: ['io.containerd.runc.v2', 'runc']
+-- Docker Runtimes = ['io.containerd.runc.v2', 'runc', 'runsc']  [hypothetical host +runsc]
+   AGENTBOX_RUNTIME=unset                      -> selected='runsc'                    guard_fires(exposed)=False guard_fires(local)=False
+   AGENTBOX_RUNTIME='auto'                     -> selected='runsc'                    guard_fires(exposed)=False guard_fires(local)=False
+   AGENTBOX_RUNTIME='runc'                     -> selected='runc'                     guard_fires(exposed)=True  guard_fires(local)=False
+   AGENTBOX_RUNTIME='io.containerd.runc.v2'    -> selected='io.containerd.runc.v2'    guard_fires(exposed)=False guard_fires(local)=False
+   AGENTBOX_RUNTIME='crun'                     -> startup error: SandboxError: 요청한 런타임 crun이 Docker에 없음. 가능한 것: ['io.containerd.runc.v2', 'runc', 'runsc']
+   AGENTBOX_RUNTIME='nvidia'                   -> startup error: SandboxError: 요청한 런타임 nvidia이 Docker에 없음. 가능한 것: ['io.containerd.runc.v2', 'runc', 'runsc']
+   AGENTBOX_RUNTIME='runsc'                    -> selected='runsc'                    guard_fires(exposed)=False guard_fires(local)=False
+-- Docker Runtimes = ['crun', 'io.containerd.runc.v2', 'nvidia', 'runc']  [hypothetical host +crun,+nvidia]
+   AGENTBOX_RUNTIME=unset                      -> selected='runc'                     guard_fires(exposed)=True  guard_fires(local)=False
+   AGENTBOX_RUNTIME='auto'                     -> selected='runc'                     guard_fires(exposed)=True  guard_fires(local)=False
+   AGENTBOX_RUNTIME='runc'                     -> selected='runc'                     guard_fires(exposed)=True  guard_fires(local)=False
+   AGENTBOX_RUNTIME='io.containerd.runc.v2'    -> selected='io.containerd.runc.v2'    guard_fires(exposed)=False guard_fires(local)=False
+   AGENTBOX_RUNTIME='crun'                     -> selected='crun'                     guard_fires(exposed)=False guard_fires(local)=False
+   AGENTBOX_RUNTIME='nvidia'                   -> selected='nvidia'                   guard_fires(exposed)=False guard_fires(local)=False
+   AGENTBOX_RUNTIME='runsc'                    -> startup error: SandboxError: 요청한 런타임 runsc이 Docker에 없음. 가능한 것: ['crun', 'io.containerd.runc.v2', 'nvidia', 'runc']
+
+== B. dev-only indicators (real desktop.page, real healthz body, base.html condition) ==
+   desktop.page(runtime='runc'): red 'runc: dev only' badge=True  runtime name still printed ('격리: runc')=True
+   desktop.page(runtime='io.containerd.runc.v2'): red 'runc: dev only' badge=False  runtime name still printed ('격리: io.containerd.runc.v2')=True
+   api.py healthz source (lines 441-443): def health(): return {"ok": True, "runtime": box.sandboxes.runtime, "image": settings.image, "templates": sorted(settings.templates()), "dev_only": box.sandboxes.runtime == "runc"}
+   healthz() with runtime='runc': {'ok': True, 'runtime': 'runc', 'image': 'img', 'templates': ['cli', 'desktop'], 'dev_only': True}
+   healthz() with runtime='io.containerd.runc.v2': {'ok': True, 'runtime': 'io.containerd.runc.v2', 'image': 'img', 'templates': ['cli', 'desktop'], 'dev_only': False}
+   base.html:43: <span class="badge">격리: {{ runtime }}</span>
+   base.html:44: {% if runtime == "runc" %}<span class="badge warn">runc: 개발 전용 (격리 약함)</span>{% endif %}
+
+== C. real cli.main(['serve', ...]) end to end ==
+   exposed, AGENTBOX_RUNTIME unset(auto)            started=False exit=refused:격리 런타임이 runc다 (호스트 커널을 그대로 공유,...
+        stderr: (no stderr warning)
+   exposed, AGENTBOX_RUNTIME=runc                   started=False exit=refused:격리 런타임이 runc다 (호스트 커널을 그대로 공유,...
+        stderr: (no stderr warning)
+   exposed, AGENTBOX_RUNTIME=io.containerd.runc.v2  started=True  exit=None
+        stderr: (no stderr warning)
+        stdout banner: 격리 런타임: io.containerd.runc.v2   이미지: buildpack-deps:noble-curl
+   exposed, runc + --allow-runc (explicit consent)  started=True  exit=None
+        stderr: 경고: --allow-runc로 runc 샌드박스를 밖에 연다. 격리 런타임이 runc다 (호스트 커널을 그대로 공유, 개발 
+        stdout banner: 격리 런타임: runc   이미지: buildpack-deps:noble-curl
+   exposed, alias + --allow-runc                    started=True  exit=None
+        stderr: (no stderr warning)
+        stdout banner: 격리 런타임: io.containerd.runc.v2   이미지: buildpack-deps:noble-curl
+   loopback, runc                                   started=True  exit=None
+        stderr: ! 격리 런타임이 runc다. 개발 전용 (호스트 커널을 그대로 공유). 127.0.0.1에서만 열린다.
+        stdout banner: 격리 런타임: runc   이미지: buildpack-deps:noble-curl
+   loopback, alias                                  started=True  exit=None
+        stderr: (no stderr warning)
+        stdout banner: 격리 런타임: io.containerd.runc.v2   이미지: buildpack-deps:noble-curl
+
+== D. static scan: writers of Settings.runtime / os.environ, compose pass-through ==
+   config.py:31: Settings.runtime field default = env AGENTBOX_RUNTIME
+   sandbox.py:293: assignment to .runtime
+   compose agentbox.environment keys = ['AGENTBOX_ALLOW_RUNC', 'AGENTBOX_BEHIND_TLS_PROXY', 'AGENTBOX_HOME']  (AGENTBOX_RUNTIME forwarded: False)

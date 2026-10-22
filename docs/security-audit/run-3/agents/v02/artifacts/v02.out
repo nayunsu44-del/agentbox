@@ -1,0 +1,39 @@
+0. agent POST /approvals/apr_probe -> 403 {'detail': '에이전트 토큰으로는 승인할 수 없음'}
+   rows after 1 refused request: 1 [('approval_forbidden', 'agent', 'sb_v02')]
+   allowed exec {'command': 'ls'} -> 200; rows added=3 ['tool_request', 'policy_decision', 'tool_result']
+   allowed list_dir {'path': '/workspace'} -> 200; rows added=3 ['tool_request', 'policy_decision', 'tool_result']
+   allowed exec {'command': 'true'} -> 202; rows added=3 ['tool_request', 'policy_decision', 'approval_requested']
+1. flood: 4991 refused agent POSTs (+9 rows from the 3 step-0 probe tool calls), non-403=0, 15.3s; rows=5000 ids 1..5000; by kind=[('approval_forbidden', 'agent', 'sb_v02', 4991), ('approval_requested', 'system', 'sb_v02', 1), ('policy_decision', 'system', 'sb_v02', 3), ('tool_request', 'agent', 'sb_v02', 3), ('tool_result', 'system', 'sb_v02', 2)]
+2. UI poll with 5000 rows: status=200 shown=400 ids 4601..5000 total=5000 newest_in_db=5000 newest_shown=5000
+3a. later allowed exec (policy read-only-exec): 200 executed
+3b. later GUI click (opens a GUI burst + snapshot): 200 executed
+3c. unrelated sandbox sb_other later exec: 200 executed
+4. DB rows total=5012 max_id=5012; rows with id>5000 (12):
+      (5001, 'agent', 'tool_request', 'exec', 'sb_v02')
+      (5002, 'system', 'policy_decision', 'exec', 'sb_v02')
+      (5003, 'system', 'tool_result', 'exec', 'sb_v02')
+      (5004, 'agent', 'tool_request', 'click', 'sb_v02')
+      (5005, 'system', 'policy_decision', 'click', 'sb_v02')
+      (5006, 'system', 'snapshot', 'click', 'sb_v02')
+      (5007, 'system', 'tool_result', 'click', 'sb_v02')
+      (5008, 'system', 'gui_processes_stopped', None, 'sb_v02')
+      (5009, 'system', 'gui_changes', None, 'sb_v02')
+      (5010, 'agent', 'tool_request', 'exec', 'sb_other')
+      (5011, 'system', 'policy_decision', 'exec', 'sb_other')
+      (5012, 'system', 'tool_result', 'exec', 'sb_other')
+   UI poll: status=200 template=_audit.html shown=400 ids 4601..5000 total=5000
+   UI events shown: ['approval_forbidden']
+   footer: 최근 400개만 표시 (전체 5000개)
+   ids > 5000 shown in UI: [] | gui_changes shown: False | gui_processes_stopped shown: False | AFTER_FLOOD_MARKER shown: False
+   gui_changes row id=5009; what the human would read if it were shown: GUI 구간(snap_0001부터) 바뀐 파일: 추가 0 · 변경 0 · 삭제 1 · 삭제됨: important.txt
+   UI poll for unrelated sb_other: status=200 shown=3 ids [5012, 5011, 5010] total=3 OTHER_SANDBOX_MARKER shown=True
+5. agentbox audit default (system-wide): lines=5000 first_id=1 last_id=5000 AFTER_FLOOD_MARKER=False OTHER_SANDBOX_MARKER=False gui_changes=False gui_processes_stopped=False
+5. agentbox audit --sandbox sb_v02: lines=5000 first_id=1 last_id=5000 AFTER_FLOOD_MARKER=False OTHER_SANDBOX_MARKER=False gui_changes=False gui_processes_stopped=False
+5. agentbox audit --sandbox sb_other: lines=3 first_id=5010 last_id=5012 AFTER_FLOOD_MARKER=False OTHER_SANDBOX_MARKER=True gui_changes=False gui_processes_stopped=False
+6. GET /audit?after_id=5000 -> ids [5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008, 5009, 5010, 5011, 5012] events ['tool_request', 'policy_decision', 'tool_result', 'tool_request', 'policy_decision', 'snapshot', 'tool_result', 'gui_processes_stopped', 'gui_changes', 'tool_request', 'policy_decision', 'tool_result']
+   GET /audit/verify -> {'ok': True, 'checked': 5012, 'broken_at': None, 'reason': None}
+   GET /audit (default limit=500) newest id: 500
+7a. newest-N + COUNT(*) fix: shown=400 ids 4610..5009 total=5009 gui_changes shown=True
+7b. CLI after_id paging loop: rows=5012 first=1 last=5012 (db max=5012)
+   fix check: sb_v02 newest id in DB=5009 count=5009; fix_ok=True
+RESULT {"boundary_newest_shown": 5000, "cli_None": {"last_id": 5000, "lines": 5000}, "cli_sb_other": {"last_id": 5012, "lines": 3}, "cli_sb_v02": {"last_id": 5000, "lines": 5000}, "db_max": 5012, "db_total": 5012, "fix_ok": true, "flood_non_403": 0, "flood_requests": 5000, "gui_changes_id": 5009, "killed": [200], "rows_after_flood": 5000, "ui_max": 5000, "ui_min": 4601, "ui_shown": 400, "ui_shows_gui_changes": false, "ui_total": 5000}

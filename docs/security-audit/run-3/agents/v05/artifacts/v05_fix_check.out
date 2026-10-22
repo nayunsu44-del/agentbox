@@ -1,0 +1,11 @@
+F1.restart with the same token keeps the session: True
+F2.token rotated: old session: None
+F2.token rotated: old unredeemed ticket: None
+F3.session minted under B survives a restart under B: True
+F3.ticket minted under B survives a restart under B: True
+F4.revoke_all returns count (>=1): 2
+F4.session after revoke_all: None
+F5.legacy db + token_gen: legacy session dropped: None
+F5.gen column added: True
+F6.legacy db + default token_gen: session kept (old callers unchanged): True
+F7.pytest (repo test_m4_unit.py session/ticket/lease tests vs patched class) exit code: 0
