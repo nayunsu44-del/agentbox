@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import threading
 import time
 from dataclasses import dataclass
@@ -31,6 +32,8 @@ GUI_TOOLS = {"screenshot", "click", "type", "key"}
 GUI_INPUT = GUI_TOOLS - {"screenshot"}
 SNAPSHOT_TOOLS = {"write_file", "delete_file"} | GUI_INPUT   # 허용 경로에서 스냅샷을 뜰 수 있는 도구
 TOOLS = FILE_TOOLS | GUI_TOOLS
+LOGGED_ARGS_MAX = 64 * 1024    # 감사 로그에 원문 그대로 남기는 도구 인자 크기 (JSON 바이트)
+LOGGED_ARGS_HEAD = 16 * 1024   # 넘으면 남기는 앞부분
 
 
 @dataclass
@@ -129,12 +132,19 @@ class AgentBox:
 
     @staticmethod
     def _logged_args(tool: str, args: dict[str, Any]) -> dict[str, Any]:
-        """감사 로그에는 쓸 파일 내용 대신 크기와 해시를 남긴다."""
+        """감사 로그에는 쓸 파일 내용 대신 크기와 해시를 남긴다. 나머지 인자도 LOGGED_ARGS_MAX를 넘으면
+        앞부분과 크기·해시만 남긴다. 감사 로그는 지울 수 없어서, 에이전트가 큰 인자로 키우면 되돌릴 수 없다."""
         if tool == "write_file" and "content" in args:
             data = str(args.get("content", "")).encode("utf-8")
-            return {k: v for k, v in args.items() if k != "content"} | {
+            args = {k: v for k, v in args.items() if k != "content"} | {
                 "content_bytes": len(data), "content_sha256": hashlib.sha256(data).hexdigest()}
-        return args
+        blob = json.dumps(args, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+        if len(blob) <= LOGGED_ARGS_MAX:
+            return args
+        kept = {k: args[k] for k in ("content_bytes", "content_sha256") if k in args}
+        return kept | {"args_truncated": True, "args_bytes": len(blob),
+                       "args_sha256": hashlib.sha256(blob).hexdigest(),
+                       "args_head": blob[:LOGGED_ARGS_HEAD].decode("utf-8", errors="replace")}
 
     @staticmethod
     def _summary(tool: str, result: dict[str, Any]) -> dict[str, Any]:

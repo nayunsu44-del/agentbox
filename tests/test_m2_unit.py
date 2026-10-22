@@ -63,6 +63,22 @@ def test_default_policy_delete_needs_approval():
     assert p.decide("screenshot", {}).action == "allow"
 
 
+def test_large_tool_args_are_capped_in_audit():
+    # run-3 v08: 에이전트가 아무 도구 인자에 큰 값을 넣으면 지울 수 없는 감사 행이 그 크기로 남았다.
+    import json
+    from agentbox.service import LOGGED_ARGS_HEAD, LOGGED_ARGS_MAX
+    junk = "A" * (3 * 1024 * 1024)
+    la = AgentBox._logged_args("read_file", {"path": "/workspace/x", "junk": junk})
+    assert la["args_truncated"] and la["args_bytes"] > len(junk) and len(la["args_sha256"]) == 64
+    assert len(json.dumps(la).encode()) < LOGGED_ARGS_HEAD + 1024
+    la = AgentBox._logged_args("write_file", {"path": "a", "content": "x", "junk": junk})
+    assert la["content_bytes"] == 1 and la["args_truncated"]       # 승인 미리보기가 쓰는 키는 남는다
+    small = {"command": "ls -la " + "a" * 100}
+    assert AgentBox._logged_args("exec", small) == small
+    edge = {"command": "a" * (LOGGED_ARGS_MAX - 20)}
+    assert len(json.dumps(edge).encode()) <= LOGGED_ARGS_MAX and AgentBox._logged_args("exec", edge) == edge
+
+
 def test_write_file_content_not_logged():
     la = AgentBox._logged_args("write_file", {"path": "a.md", "content": "비밀 내용"})
     assert "content" not in la and la["content_bytes"] == len("비밀 내용".encode()) and len(la["content_sha256"]) == 64
