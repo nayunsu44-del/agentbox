@@ -1,0 +1,4 @@
+command length: 20017 | simple_programs: {'tail'}
+default policy decision: allow read-only-exec
+tail process states after timeout (Z = zombie, i.e. killed but not yet reaped by this harness's PID 1): 6 Z;
+tail processes during exec: 6 | exit code 124 after 3.5s | tail processes after timeout: 6
