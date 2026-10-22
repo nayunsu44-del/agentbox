@@ -1,0 +1,28 @@
+{
+  "run_id": "agentbox-run-1",
+  "repo": "nayunsu44-del/agentbox",
+  "target": "/home/user/agentbox",
+  "source_ref": {
+    "commit": "7fc501f61ae084af92edb66ca7c26832b16266bc",
+    "dirty": false
+  },
+  "profile": "standard",
+  "scope_paths": [
+    "."
+  ],
+  "budget": null,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "execution_note": "No OS-enforced sandbox was provisioned for this run; no target-controlled code is executed. Claims that need runtime evidence are recorded as needs_validation with that blocker.",
+  "companions_selected": [],
+  "prior_runs": [],
+  "shared_file_owner": "parent",
+  "run_status": "complete",
+  "phases_complete": 6,
+  "agents_spent": {
+    "recon": 6,
+    "hunt": 7,
+    "post_wave_critic": "parent-critic (inline)",
+    "verify": 9,
+    "record_verify": 8
+  }
+}
