@@ -7,7 +7,7 @@
 - **무엇:**
   - run-1: Cloudflare `security-audit` 스킬(6단계)로 agentbox 전체를 감사했다. 기준 커밋 `7fc501f`.
   - run-2: run-1이 남긴 needs_validation 5건을 실제 Docker에서 검증했다.
-- **브랜치·PR:** 작업 브랜치 `ccr-e10bee8e-6wt669`. PR #1(감사 수정·CI), #2(화면 링크 세션 범위), #3(FIFO), #4(runc 차단)는 `main`에 병합됐다. **PR #5(GUI 백그라운드 정리·세션 만료)는 CI 통과, 병합 대기**(사용자 승인 필요). 병합할 때마다 작업 브랜치를 최신 `main`에서 다시 시작한다.
+- **브랜치·PR:** run-3은 `ccr-0da6ba34-sc9pu1`(아래 "3차 감사(run-3) 진행 상태"). run-1·2 때 작업 브랜치는 `ccr-e10bee8e-6wt669`. PR #1(감사 수정·CI), #2(화면 링크 세션 범위), #3(FIFO), #4(runc 차단)는 `main`에 병합됐다. **PR #5(GUI 백그라운드 정리·세션 만료)는 CI 통과, 병합 대기**(사용자 승인 필요). 병합할 때마다 작업 브랜치를 최신 `main`에서 다시 시작한다.
 - **현재 상태:** 감사 확정 9건 중 **8건 수정 완료**, **N-1(High)은 방안 C·A·G + 백그라운드 정리로 부분 완화**(복구·경고·기록·정리, 승인 우회는 남음). 기각 1건. README "아직 고치지 않은 것" 항목(비밀값 가림, 화면 링크 세션, FIFO, runc)도 모두 고쳤다.
 - **테스트:** 전체 `pytest` 205개 통과(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
 
@@ -79,25 +79,46 @@ pytest                                                 # 160 passed
 
 ## 3차 감사(run-3) 진행 상태 — 다음 세션이 여기서 이어받는다
 
-작업 브랜치: `ccr-df7eb88d-1nmb5q` (PR #6 브랜치 `ccr-e10bee8e-6wt669`의 커밋 18개 + 이후 커밋). **PR #6 브랜치에는 아직 반영하지 않았다**(사용자 허락 필요). 사용량 한도로 3단계 중간에 멈췄다(한도 해제 15:30 UTC).
+작업 브랜치: `ccr-0da6ba34-sc9pu1` (이전 run-3 브랜치 `ccr-df7eb88d-1nmb5q`, PR #7을 이어받음). **4단계(findings.json)까지 끝났고 사용량 한도로 멈췄다.** 5단계 독립 재검증과 6단계 보고서는 아직이다(`run-metadata.json`의 `run_status: incomplete`).
 
-### 3단계 결과 (후보 14개)
-| 검증자 | 후보(fingerprint 요약) | 상태 |
-|---|---|---|
-| v02 | audit.py:list 타임라인 5000행 고정 | **확정 medium** — `agents/v02/result.json` 저장·승격 완료 |
-| v04 | cli.py runtime_problem runc 별칭 | **기각** (운영자 설정, 경계 없음) — 방어 강화 메모: 거부 목록→허용 목록 |
-| v05 | desktop.py 사람 토큰 교체해도 브라우저 세션 유지 | **확정 medium** — 저장·승격 완료 (패치 초안 `agents/v05/artifacts/desktop_fixed.py`) |
-| v07 | gui_strays _NET_WM_PID | 이전 세션이 **기각**했으나 레코드가 소실됨 → **v15로 재검증 필요** (`agents/v15/prompt.md` 준비됨) |
-| v12 | service.py GUI 구간 상태가 restore/pause에서 유실 | 검증자는 **확정 low**를 냈으나 trace에 `sink` 2개로 스키마 위반 → 폐기. 내용은 `agents/v12/result.rejected-by-validator.json`에 참고용 보존. **새 검증자로 재실행** |
-| v01 v03 v08 v09 v10 v11 v13 v14 | — | 한도로 중도 종료(결과 없음). **새로 실행** (v08은 확정 직전이었음) |
-| v06 | source_dir 대소문자 우회 | 아직 실행 안 함. 이 커널은 대소문자 무시 FS가 없어 로컬 재현 불가 → needs_validation 유력 |
+### 3단계 결과 (`run-3/findings.json`, 14건, 두 검증기 통과)
+| 판정 | 심각도 | 검증자 | 내용 | 수정 |
+|---|---|---|---|---|
+| 확정 | high | v11 | 입력이 끊긴 GUI 구간 닫기가 다른 샌드박스의 도구 스레드·사람 승인/감사 요청 스레드에서 제한 시간 없는 docker exec로 돎 → 한 샌드박스의 X가 멈추면 남의 요청이 무기한 막힘 | 아직 |
+| 확정 | medium | v02 | UI·CLI 감사 타임라인이 오래된 5000행에서 멈춤 | `3587c9c` |
+| 확정 | medium | v05 | 사람 토큰을 바꿔도 브라우저 세션이 12시간 유지 | `3587c9c` |
+| 확정 | medium | v08 | 도구 인자가 크기 제한 없이 지울 수 없는 감사 로그에 남음 | `e63922c` |
+| 확정 | medium | v12 | 복원·일시정지 때 GUI 구간 상태가 유실(남은 프로세스 안 멈춤, gui_changes 누락, 낡은 기준으로 새 데스크톱을 죽일 수 있음) | 아직 |
+| 확정 | medium | v13 | 웹 승인 카드가 exec 명령의 유니코드 방향 제어 문자를 그대로 보여 줌(터미널은 `_safe`로 막음) | 아직 |
+| 확정 | low | v03 (v03b) | `agentbox agent`가 파일 내용·모델 출력을 제어 문자 그대로 터미널에 찍음 | 아직 |
+| 검증 필요 | — | v06 | `source_dir` 겹침 검사가 경로 문자열 비교 → 대소문자 무시 FS(WSL2 /mnt/c)의 다른 철자로 우회 | `152b8e4` (실체 비교로 수정) |
+| 검증 필요 | — | v09 | GUI 구간 열 때 수집 실패를 성공으로 취급(빈 기준, 기록 없음) | 아직 |
+| 검증 필요 | — | v10 | X가 멈추면 GUI 도구가 gui_lock을 쥔 채 무기한 → 사람 인수(takeover)가 막힘 | 아직 |
+| 검증 필요 | — | v01 | `same_origin`이 scheme을 비교하지 않음(최신 브라우저는 schemeful same-site로 막힘) | — |
+| 검증 필요 | — | v14 | UI에 frame-ancestors/X-Frame-Options 없음(같은 사이트 출처가 있어야 함) | — |
+| 검증 필요 | — | v15 | gui_strays가 클라이언트가 정하는 _NET_WM_PID로 창 소유를 판단 | — |
+| 기각 | — | v04 | runc 별칭으로 runc 차단 우회 (운영자 설정, 경계 없음) | — |
 
-에이전트 사용: 이전 19 + v07(소실) 1 + 이번 세션 12(완료 4 + 중도 종료 8) = **32회**. 남은 일을 하려면 재실행 10(v01,v03,v06,v08,v09,v10,v11,v12,v13,v14)+v15, 5단계 재검증이 더 필요해 40~45를 넘길 수 있다 → 사용자에게 상한을 다시 확인할 것.
+v07(이전 세션, 레코드 소실)은 같은 fingerprint로 v15가 대신했다. 형식 위반으로 폐기한 결과 3개(v12 1차, v03 1·2차)는 `agents/v12/result.rejected-by-validator.json`, `agents/v03/result.rejected-*`에 참고용으로 둔다.
+
+### 3단계 뒤에 부모가 실측한 것 (레코드에는 아직 반영 안 됨 → 5단계 검증자에게 줄 것)
+- **l8** (`parent-live/artifacts/l8_alias.*`): 심볼릭 링크가 아닌 바인드 마운트 별칭으로 프로젝트 폴더를 주면 겹침 검사를 통과하고 에이전트가 사람 토큰을 읽는다. v06의 근본 원인(문자열 비교)이 실제로 재현됨 → v06을 확정으로 올리는 근거.
+- **l10** (`l10_bound.*`): Xvfb를 멈추면 GUI 도구와 사람 인수, 그리고 다른 샌드박스의 도구 호출이 **150초 넘게** 막히고 Xvfb를 재개해야 풀린다. docker 클라이언트 60초 제한 같은 상한이 없다 → v10의 두 번째 blocker 해소. Xvfb는 uid 1001이라 GUI 터미널로 에이전트가 직접 멈출 수 있다(N-1 경로).
+- **l9** (`l9_agent_pressure.*`, `l9_probe.*`): 허용 목록 exec `tail -f /dev/null & ` ×1100 하나로 에이전트 혼자 pid 한도(1024)를 1초 만에 채우고, 이어진 GUI 입력이 **빈 기준(0개)으로 구간을 기록**한다(감사 기록 없음) → v09의 첫 blocker 해소.
+- **새 후보(미검증)**: 위 exec에서 bash가 fork 실패로 일찍 끝나면(exit 254) GNU timeout의 그룹 종료가 일어나지 않아 tail ~1000개가 남고, 샌드박스가 계속 pid 한도에 걸린다(root `docker exec pkill`도 못 돎). `run-metadata.json`의 `new_unvalidated_leads`에 적어 둠. 독립 검증이 필요하다.
+
+### 수정 (이 브랜치에 커밋, 회귀 테스트 포함)
+- `3587c9c` v02: `AuditLog.recent()`로 최신 400건+실제 총계, CLI는 `after_id`로 끝까지, 검증 화면은 한 줄 조회. v05: 세션·티켓에 사람 토큰 지문(PBKDF2) → 토큰 교체 후 재시작하면 예전 세션 전부 무효. 지문 열이 없던 DB의 세션은 한 번 버림.
+- `e63922c` v08: JSON 64 KiB 넘는 도구 인자는 앞 16 KiB + 크기·sha256만 기록.
+- `152b8e4` v06: 겹침 검사를 `os.path.samefile`로 조상까지 비교.
+- 아직 안 고친 것과 방향: v11·v10(GUI·수집 exec에 컨테이너 쪽 `timeout -k`, 구간 닫기를 호출자 스레드에서 떼기, takeover는 `gui_lock.acquire(timeout)`), v09(exit code 확인, 실패 시 `gui_burst_error` 기록), v12(재시작·복원·일시정지 때 구간 타이머 초기화, 구간에 container_id 기록), v13(웹 템플릿에 `_safe`와 같은 필터), v03(`cmd_agent.log`에 줄 단위 `_safe`), v14(X-Frame-Options SAMEORIGIN + frame-ancestors 'self'; 앱이 자기 데스크톱 페이지를 iframe으로 쓰므로 DENY는 안 됨).
+
+### 에이전트 사용
+45/60 (이전 32 + 이번 13: 검증자 11 + v03 재실행 2). 남은 15로 5단계를 레코드당 1개(13개: 확정 7 + 검증 필요 6)로 돌릴 수 있다. 재실행 2회분이 남는다.
 
 ### 이어서 하는 법
-1. 환경: `nohup dockerd &` → `pip install -e '.[test]'` → 이미지는 Docker Hub가 429면 `mirror.gcr.io/library/<이미지>`로 받아 `docker tag`(buildpack-deps:noble-curl, ubuntu:24.04) → `docker build -t agentbox-desktop:0.1 images/desktop`. 스킬은 `git clone --depth 1 https://github.com/cloudflare/security-audit-skill`. 베이스라인 pytest 205개 통과 확인됨.
-2. 도구는 `docs/security-audit/run-3/tools/`: `sbx`(격리 실행기), `promote.py`(부모 전용 승격, no-follow), `ingest.py`(검증자 결과 엄격 파싱·스키마 검증·승격). 파일 안의 절대 경로(스크래치패드, 스킬 경로)를 새 세션 값으로 고칠 것. 검증자별 `agents/vNN/scratch`는 `chown 65534`로 미리 만들어 둔다.
-3. 검증자는 `agents/vNN/prompt.md`를 읽고 따르게 하고, `sbx` 경로만 새 위치를 알려준다. v09는 부모 실측 `agents/parent-live/artifacts/l7_burst_open.{py,out}`(pid 압력 시 구간이 빈 기준으로 조용히 기록되고 gui_changes가 실제 변경을 가림)를 추가 증거로 알려 줄 것(단 압력 프로세스가 exec로 떴다는 한계도 함께).
-4. 결과가 다 모이면 장부(`coverage-ledger.json`)에 검증자 check와 `x_decisions` 반영(v07 때 형식 참고) → 4단계 `findings.json` → 두 검증기 → 5단계 독립 재검증 → 보고서 → 확정 건 수정.
-5. 확정 건의 수정 방향(검증자 제안): v02는 `AuditLog.recent()`로 최신 N건+실제 총계, CLI는 `after_id` 페이징. v05는 사람 토큰 지문(gen)을 세션·티켓에 묶고 시작 시 불일치 행 삭제 + owner용 revoke-all. 둘 다 회귀 테스트 필요.
-6. 부수 관찰: 구간 기준(pid 집합)이 낡은 상태에서 닫으면 `gui_strays`가 새로 뜬 데스크톱 세션 전체를 죽인다(컨테이너 재시작 후 실험에서 확인). v12 후보와 같은 뿌리라 검증자에게 알릴 것.
+1. 환경: `nohup dockerd >/tmp/dockerd.log 2>&1 &` → `pip install -e '.[test]' pyte` → `docker pull buildpack-deps:noble-curl ubuntu:24.04`(429면 `mirror.gcr.io/library/<이미지>`를 받아 `docker tag`) → `docker build -t agentbox-desktop:0.1 images/desktop` → 스킬 `git clone --depth 1 https://github.com/cloudflare/security-audit-skill`.
+2. 도구 `run-3/tools/`의 `sbx`, `ingest.py`, `promote.py`에서 스크래치패드 경로(`/tmp/claude-0/.../scratchpad`)를 새 세션 값으로 바꾸고 스크래치패드에 복사한다. `ingest.py`는 서브에이전트 transcript(JSONL)의 마지막 텍스트도 결과로 읽는다: `python3 -I ingest.py <id> <task output 파일> <fingerprint>`. 검증자별 `agents/<id>/scratch`는 `chown 65534`로 미리 만든다.
+3. **5단계**: `findings.json`의 확정·검증 필요 레코드마다 새 검증자 1개. 스킬의 VALIDATION-AND-REPORTING.md 5단계 지시(확정 6항목, 검증 필요 5항목)와 레코드를 주고 `{"decision":"verified",...}` 또는 `{"decision":"replace",...}`만 받는다. v06·v09·v10 검증자에게는 위 l8·l9·l10을 근거로 준다. 확정으로 올리는 replace는 **다른 새 검증자가 한 번 더** 확인해야 적용할 수 있다(남은 재실행 2회로 부족하면 사용자에게 상한 확인).
+4. 6단계: `REPORT.md`, `FINDINGS-DETAIL.md`, `NEEDS-VALIDATION.md`(한국어 요약은 HANDOFF·VALIDATION 스타일).
+5. 남은 수정(위 목록) → 회귀 테스트 → PR. 새 후보(exec 뒤 남는 백그라운드 프로세스)는 독립 검증부터.

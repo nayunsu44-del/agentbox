@@ -13,8 +13,8 @@
   "scope_paths": [
     "."
   ],
-  "budget": 45,
-  "budget_note": "Parent-proposed (the owner did not set a strict cap). Planned 40; extended to 45 after wave 2 produced 14 candidates so every candidate gets Phase 3 and Phase 5 verification. Three critic-2 units deferred for budget.",
+  "budget": 60,
+  "budget_note": "Parent-proposed (the owner did not set a strict cap). Planned 40; extended to 45 after wave 2 produced 14 candidates so every candidate gets Phase 3 and Phase 5 verification. Three critic-2 units deferred for budget. Owner raised the cap to 50 and then 60 in the resuming session (Phase 3 re-runs, Phase 5 one verifier per record).",
   "execution_policy": "sandboxed-source-and-local-only",
   "execution_note": "Agent-run target code (pure-function harnesses, unit tests) runs only through the parent's sbx wrapper: docker run --network none --read-only, host /usr and target mounted read-only, writes only to agents/<id>/scratch, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB memory, 1 CPU, 64 pids, 32 MiB file size, 120 s wall clock, explicit env allowlist (HOME, TMPDIR, PATH, PYTHONPATH, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE). Checks that need the real Docker-backed control plane (sandbox containers, desktop image) are run by the parent with dummy principals in a scratch AGENTBOX_HOME on loopback inside this disposable cloud container, as the owner requested; such checks are labelled parent-live in the ledger. Promotion uses the parent-side promote.py (no-follow dir_fd walk, single-link regular files, 256 KiB per file, 1 MiB per agent).",
   "companions_selected": [],
@@ -37,7 +37,7 @@
     }
   ],
   "shared_file_owner": "parent",
-  "run_status": "in_progress",
+  "run_status": "incomplete",
   "agents_spent_so_far": {
     "recon": 4,
     "hunt_wave1": 11,
@@ -46,7 +46,27 @@
     "critic_post_wave2": 1,
     "phase3_verifiers_prior_session_record_lost": 1,
     "phase3_verifiers_this_session_completed": 4,
-    "phase3_verifiers_this_session_aborted_rate_limit": 8
+    "phase3_verifiers_this_session_aborted_rate_limit": 8,
+    "phase3_verifiers_resume_session": 11,
+    "phase3_reruns_after_format_discard": 2
   },
-  "run_status_note": "Paused at Phase 3 (usage limit). See docs/security-audit/HANDOFF.md section 'run-3 진행 상태'."
+  "run_status_note": "Paused after Phase 4. See docs/security-audit/HANDOFF.md section 'run-3 진행 상태'.",
+  "agents_spent_total": 45,
+  "incomplete_reason": "Phase 3 and Phase 4 are complete (14 records in findings.json, both validators pass). Phase 5 independent record verification and Phase 6 reports were not run: the owner paused the run at a usage limit and asked to finish at verification. Records are therefore Phase-3 decisions only; parent-live evidence l8-l10 gathered after Phase 3 is not yet reflected in the records.",
+  "phase3_format_discards": [
+    "v12 (first attempt: two sink entries)",
+    "v03 (extra field execution.affected)",
+    "v03 (unbalanced JSON)"
+  ],
+  "new_unvalidated_leads": [
+    {
+      "fingerprint_proposal": "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion",
+      "summary": "An allowlisted exec such as 'tail -f /dev/null & ' x1100 fills the sandbox pids cgroup; bash then fails to fork and exits 254 before GNU timeout fires, so the group kill never happens and ~1000 uid-1000 tail processes stay. The sandbox remains at pids.max after the exec returns (even a root docker exec pkill could not run), which also keeps GUI-burst collection failing (v09).",
+      "evidence": [
+        "agents/parent-live/artifacts/l9_agent_pressure.out",
+        "agents/parent-live/artifacts/l9_probe.out"
+      ],
+      "status": "parent observation only; needs independent candidate validation"
+    }
+  ]
 }

@@ -238,7 +238,11 @@
    "AuditLog.append lets UnicodeEncodeError/ValueError escape instead of AuditWriteError; _safe_log would not catch them.",
    "Unkeyed SHA-256 chain with triggers in the same DB file; a DB holder can rewrite. Keep the head outside or HMAC.",
    "Agent tokens registered in memory only; after restart only the agt_ shape pattern masks them, so its word-boundary gap matters more."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines": "confirmed"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "agentbox%2Fagent.py%23LLM%20loop%20%2B%20agentbox%2Fmcp_server.py%20tools::agentbox%2Fagent.py%23prompt-injection%20to%20tool%20action%20%28approval%20is%20only%20control%29::agentbox%2Fagent.py::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
@@ -376,7 +380,11 @@
    "agentbox agent sends the LLM key to any base URL incl. plain http.",
    "preview _expand/_walk run agent globs/find without a timeout while holding a concurrency slot.",
    "A paused sandbox still produces docker commit snapshots for allowed delete_file calls up to the quota."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe": "confirmed"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%20%2B%20takeover%2Fhandback%20%2B%20state::agentbox%2Fdesktop.py%23ticket%20redeem%20%2B%20session%20scope%20%2B%20lease::agentbox%2Fdesktop.py::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
@@ -530,7 +538,11 @@
    "Plain-http loopback mode: cookie has no Secure flag and cookies are not port-scoped; another loopback service the user visits receives it.",
    "No cap on concurrent desktop WebSocket/x11vnc processes per session (api.py:350); human-only.",
    "GET /sandboxes/{sid}/desktop?ticket= redeems without same_origin; tickets human-only/one-time/60 s; consider POST redemption."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/desktop.py:ui_sessions:human-token-rotation-does-not-revoke-browser-sessions": "confirmed"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fapprovals%2F%7Baid%7D%20%2B%20agentbox%2Fcli.py%23cmd_approve::agentbox%2Fservice.py%23decide%20executes%20the%20agent%27s%20original%20args%20after%20human%20approval::agentbox%2Fservice.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
@@ -764,7 +776,11 @@
    "Compare directory identity by os.stat (st_dev, st_ino) in the source_dir guard to cover case-insensitive filesystems, hardlinks and bind aliases.",
    "Create UI/CLI could warn when the chosen tree contains world-unreadable files owned by another uid (README:379 documents the root copy).",
    "exists()/is_dir() run test without the timeout wrapper; uniform hardening."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/sandbox.py:create:source_dir-overlap-guard-case-insensitive-bypass": "needs_validation"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Ftakeover%20%2B%20handback%20%2B%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%20%2B%20DELETE%20%2Fsandboxes%2F%7Bsid%7D%20%28end_desktop%29::agentbox%2Fservice.py%23desktop.gui_lock%20held%20across%20untimed%20_x%20GUI%20execs%20%2B%20desktop%20lifecycle%20serialization%20%28takeover%2Fhandback%2Fend_desktop%2Frestore%29::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
@@ -858,7 +874,11 @@
    "sandbox.restore has no deleted check and restore/delete run without gui_lock/_snap_locks; add both.",
    "_parse_manifest truncation flag correct; add cap-1/cap/cap+1 tests.",
    "workspace_manifest diffs /workspace only; /home/desktop session state written during a burst is never in gui_changes though snapshots carry it."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/service.py:_run_tool:gui_lock-held-across-untimed-x-exec-blocks-takeover": "needs_validation"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%2Cscreenshot%7D::agentbox%2Fservice.py%23GUI%20burst%20snapshot%20%2B%20gui_changes%20%2B%20stray%20kill%20%28N-1%20partial%20mitigation%29::agentbox%2Fservice.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
@@ -996,7 +1016,11 @@
    "sandbox.restore has no deleted check and restore/delete run without gui_lock/_snap_locks; add both.",
    "_parse_manifest truncation flag correct; add cap-1/cap/cap+1 tests.",
    "workspace_manifest diffs /workspace only; /home/desktop session state written during a burst is never in gui_changes though snapshots carry it."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/service.py:_open_gui_burst:silent-fail-open-without-audit": "needs_validation"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D::agentbox%2Fapi.py%23tool_pool%20%2B%20agentbox%2Fservice.py%23call_tool%20tool_concurrency::agentbox%2Fapi.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
@@ -1117,7 +1141,11 @@
    "tool_pool (32) / tool_concurrency (4) means 8 or more cooperating sandboxes can occupy every tool thread for up to exec_timeout+5 s per call; human routes run on the separate Starlette pool, so the effect is limited to other agents' tool latency. Consider a global cap tied to the pool size or a fair queue.",
    "Client disconnect does not cancel tool_pool work (api.py:209 run_in_executor); bounded for exec by its timeout, but the untimed execs listed above have no such bound. Add a deadline to every container exec (e.g. wrap in timeout as exec does).",
    "snapshot_quota counts human manual and import snapshots toward the agent's quota (sandbox.py:503-505 counts all rows). That is conservative, but it can push an agent into approval mode earlier than the operator expects."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/service.py:close_idle_gui_bursts:cross-sandbox-untimed-exec-outside-tool-concurrency": "confirmed"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bwrite_file%2Cdelete_file%2CGUI%7D::agentbox%2Fservice.py%23snapshot%20quota%20%2B%20_snap_locks%20%2B%20GUI%20burst%20snapshots::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
@@ -1845,7 +1873,11 @@
    "Ambient AGENTBOX_BEHIND_TLS_PROXY=1 silently disables the plaintext non-loopback refusal for plain serve; print a notice when the TLS gate is satisfied only by this assertion.",
    "Desktop start script opens /tmp/xvfb.log, /tmp/xfce.log via root redirections and chmods /tmp/.X11-unix as root on every start/restore; safe only because these are root-owned in sticky /tmp after first start; move under a root-only dir or into as_desktop.",
    "No-new-privileges inheritance by docker exec processes is assumed from Docker behaviour; a live spot check (grep NoNewPrivs /proc/self/status under docker exec -u 1000) would confirm."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/cli.py:runtime_problem:runc-alias-io.containerd.runc.v2-bypasses-exposed-runc-guard": "rejected"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "agentbox%2Fweb.py%23%2Fui%20%28approval%20approve%2Fdeny%20buttons%2C%20restore%2Fdelete%2Fsnapshot%20forms%29%20%2B%20agentbox%2Fdesktop.py%23page%20%28takeover%2Fhandback%20controls%29%20rendered%20in%20a%20frame::absence%20of%20frame-ancestors%2FX-Frame-Options%20on%20cookie-authenticated%20pages%20%2B%20SameSite%3DStrict%20%2B%20same_origin::agentbox%2Fweb.py::CLIENT-SIDE.md%23Clickjacking",
@@ -1973,7 +2005,11 @@
    "Approve has no confirmation while restore/delete use hx-confirm; consider a confirm step as defense in depth.",
    "/login and read-only fragments are frameable (hardening only).",
    "same_origin accepts requests without Origin; a replayed cookie needs no Origin."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/web.py:register:cookie-ui-frameable-no-frame-ancestors-single-click-approve": "needs_validation"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "agentbox%2Fweb.py%23%2Fui%2F%2A%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fapi.py%23same_origin%20%2B%20SameSite%3DStrict%20HttpOnly%20cookie::agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
@@ -2104,7 +2140,11 @@
    "Web approval card shows non-exec args via short(400); show full args if more tools become gated.",
    "cmd_snapshots and _check print without _safe (control-plane strings today).",
    "capture.png lacks X-Content-Type-Options: nosniff."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare": "needs_validation"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "approval%20card%20impact%20table%20and%20request-time%20screen%20capture%20for%20gated%20exec%2FGUI%20calls%20%28agentbox%2Fsandbox.py%23preview%2C%20agentbox%2Fservice.py%23_preview%2F_capture%2C%20agentbox%2Ftemplates%2F_approvals.html%2C%20agentbox%2Fcli.py%23_show_approval%29::agentbox%2Fsandbox.py%23preview%20%2B%20_split_segments%20%2B%20_expand%20%2B%20_walk%3A%20the%20system-computed%20%27affected%27%20list%20and%20%27system-captured%27%20screenshot%20shown%20to%20the%20human%20must%20reflect%20what%20the%20stored%20args%20will%20actually%20do::agentbox%2Fsandbox.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
@@ -2401,7 +2441,11 @@
    "outbox_read buffers up to 50 MiB before the size check (sandbox.py:671-673); human-only.",
    "screenshot cats the PNG with no head -c cap and unpacks png[16:24] without a length guard (sandbox.py:716-718).",
    "GET /audit and /ui/verify bound row counts, not row sizes."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap": "confirmed"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "container%20output%3A%20ps%2C%20xdotool%20getwindowpid%2C%20find%20-printf%20manifest::agentbox%2Fsandbox.py%23_parse_ps%20%2B%20gui_strays%20%2B%20_parse_manifest%20%2B%20diff_manifest::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Business%20logic",
@@ -2550,8 +2594,9 @@
    "workspace_manifest diffs /workspace only; /home/desktop session state written during a burst is never in gui_changes though snapshots carry it."
   ],
   "x_decisions": {
-   "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process": "rejected"
-  }
+   "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process": "needs_validation"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "container-controlled%20strings%20rendered%20to%20humans%20%28outbox%20names%2C%20gui_changes%20paths%2C%20ps%20args%2C%20exec%20output%2C%20errors%29::agentbox%2Fweb.py%23describe%20%2B%20Jinja%20autoescape%20%2B%20agentbox%2Fcli.py%23_safe::agentbox%2Fweb.py::AI-AND-LLM.md%23Insecure%20output%20rendering",
@@ -2724,7 +2769,12 @@
    "Web approval card shows non-exec args via short(400); show full args if more tools become gated.",
    "cmd_snapshots and _check print without _safe (control-plane strings today).",
    "capture.png lacks X-Content-Type-Options: nosniff."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe": "confirmed",
+   "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized": "confirmed"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  },
  {
   "coverage_id": "every%20audit%20append%20%28tool%20args%2C%20results%2C%20errors%2C%20GUI%20records%29::agentbox%2Faudit.py%23mask_text%20%2B%20_mask::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
@@ -3154,6 +3204,11 @@
    "agentbox agent sends the LLM key to any base URL incl. plain http.",
    "preview _expand/_walk run agent globs/find without a timeout while holding a concurrency slot.",
    "A paused sandbox still produces docker commit snapshots for allowed delete_file calls up to the quota."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause": "confirmed",
+   "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines": "confirmed"
+  },
+  "x_phase5": "not run (paused by usage limit; see HANDOFF)"
  }
 ]
