@@ -20,6 +20,9 @@ services:
       # 컨테이너에서 같은 절대 경로여야 한다.
       AGENTBOX_HOME: ${AGENTBOX_HOME_DIR:-/var/lib/agentbox}
       AGENTBOX_BEHIND_TLS_PROXY: "1"
+      # 밖에 여는 설치라 격리 런타임이 runc면 뜨지 않는다. 호스트 데몬에 gVisor(runsc)를 설치할 것.
+      # 위험을 알고 runc로 띄우려면 AGENTBOX_ALLOW_RUNC=1 docker compose up …
+      AGENTBOX_ALLOW_RUNC: ${AGENTBOX_ALLOW_RUNC:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${AGENTBOX_HOME_DIR:-/var/lib/agentbox}:${AGENTBOX_HOME_DIR:-/var/lib/agentbox}

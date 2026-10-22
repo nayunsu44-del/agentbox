@@ -81,6 +81,7 @@ def test_serve_refuses_plain_http_outside_loopback(home, monkeypatch, capsys):
 
     ran = {}
     monkeypatch.setattr(uvicorn, "run", lambda app, **kw: ran.update(kw))
+    monkeypatch.setenv("AGENTBOX_ALLOW_RUNC", "1")   # 여기서는 TLS 규칙만 본다 (런타임 규칙은 아래 테스트)
     with pytest.raises(SystemExit) as ex:
         cli.main(["serve", "--host", "0.0.0.0"])
     assert "TLS" in str(ex.value) and not ran
@@ -91,6 +92,31 @@ def test_serve_refuses_plain_http_outside_loopback(home, monkeypatch, capsys):
     assert ran["proxy_headers"] is True
     with pytest.raises(SystemExit):
         cli.main(["serve", "--host", "0.0.0.0", "--tls-cert", "x.pem"])  # 키 없이
+
+
+def test_serve_refuses_runc_when_exposed(home, monkeypatch, capsys):
+    """밖에 여는 컨트롤 플레인은 runc(호스트 커널 공유)로 샌드박스를 돌리지 않는다."""
+    import uvicorn
+
+    ran = {}
+    monkeypatch.setattr(uvicorn, "run", lambda app, **kw: ran.update(kw))
+    monkeypatch.setenv("AGENTBOX_RUNTIME", "runc")
+    monkeypatch.delenv("AGENTBOX_ALLOW_RUNC", raising=False)
+    for args in (["--host", "0.0.0.0", "--behind-tls-proxy"], ["--host", "0.0.0.0", "--insecure"],
+                 ["--host", "127.0.0.1", "--behind-tls-proxy"]):
+        with pytest.raises(SystemExit) as ex:
+            cli.main(["serve", *args])
+        assert "runc" in str(ex.value) and "--allow-runc" in str(ex.value) and not ran, args
+    cli.main(["serve", "--host", "0.0.0.0", "--behind-tls-proxy", "--allow-runc"])
+    assert ran and "경고" in capsys.readouterr().err
+    ran.clear()
+    monkeypatch.setenv("AGENTBOX_ALLOW_RUNC", "1")
+    cli.main(["serve", "--host", "0.0.0.0", "--behind-tls-proxy"])
+    assert ran
+    ran.clear()
+    monkeypatch.delenv("AGENTBOX_ALLOW_RUNC")
+    cli.main(["serve"])                                # 127.0.0.1 개발용은 경고만 하고 뜬다
+    assert ran["host"] == "127.0.0.1" and "개발 전용" in capsys.readouterr().err
 
 
 @needs_desktop
