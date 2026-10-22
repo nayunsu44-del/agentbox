@@ -24,7 +24,7 @@ PROMOTE = f"{SP}/promote.py"
 
 
 def final_message(path):
-    """Last assistant text from a JSONL transcript, or the whole file if it is not one."""
+    """Last SubagentHandback message or assistant text from a JSONL transcript, or the whole file if it is not one."""
     data = open(path, encoding="utf-8").read()
     try:
         lines = [json.loads(l) for l in data.splitlines() if l.strip()]
@@ -37,7 +37,9 @@ def final_message(path):
         c = o.get("message", {}).get("content")
         if o.get("type") == "assistant" and isinstance(c, list):
             for b in c:
-                if b.get("type") == "text" and b.get("text", "").strip():
+                if b.get("type") == "tool_use" and b.get("name") == "SubagentHandback":
+                    msg = b["input"].get("message")
+                elif b.get("type") == "text" and b.get("text", "").strip():
                     msg = b["text"]
     return msg
 
