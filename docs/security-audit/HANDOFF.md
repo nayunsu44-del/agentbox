@@ -8,8 +8,8 @@
   - run-1: Cloudflare `security-audit` 스킬(6단계)로 agentbox 전체를 감사했다. 기준 커밋 `7fc501f`.
   - run-2: run-1이 남긴 needs_validation 5건을 실제 Docker에서 검증했다.
 - **브랜치:** `ccr-e10bee8e-6wt669` (origin에 푸시됨). draft PR #1이 이 브랜치에서 `main`으로 열려 있다. 예전 핸드오프 브랜치 `ccr-53433386-ji3dh4`는 이 브랜치에 그대로 포함돼 있다.
-- **현재 상태:** 확정 9건 중 **8건 수정 완료**. **N-1(High) 1건만 미수정**이고 사용자 결정을 기다린다. 기각은 1건이다.
-- **테스트:** 전체 `pytest` 149개 통과(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
+- **현재 상태:** 확정 9건 중 **8건 수정 완료**, **N-1(High)은 사용자가 고른 방안 C로 부분 완화**(복구만, 승인 우회는 남음). 기각은 1건이다.
+- **테스트:** 전체 `pytest` 150개 통과(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
 
 ## 전체 목록
 
@@ -18,7 +18,7 @@
 | run-1 | 따옴표 `#` 주석으로 exec 허용 목록 우회 | High | 수정 | `6432d20` |
 | run-1 | 결과함 파일 이름(탭·줄바꿈)이 목록 파싱을 깨뜨림 | Medium | 수정 | `6432d20` |
 | run-1 | `_DEVNULL`이 `>&<숫자>파일` 리다이렉트를 벗겨 승인 우회 | Low | 수정 | `7f84f61` |
-| run-2 N-1 | GUI 도구로 터미널을 열어 uid 1001 임의 실행 (승인·스냅샷 우회) | High | **미수정 (결정 대기)** | — |
+| run-2 N-1 | GUI 도구로 터미널을 열어 uid 1001 임의 실행 (승인·스냅샷 우회) | High | 부분 완화 (GUI 구간 스냅샷) | `3028b68` |
 | run-2 N-4 | 데이터 폴더와 겹치는 `source_dir` → 사람 토큰 유출 → 자기 승인 | High | 수정 | `e56e2a9` |
 | run-2 N-2 | exec 출력이 컨트롤 플레인 메모리에 전부 쌓임 | Medium | 수정 | `c6a0a3c` |
 | run-2 신규 | 블로킹 exec로 공용 스레드 풀을 묶어 사람 API 정지 | Medium | 수정 | `c6a0a3c` |
@@ -26,15 +26,12 @@
 | run-2 N-5 | 터미널 승인 화면이 제어 문자로 다른 명령처럼 보임 | Medium | 수정 | `1a9bb0f` |
 | run-1 | 데스크톱 티켓 → 전체 관리자 세션 | — | 기각 (재보고 금지) | — |
 
-새 설정은 README 환경 변수 표에 있다: `AGENTBOX_SNAPSHOT_QUOTA`(기본 50), `AGENTBOX_TOOL_CONCURRENCY`(기본 4).
+새 설정은 README 환경 변수 표에 있다: `AGENTBOX_SNAPSHOT_QUOTA`(기본 50), `AGENTBOX_TOOL_CONCURRENCY`(기본 4), `AGENTBOX_GUI_SNAPSHOT_IDLE`·`_INTERVAL`(기본 60·600).
 
 ## 남은 일
 
-1. **N-1 결정과 수정.** 방안 8가지와 비교·권장 조합은 `run-2/N-1-OPTIONS.md`에 있다. 사용자가 아직 고르지 않았다.
-   - 공통 부분(README 알려진 한계에 기록)은 이미 했다.
-   - 권장안은 "GUI 입력 전 자동 스냅샷"이다. AP-2 복구 가능성을 되살리고, N-3 상한과 맞물린다.
-   - 터미널 제거는 경계가 아니어서 권장하지 않는다.
-2. **PR #1.** draft 상태다. N-1이 정리되면 ready로 바꿀지 사용자와 정한다.
+1. **N-1 후속(선택).** 방안 C로 복구 지점은 생겼지만 승인 우회는 남는다. 더 막아야 하면 `run-2/N-1-OPTIONS.md`의 D2(시간 제한 GUI 허가)나 E(화면 계정의 `/workspace` 쓰기 분리)를 검토한다. 백그라운드 프로세스 보완(돌려줄 때 화면 계정의 남은 프로세스 정리)도 후보다.
+2. **PR #1.** draft 상태다. ready로 바꿀지 사용자와 정한다.
 3. **3차 감사(선택).** 같은 스킬을 `run-2/`를 prior-run 입력으로 다시 돌리면, 바뀐 코드(스트리밍 exec, 전용 스레드 풀, 스냅샷 상한)를 우선 볼 수 있다. 결과는 `docs/security-audit/run-3/`에 둔다.
 
 ## 이어서 작업하는 환경 만들기 (새 세션)
@@ -47,7 +44,7 @@ nohup dockerd >/tmp/dockerd.log 2>&1 &          # root로. 몇 초 뒤 docker in
 pip install -e '.[test]'
 docker pull buildpack-deps:noble-curl
 docker build -t agentbox-desktop:0.1 images/desktop   # 약 3분 (apt 239MB)
-pytest                                                 # 149 passed
+pytest                                                 # 150 passed
 ```
 
 - 재현 스크립트는 `docs/security-audit/run-2/repro/`에 있다. 레포 루트에서 `python3 docs/security-audit/run-2/repro/<이름>.py`로 돌린다. `n5_spoof.py`는 `pip install pyte`가 필요하다.
