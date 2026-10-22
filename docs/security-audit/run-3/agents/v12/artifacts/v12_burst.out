@@ -1,0 +1,285 @@
+{
+ "A_control": {
+  "t0_click": 200,
+  "baseline": [
+   1,
+   10,
+   11,
+   12
+  ],
+  "t10_click": 200,
+  "stray_50_alive": false,
+  "snapshots": [
+   "snap_1"
+  ],
+  "killed": [
+   50
+  ],
+  "audit_gui_events": [
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_1",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   },
+   {
+    "event": "gui_processes_stopped",
+    "snapshot_id": "snap_1",
+    "reason": "idle",
+    "pids": [
+     50
+    ],
+    "modified": null
+   },
+   {
+    "event": "gui_changes",
+    "snapshot_id": "snap_1",
+    "reason": "idle",
+    "pids": null,
+    "modified": [
+     "report.md"
+    ]
+   }
+  ]
+ },
+ "B_restore": {
+  "after_restore": {
+   "burst_open": false,
+   "input_at_kept": true,
+   "snap_at_kept": true
+  },
+  "t20_click": 200,
+  "t20_snapshot_taken": false,
+  "t20_burst_open": false,
+  "t70_click": 200,
+  "t70_snapshot_taken": false,
+  "t200_click": 200,
+  "t200_baseline": [
+   1,
+   10,
+   11,
+   12,
+   60
+  ],
+  "stray_60_alive": true,
+  "snapshots": [
+   "snap_1",
+   "snap_2"
+  ],
+  "killed": [],
+  "audit_gui_events": [
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_1",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   },
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_2",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   }
+  ]
+ },
+ "B_restore_with_timers_cleared_fix_check": {
+  "after_restore": {
+   "burst_open": false,
+   "input_at_kept": false,
+   "snap_at_kept": false
+  },
+  "t20_click": 200,
+  "t20_snapshot_taken": true,
+  "t20_burst_open": true,
+  "t70_click": 200,
+  "t70_snapshot_taken": false,
+  "t200_click": 200,
+  "t200_baseline": [
+   1,
+   10,
+   11,
+   12
+  ],
+  "stray_60_alive": false,
+  "snapshots": [
+   "snap_1",
+   "snap_2",
+   "snap_3"
+  ],
+  "killed": [
+   60
+  ],
+  "audit_gui_events": [
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_1",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   },
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_2",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   },
+   {
+    "event": "gui_processes_stopped",
+    "snapshot_id": "snap_2",
+    "reason": "idle",
+    "pids": [
+     60
+    ],
+    "modified": null
+   },
+   {
+    "event": "gui_changes",
+    "snapshot_id": "snap_2",
+    "reason": "idle",
+    "pids": null,
+    "modified": [
+     "report.md"
+    ]
+   },
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_3",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   }
+  ]
+ },
+ "C_pause": {
+  "burst_open_after_idle_close_while_paused": false,
+  "killed_during_pause": [],
+  "stray_70_alive_after_resume": true,
+  "t210_click": 200,
+  "t210_baseline": [
+   1,
+   10,
+   11,
+   12,
+   70
+  ],
+  "stray_70_alive": true,
+  "snapshots": [
+   "snap_1",
+   "snap_2"
+  ],
+  "killed": [],
+  "audit_gui_events": [
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_1",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   },
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_2",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   }
+  ]
+ },
+ "D_stale_baseline_new_pids": {
+  "click_between_end_desktop_and_swap": 200,
+  "baseline_old_container": [
+   1,
+   10,
+   11,
+   12
+  ],
+  "new_container_pids": [
+   1,
+   14,
+   15,
+   16
+  ],
+  "new_desktop_survivors": [],
+  "snapshots": [
+   "snap_1",
+   "snap_2"
+  ],
+  "killed": [
+   14,
+   15,
+   16
+  ],
+  "audit_gui_events": [
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_1",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   },
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_2",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   },
+   {
+    "event": "gui_processes_stopped",
+    "snapshot_id": "snap_2",
+    "reason": "idle",
+    "pids": [
+     14,
+     15,
+     16
+    ],
+    "modified": null
+   }
+  ]
+ },
+ "D_stale_baseline_same_pids": {
+  "click_between_end_desktop_and_swap": 200,
+  "baseline_old_container": [
+   1,
+   10,
+   11,
+   12
+  ],
+  "new_container_pids": [
+   1,
+   10,
+   11,
+   12
+  ],
+  "new_desktop_survivors": [
+   10,
+   11,
+   12
+  ],
+  "snapshots": [
+   "snap_1",
+   "snap_2"
+  ],
+  "killed": [],
+  "audit_gui_events": [
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_1",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   },
+   {
+    "event": "snapshot",
+    "snapshot_id": "snap_2",
+    "reason": null,
+    "pids": null,
+    "modified": null
+   }
+  ]
+ }
+}
