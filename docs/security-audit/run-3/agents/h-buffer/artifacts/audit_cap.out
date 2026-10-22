@@ -1,0 +1,8 @@
+logged_args kept junk key unchanged: True len= 3145728
+appended row id: 1
+persisted payload bytes: 3145774
+rows: 4 total payload bytes: 12583090
+DELETE blocked by trigger: IntegrityError - audit log is append-only
+verify ok: True checked rows: 4
+list returned rows: 4 first junk len: 3145728
+RESULT: audit payload is uncapped, persistent, undeletable, fully re-read

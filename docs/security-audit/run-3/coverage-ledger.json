@@ -1524,13 +1524,61 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-buffer",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/audit.py",
+   "agentbox/config.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "deploy/Caddyfile"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-buffer",
+    "reviewed_paths": [
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Every container-output buffer (exec _Head, read_file, outbox_read, manifest, screenshot) has an effective byte cap before control-plane memory.",
+    "method": "source",
+    "result": "Bounded: _Head 64KiB+1 (sandbox.py:107-123); read_file head -c 256KiB+1 (554-570); outbox_read head -c 50MiB+1, human-only (657-674); manifest | head -c 8MiB, partial record dropped (150-165,495-501); screenshot cat of scrot PNG without head -c but bounded by Xvfb geometry the uid-1000 agent cannot enlarge, PNG magic/dimensions checked (714-722).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-buffer",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/config.py",
+     "deploy/Caddyfile"
+    ],
+    "invariant": "A request-body/tool-args size cap exists on POST /sandboxes/{sid}/tools/{tool} before args are persisted.",
+    "method": "source",
+    "result": "No cap: ToolCall.args is dict[str, Any] (api.py:50-51) passed straight to box.call_tool (206-211); Settings has no body/args cap (config.py:54-57); Caddyfile bare reverse_proxy without request_body max_size; Starlette has no default body limit; GET /audit caps rows (api.py:259) not row size.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-buffer",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/audit.py"
+    ],
+    "invariant": "Agent tool args are size-bounded before persistence in the append-only audit log, and oversized rows are recoverable.",
+    "method": "local",
+    "result": "Disproved. _logged_args strips only write_file content (service.py:131-137); _call_tool appends tool_request with full args before policy.decide (297-298); audit.append has no size cap (143-187). Harness: one read_file tool_request with a 3 MiB junk arg persisted 3,145,774 bytes; 4 rows 12,583,090 bytes; DELETE blocked by append-only trigger; verify() and list(limit=100000) (/ui/verify, web.py:270) re-loaded full payloads.",
+    "artifact": "agents/h-buffer/artifacts/audit_cap.out"
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-buffer"
+  "x_planned_hunter": "h-buffer",
+  "x_hardening": [
+   "outbox_read buffers up to 50 MiB before the size check (sandbox.py:671-673); human-only.",
+   "screenshot cats the PNG with no head -c cap and unpacks png[16:24] without a length guard (sandbox.py:716-718).",
+   "GET /audit and /ui/verify bound row counts, not row sizes."
+  ]
  },
  {
   "coverage_id": "container%20output%3A%20ps%2C%20xdotool%20getwindowpid%2C%20find%20-printf%20manifest::agentbox%2Fsandbox.py%23_parse_ps%20%2B%20gui_strays%20%2B%20_parse_manifest%20%2B%20diff_manifest::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Business%20logic",
