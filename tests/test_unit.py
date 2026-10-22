@@ -178,3 +178,20 @@ def test_devnull_lookalike_redirect_needs_approval(cmd):
 ])
 def test_devnull_and_fd_dup_still_read_only(cmd, progs):
     assert simple_programs(cmd) == progs
+
+
+# 보안 검수 N-5: 터미널 승인 화면은 에이전트가 넣은 제어 문자로 다른 명령처럼 보이게 할 수 없다
+def test_terminal_approval_neutralizes_control_chars(monkeypatch, capsys):
+    from agentbox import cli
+
+    for name in ("BOLD", "DIM", "RED", "GREEN", "YELLOW", "CYAN", "RESET"):
+        monkeypatch.setattr(cli, name, "")
+    real = "python3 -c \"import shutil; shutil.rmtree('/workspace')\""
+    apr = {"id": "apr_1", "sandbox_id": "sb_1", "created_at": "t", "rule_id": "r", "rule_reason": "x",
+           "tool": "exec", "args": {"command": real + " #\r\x1b[2K    \x1b[36mls -la /workspace\nsecond‮line"},
+           "preview": {"affected": [{"path": "/workspace/a\x1b[1Ab", "effect": "삭제"}], "notes": ["n\x9bote"]}}
+    cli._show_approval(apr)
+    out = capsys.readouterr().out
+    assert real in out and "(2줄)" in out
+    assert "\\x1b[2K" in out and "\\u202e" in out and "\\x9b" in out and "/workspace/a\\x1b[1Ab" in out
+    assert not [ch for ch in out if ch != "\n" and (ord(ch) < 0x20 or 0x7f <= ord(ch) <= 0x9f or ch == "‮")]

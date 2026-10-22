@@ -16,6 +16,7 @@ import argparse
 import ipaddress
 import json
 import os
+import re
 import sys
 import time
 from typing import Any
@@ -27,6 +28,15 @@ from .config import Settings
 BOLD, DIM, RED, GREEN, YELLOW, CYAN, RESET = "\033[1m", "\033[2m", "\033[31m", "\033[32m", "\033[33m", "\033[36m", "\033[0m"
 if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
     BOLD = DIM = RED = GREEN = YELLOW = CYAN = RESET = ""
+
+# C0·DEL·C1 제어 문자와 양방향(bidi) 재배치 문자. 터미널이 해석하면 커서 이동·줄 지우기·글자 순서
+# 뒤집기로 화면에 보이는 내용을 바꿀 수 있다.
+_UNSAFE = re.compile("[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def _safe(s: Any) -> str:
+    """에이전트가 정한 문자열을 터미널에 그대로 찍지 않는다. 제어 문자는 \\x1b처럼 보이게 바꾼다."""
+    return _UNSAFE.sub(lambda m: f"\\x{ord(m[0]):02x}" if ord(m[0]) < 0x100 else f"\\u{ord(m[0]):04x}", str(s))
 
 
 def _url() -> str:
@@ -158,24 +168,27 @@ def _show_approval(apr: dict[str, Any]) -> None:
     pv = apr.get("preview") or {}
     print()
     print(f"{YELLOW}{BOLD}━━ 승인 요청 {apr['id']} ━━{RESET}  샌드박스 {apr['sandbox_id']}  ({apr['created_at']})")
-    print(f"{DIM}맞은 규칙:{RESET} {apr.get('rule_id')} — {apr.get('rule_reason')}")
-    print(f"{DIM}작업 폴더:{RESET} {pv.get('cwd', '/workspace')}")
+    print(f"{DIM}맞은 규칙:{RESET} {_safe(apr.get('rule_id'))} — {_safe(apr.get('rule_reason'))}")
+    print(f"{DIM}작업 폴더:{RESET} {_safe(pv.get('cwd', '/workspace'))}")
     if apr["tool"] == "exec":
-        print(f"{BOLD}실제로 실행될 명령:{RESET}")
-        print(f"    {CYAN}{apr['args'].get('command')}{RESET}")
+        # 줄마다 따로 찍고 줄 수를 보여, 빈 줄로 진짜 명령을 화면 밖으로 밀어내지 못하게 한다.
+        lines = str(apr["args"].get("command")).split("\n")
+        print(f"{BOLD}실제로 실행될 명령{f' ({len(lines)}줄)' if len(lines) > 1 else ''}:{RESET}")
+        for line in lines:
+            print(f"    {CYAN}{_safe(line)}{RESET}")
     else:
         shown = {k: v for k, v in apr["args"].items() if k != "content"}
         print(f"{BOLD}실제로 실행될 도구:{RESET}")
-        print(f"    {CYAN}{apr['tool']} {json.dumps(shown, ensure_ascii=False)}{RESET}")
+        print(f"    {CYAN}{_safe(apr['tool'])} {_safe(json.dumps(shown, ensure_ascii=False))}{RESET}")
     aff = pv.get("affected") or []
     print(f"{BOLD}시스템이 계산한 영향 ({len(aff)}건):{RESET}")
     for item in aff[:50]:
         color = RED if item["effect"] == "삭제" or "보낼" in item["effect"] else DIM
-        print(f"    {color}{item['effect']:<12}{RESET} {item['path']}")
+        print(f"    {color}{_safe(item['effect']):<12}{RESET} {_safe(item['path'])}")
     if len(aff) > 50:
         print(f"    {DIM}… 외 {len(aff) - 50}건{RESET}")
     for n in pv.get("notes") or []:
-        print(f"  {YELLOW}! {n}{RESET}")
+        print(f"  {YELLOW}! {_safe(n)}{RESET}")
     print(f"{DIM}(에이전트가 쓴 설명은 보여주지 않는다. 승인하면 실행 직전에 스냅샷을 만든다.){RESET}")
 
 
@@ -209,13 +222,13 @@ def cmd_approve(a: argparse.Namespace) -> None:
                     out = res.get("result") or {}
                     print(f"{GREEN}승인 → 스냅샷 {res.get('snapshot_id')} 생성 후 실행함 (exit {out.get('exit_code')}){RESET}")
                     for line in (out.get("stderr") or "").splitlines()[:10]:
-                        print(f"    {DIM}{line}{RESET}")
+                        print(f"    {DIM}{_safe(line)}{RESET}")
                 elif res["status"] == "denied":
                     print(f"{RED}거절 → 실행하지 않음{RESET}")
                 elif res["status"] == "expired":
                     print(f"{RED}기한이 지나 이미 거부됨 → 실행하지 않음{RESET}")
                 else:
-                    print(f"{RED}{res['status']}: {res.get('result')}{RESET}")
+                    print(f"{RED}{_safe(res['status'])}: {_safe(res.get('result'))}{RESET}")
 
 
 def cmd_audit(a: argparse.Namespace) -> None:
@@ -248,7 +261,7 @@ def cmd_audit(a: argparse.Namespace) -> None:
                 detail = p.get("path") or ""
         else:
             detail = json.dumps(p, ensure_ascii=False)[:100]
-        detail = " ".join(str(detail).split())[:140]
+        detail = _safe(" ".join(str(detail).split())[:140])
         ts = e["ts"][11:23]
         print(f"{DIM}{e['id']:>4} {ts}{RESET} {icons.get(e['actor'], e['actor']):<4} "
               f"{BOLD}{e['event']:<20}{RESET} {e['tool'] or '':<9} {detail}")
