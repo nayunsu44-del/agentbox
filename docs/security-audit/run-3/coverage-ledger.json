@@ -1792,14 +1792,87 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 2,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-ui2",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/cli.py",
+   "agentbox/desktop.py",
+   "agentbox/service.py",
+   "agentbox/templates/_approvals.html",
+   "agentbox/templates/_created.html",
+   "agentbox/templates/_notify.html",
+   "agentbox/templates/_sandboxes.html",
+   "agentbox/templates/_snapshots.html",
+   "agentbox/templates/base.html",
+   "agentbox/templates/index.html",
+   "agentbox/templates/login.html",
+   "agentbox/templates/sandbox.html",
+   "agentbox/web.py",
+   "deploy/Caddyfile",
+   "deploy/docker-compose.yml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-ui2",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/api.py",
+     "agentbox/desktop.py",
+     "agentbox/cli.py",
+     "deploy/Caddyfile",
+     "deploy/docker-compose.yml"
+    ],
+    "invariant": "Cookie-authenticated HTML pages refuse framing by other origins (frame-ancestors 'self' / X-Frame-Options SAMEORIGIN).",
+    "method": "source",
+    "result": "No X-Frame-Options/CSP/frame-ancestors anywhere (agentbox/, deploy/); no middleware in api.build; render sets only Cache-Control/X-AB-Version; desktop_page only Cache-Control; Caddyfile bare reverse_proxy. sandbox.html frames the desktop page, so the fix must be 'self'.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-ui2",
+    "reviewed_paths": [
+     "agentbox/templates/_approvals.html",
+     "agentbox/templates/_snapshots.html",
+     "agentbox/templates/sandbox.html",
+     "agentbox/templates/index.html",
+     "agentbox/templates/base.html",
+     "agentbox/templates/_notify.html",
+     "agentbox/templates/_sandboxes.html",
+     "agentbox/templates/_created.html",
+     "agentbox/templates/login.html",
+     "agentbox/desktop.py"
+    ],
+    "invariant": "State-changing actions a framer could induce need more than one blind click or are unframeable.",
+    "method": "source",
+    "result": "Approve/deny, snapshot and takeover/handback are single-click without confirm; restore and delete use hx-confirm. No client navigation sink takes attacker data.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-ui2",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/web.py",
+     "agentbox/service.py",
+     "agentbox/desktop.py"
+    ],
+    "invariant": "same_origin + SameSite=Strict stop a click induced inside a framed agentbox document.",
+    "method": "local",
+    "result": "sbx (fake Docker, real app, TestClient): framed-context GETs of /ui, /ui/sandboxes/{sid}, /ui/approvals, /sandboxes/{sid}/desktop, /login return 200 without framing headers; the in-frame htmx POST (Origin = agentbox) passes same_origin and the dummy approval executes with decided_by human and the agent's args; takeover 200. Control: framer Origin -> 403. Browser cookie behaviour untested (no browser).",
+    "artifact": "agents/h-ui2/artifacts/h.out"
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/web.py:register:cookie-ui-frameable-no-frame-ancestors-single-click-approve"
+  ],
   "unresolved": [],
   "x_planned_hunter": "h-ui2",
-  "x_source": "critic-1 missing_units"
+  "x_source": "critic-1 missing_units",
+  "x_hardening": [
+   "Add a response middleware setting frame-ancestors 'self' and X-Frame-Options SAMEORIGIN on all HTML; optionally reject state-changing cookie requests with Sec-Fetch-Dest iframe at top level or Sec-Fetch-Site not same-origin. Not DENY (sandbox.html frames the desktop page).",
+   "Approve has no confirmation while restore/delete use hx-confirm; consider a confirm step as defense in depth.",
+   "/login and read-only fragments are frameable (hardening only).",
+   "same_origin accepts requests without Origin; a replayed cookie needs no Origin."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fweb.py%23%2Fui%2F%2A%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fapi.py%23same_origin%20%2B%20SameSite%3DStrict%20HttpOnly%20cookie::agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
