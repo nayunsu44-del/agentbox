@@ -1,0 +1,10 @@
+logged_args non-write_file kept junk unchanged: True junklen= 3145728
+write_file content stripped: True
+appended id: 1
+persisted payload bytes: 3145774
+rows: 4 total payload bytes: 12583024
+DELETE blocked: IntegrityError - audit log is append-only
+UPDATE blocked: IntegrityError - audit log is append-only
+verify ok: True checked: 4
+list rows: 4 first junk len: 3145728
+RESULT: uncapped, persistent, undeletable, fully re-read = True
