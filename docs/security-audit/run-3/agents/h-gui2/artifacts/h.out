@@ -1,0 +1,25 @@
+== _parse_ps: synthetic rows ==
+{'pid': 1, 'ppid': 0, 'sid': 1, 'uid': 0, 'args': '/sbin/docker-init -- agentbox-desktop-start'}
+{'pid': 50, 'ppid': 1, 'sid': 40, 'uid': 1001, 'args': 'xfce4-session'}
+{'pid': 60, 'ppid': 50, 'sid': 40, 'uid': 1001, 'args': 'xfce4-panel'}
+{'pid': 200, 'ppid': 60, 'sid': 40, 'uid': 1001, 'args': 'child-of-panel-no-window'}
+{'pid': 201, 'ppid': 60, 'sid': 40, 'uid': 1001, 'args': 'child-of-panel-claims-window'}
+{'pid': 300, 'ppid': 290, 'sid': 300, 'uid': 1001, 'args': 'new-session-proc'}
+{'pid': 400, 'ppid': 0, 'sid': 400, 'uid': 1001, 'args': 'exec-rooted'}
+
+== gui_strays: window pid set controls classification ==
+no window pids     -> [200, 201, 300]
+201 in window pids -> [200, 300]
+all claimed        -> [300]
+
+== _parse_manifest: normal ==
+{'a.txt': (3, '1.0', '1.0'), 'b.txt': (4, '1.0', '1.0')} False
+
+== _parse_manifest: non-integer size field skips record ==
+{'a.txt': (3, '1.0', '1.0')}
+
+== _parse_manifest: truncation at cap ==
+1 False
+
+== diff_manifest ==
+{'added': ['c.txt'], 'modified': [], 'deleted': ['b.txt']}

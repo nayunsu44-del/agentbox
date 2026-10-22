@@ -713,14 +713,51 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 2,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-gui2",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-gui2",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/desktop.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "A human takeover/handback must not wait unboundedly behind an agent GUI exec.",
+    "method": "local",
+    "result": "Mock harness: with screenshot holding gui_lock inside an outstanding exec, takeover did not return within 1 s and returned only after release. _run_tool holds gui_lock (service.py:106) across _x exec_run with no timeout (sandbox.py:683-684); takeover (464) and handback (475) take the same lock with no timeout.",
+    "artifact": "agents/h-gui2/artifacts/lock.out"
+   },
+   {
+    "agent_id": "h-gui2",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/service.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "restore/delete cannot revive a deleted sandbox or race GUI calls into an inconsistent state.",
+    "method": "source",
+    "result": "restore has no deleted check and runs without gui_lock/_snap_locks, but delete removes snapshot images first so restore-after-delete fails before status=running; in-flight GUI calls during restore fail. Hardening only.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/service.py:_run_tool:gui_lock-held-across-untimed-x-exec-blocks-takeover"
+  ],
   "unresolved": [],
   "x_planned_hunter": "h-gui2",
-  "x_source": "critic-1 missing_units"
+  "x_source": "critic-1 missing_units",
+  "x_hardening": [
+   "sandbox.restore has no deleted check and restore/delete run without gui_lock/_snap_locks; add both.",
+   "_parse_manifest truncation flag correct; add cap-1/cap/cap+1 tests.",
+   "workspace_manifest diffs /workspace only; /home/desktop session state written during a burst is never in gui_changes though snapshots carry it."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%2Cscreenshot%7D::agentbox%2Fservice.py%23GUI%20burst%20snapshot%20%2B%20gui_changes%20%2B%20stray%20kill%20%28N-1%20partial%20mitigation%29::agentbox%2Fservice.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
@@ -817,15 +854,47 @@
    }
   ],
   "wave": 2,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-gui2",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "images/desktop/Dockerfile",
+   "images/desktop/agentbox-desktop-start"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-gui2",
+    "reviewed_paths": [
+     "agentbox/service.py"
+    ],
+    "invariant": "Burst bookkeeping fails closed or leaves an audit record when container-side collection fails.",
+    "method": "local",
+    "result": "Mock harness: when desktop_processes raises, _open_gui_burst returns silently, no burst recorded, no audit event; same pattern at service.py:210, 221, 238. Agent-reachable triggers need the live image.",
+    "artifact": "agents/h-gui2/artifacts/lock.out"
+   },
+   {
+    "agent_id": "h-gui2",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "images/desktop/Dockerfile",
+     "images/desktop/agentbox-desktop-start"
+    ],
+    "invariant": "gui_changes reflects GUI-burst changes that later affect sandbox behaviour.",
+    "method": "source",
+    "result": "Manifest covers /workspace only; /home/desktop (700) is outside the diff while snapshots capture the whole layer and restore re-runs startxfce4. Restore effect is a live-image question; reported as uncovered.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/service.py:_open_gui_burst:silent-fail-open-without-audit"
+  ],
   "unresolved": [],
   "x_planned_hunter": "h-gui2",
   "x_hardening": [
-   "service.py _open_gui_burst/_stop_gui_strays/_close_gui_burst catch broad exceptions and return without an audit record. Logging a gui_burst_error event, or refusing further GUI input while no burst is open, would make silent loss of the N-1 mitigation visible to the human."
+   "sandbox.restore has no deleted check and restore/delete run without gui_lock/_snap_locks; add both.",
+   "_parse_manifest truncation flag correct; add cap-1/cap/cap+1 tests.",
+   "workspace_manifest diffs /workspace only; /home/desktop session state written during a burst is never in gui_changes though snapshots carry it."
   ]
  },
  {
@@ -2198,15 +2267,44 @@
    }
   ],
   "wave": 2,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-gui2",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-gui2",
+    "reviewed_paths": [
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "_parse_ps, _parse_manifest and diff_manifest do not crash or mis-attribute on malformed output.",
+    "method": "local",
+    "result": "Synthetic inputs: non-numeric ps rows skipped; manifest records with bad size skipped and trailing fragment dropped; diff correct. No crash or desync.",
+    "artifact": "agents/h-gui2/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-gui2",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "gui_strays classifies burst-launched processes by control-plane-verifiable ownership.",
+    "method": "local",
+    "result": "Harness: a new process in a baseline session is killed when its pid is absent from window_pids and spared when present; window_pids come from xdotool getwindowpid (client-set _NET_WM_PID). Reachability of a baseline-session launch needs the live image.",
+    "artifact": "agents/h-gui2/artifacts/h.out"
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process"
+  ],
   "unresolved": [],
   "x_planned_hunter": "h-gui2",
   "x_hardening": [
-   "service.py _open_gui_burst/_stop_gui_strays/_close_gui_burst catch broad exceptions and return without an audit record. Logging a gui_burst_error event, or refusing further GUI input while no burst is open, would make silent loss of the N-1 mitigation visible to the human."
+   "sandbox.restore has no deleted check and restore/delete run without gui_lock/_snap_locks; add both.",
+   "_parse_manifest truncation flag correct; add cap-1/cap/cap+1 tests.",
+   "workspace_manifest diffs /workspace only; /home/desktop session state written during a burst is never in gui_changes though snapshots carry it."
   ]
  },
  {

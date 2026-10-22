@@ -1,0 +1,7 @@
+== takeover waits on gui_lock while a GUI tool exec is outstanding ==
+takeover finished within 1s: False
+takeover finished after exec released: 1.0s
+
+== _open_gui_burst swallows container-side failure ==
+burst recorded: False
+new audit events: []
