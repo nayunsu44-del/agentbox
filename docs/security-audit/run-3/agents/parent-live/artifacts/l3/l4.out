@@ -1,0 +1,4 @@
+logged in at https://127.0.0.1/ui cookies [ 'agentbox_session secure=true samesite=Strict' ]
+POST /logout sent cookie header: false origin: http://127.0.0.1
+original tab still logged in after attack page: false
+Chromium 141 (pw 1194): cross-scheme POST http://127.0.0.1 -> https://127.0.0.1/logout: Secure SameSite=Strict cookie NOT attached (schemeful same-site); same_origin accepted Origin http://127.0.0.1 (netloc == Host); logout response delete_cookie cleared the browser session (forced browser logout; server session not ended). Control with Origin http://127.0.0.1:9999 earlier: rejected (port differs), session kept.

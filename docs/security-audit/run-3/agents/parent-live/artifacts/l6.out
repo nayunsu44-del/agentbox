@@ -1,0 +1,16 @@
+raw stdout lines:
+   'LLM: openai m @ http://127.0.0.1:9   샌드박스: sb_x'
+   '[사용자] summarize the report'
+   '  → read_file({"path": "/workspace/report.md"})'
+   'Quarterly report'
+   '\x1b[1A\x1b[2K\x1b[1A\x1b[2K[agent] Summary: nothing was changed.'
+   '\x1b]0;owned-title\x07rest of the document'
+   '[에이전트] Done.\x1b[2K\x1b[1A'
+   '도구 호출 1회, LLM 호출 2회'
+rendered terminal screen:
+  |LLM: openai m @ http://127.0.0.1:9   샌드박스: sb_x
+  |[사용자] summarize the report
+  |[agent] Summary: nothing was changed.
+  |rest of the document
+  |도구 호출 1회, LLM 호출 2회
+window title set by output: 'owned-title'

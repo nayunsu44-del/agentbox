@@ -13,8 +13,8 @@
   "scope_paths": [
     "."
   ],
-  "budget": 40,
-  "budget_note": "Maximum agent invocations across all phases, proposed by the parent per the agreed run-3 plan (standard profile, 30-40 subagents).",
+  "budget": 45,
+  "budget_note": "Parent-proposed (the owner did not set a strict cap). Planned 40; extended to 45 after wave 2 produced 14 candidates so every candidate gets Phase 3 and Phase 5 verification. Three critic-2 units deferred for budget.",
   "execution_policy": "sandboxed-source-and-local-only",
   "execution_note": "Agent-run target code (pure-function harnesses, unit tests) runs only through the parent's sbx wrapper: docker run --network none --read-only, host /usr and target mounted read-only, writes only to agents/<id>/scratch, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB memory, 1 CPU, 64 pids, 32 MiB file size, 120 s wall clock, explicit env allowlist (HOME, TMPDIR, PATH, PYTHONPATH, PYTHONDONTWRITEBYTECODE, PYTHONNOUSERSITE). Checks that need the real Docker-backed control plane (sandbox containers, desktop image) are run by the parent with dummy principals in a scratch AGENTBOX_HOME on loopback inside this disposable cloud container, as the owner requested; such checks are labelled parent-live in the ledger. Promotion uses the parent-side promote.py (no-follow dir_fd walk, single-link regular files, 256 KiB per file, 1 MiB per agent).",
   "companions_selected": [],
@@ -37,5 +37,12 @@
     }
   ],
   "shared_file_owner": "parent",
-  "run_status": "in_progress"
+  "run_status": "in_progress",
+  "agents_spent_so_far": {
+    "recon": 4,
+    "hunt_wave1": 11,
+    "critic_post_wave1": 1,
+    "hunt_wave2": 2,
+    "critic_post_wave2": 1
+  }
 }

@@ -1,5 +1,106 @@
 [
  {
+  "coverage_id": "GUI-burst%20writes%20outside%20%2Fworkspace%20%28uid%201001%20%2Fhome%2Fdesktop%3A%20.config%2Fautostart%2C%20xfce%20session%2C%20.bashrc%29%20that%20a%20later%20snapshot%20captures%20and%20that%20restore%20or%20restart%20re-executes::agentbox%2Fsandbox.py%23restore%20re-running%20images%2Fdesktop%2Fagentbox-desktop-start%20%28startxfce4%20as%20desktop%29%20%2B%20workspace_manifest%20scope%20%28%2Fworkspace%20only%29%20%2B%20gui_strays%20baseline%20after%20restore::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+  "canonical_refs": {
+   "surface": "GUI-burst writes outside /workspace (uid 1001 /home/desktop: .config/autostart, xfce session, .bashrc) that a later snapshot captures and that restore or restart re-executes",
+   "boundary": "agentbox/sandbox.py#restore re-running images/desktop/agentbox-desktop-start (startxfce4 as desktop) + workspace_manifest scope (/workspace only) + gui_strays baseline after restore",
+   "subsystem": "agentbox/sandbox.py",
+   "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+  },
+  "surface": "GUI-burst writes outside /workspace (uid 1001 /home/desktop: .config/autostart, xfce session, .bashrc) that a later snapshot captures and that restore or restart re-executes",
+  "boundary": "agentbox/sandbox.py#restore re-running images/desktop/agentbox-desktop-start (startxfce4 as desktop) + workspace_manifest scope (/workspace only) + gui_strays baseline after restore",
+  "subsystem": "agentbox/sandbox.py",
+  "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "images/desktop/agentbox-desktop-start",
+   "images/desktop/Dockerfile"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+    "reason": "Owned by the container hardening unit."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+    "reason": "Owned by the gui_lock lifecycle unit."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 3,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 3. Desktop session start on restore honours ~/.config/autostart written by uid 1001; never in gui_changes; needs live-image validation."
+  ],
+  "x_source": "critic-2 missing_units"
+ },
+ {
+  "coverage_id": "agent%20tool%20calls%20that%20require%20approval%20%28POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%20-%3E%20REQUIRE_APPROVAL%29%20on%20desktop%20templates::agentbox%2Fservice.py%23_call_tool%20approval%20creation%3A%20no%20per-sandbox%20pending-approval%20cap%2C%20plus%20a%20per-approval%20PNG%20written%20to%20settings.home%2Fcaptures%20that%20is%20never%20removed%20on%20decision%2C%20expiry%20or%20sandbox%20delete::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
+  "canonical_refs": {
+   "surface": "agent tool calls that require approval (POST /sandboxes/{sid}/tools/{tool} -> REQUIRE_APPROVAL) on desktop templates",
+   "boundary": "agentbox/service.py#_call_tool approval creation: no per-sandbox pending-approval cap, plus a per-approval PNG written to settings.home/captures that is never removed on decision, expiry or sandbox delete",
+   "subsystem": "agentbox/service.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps"
+  },
+  "surface": "agent tool calls that require approval (POST /sandboxes/{sid}/tools/{tool} -> REQUIRE_APPROVAL) on desktop templates",
+  "boundary": "agentbox/service.py#_call_tool approval creation: no per-sandbox pending-approval cap, plus a per-approval PNG written to settings.home/captures that is never removed on decision, expiry or sandbox delete",
+  "subsystem": "agentbox/service.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/approvals.py",
+   "agentbox/sandbox.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/templates/_approvals.html"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun",
+   "AI-AND-LLM.md#Unbounded delegated action loops",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+    "reason": "Owned by the tool_pool unit."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+    "reason": "Audit-row growth already a candidate."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 3,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 2. Every gated call creates an approval, preview and captures/{aid}.png with no pending cap; no code removes captures; host disk grows without a quota and the queue renders every card."
+  ],
+  "x_source": "critic-2 missing_units"
+ },
+ {
   "coverage_id": "agent-controlled%20audit%20content%20%28tool%20args%2C%20file%20names%2C%20process%20args%29::agentbox%2Faudit.py%23hash%20chain%20%2B%20append-only%20triggers%20%2B%20event%20provenance::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Business%20logic",
   "canonical_refs": {
    "surface": "agent-controlled audit content (tool args, file names, process args)",
@@ -2004,6 +2105,60 @@
    "cmd_snapshots and _check print without _safe (control-plane strings today).",
    "capture.png lacks X-Content-Type-Options: nosniff."
   ]
+ },
+ {
+  "coverage_id": "approval%20card%20impact%20table%20and%20request-time%20screen%20capture%20for%20gated%20exec%2FGUI%20calls%20%28agentbox%2Fsandbox.py%23preview%2C%20agentbox%2Fservice.py%23_preview%2F_capture%2C%20agentbox%2Ftemplates%2F_approvals.html%2C%20agentbox%2Fcli.py%23_show_approval%29::agentbox%2Fsandbox.py%23preview%20%2B%20_split_segments%20%2B%20_expand%20%2B%20_walk%3A%20the%20system-computed%20%27affected%27%20list%20and%20%27system-captured%27%20screenshot%20shown%20to%20the%20human%20must%20reflect%20what%20the%20stored%20args%20will%20actually%20do::agentbox%2Fsandbox.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
+  "canonical_refs": {
+   "surface": "approval card impact table and request-time screen capture for gated exec/GUI calls (agentbox/sandbox.py#preview, agentbox/service.py#_preview/_capture, agentbox/templates/_approvals.html, agentbox/cli.py#_show_approval)",
+   "boundary": "agentbox/sandbox.py#preview + _split_segments + _expand + _walk: the system-computed 'affected' list and 'system-captured' screenshot shown to the human must reflect what the stored args will actually do",
+   "subsystem": "agentbox/sandbox.py",
+   "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding"
+  },
+  "surface": "approval card impact table and request-time screen capture for gated exec/GUI calls (agentbox/sandbox.py#preview, agentbox/service.py#_preview/_capture, agentbox/templates/_approvals.html, agentbox/cli.py#_show_approval)",
+  "boundary": "agentbox/sandbox.py#preview + _split_segments + _expand + _walk: the system-computed 'affected' list and 'system-captured' screenshot shown to the human must reflect what the stored args will actually do",
+  "subsystem": "agentbox/sandbox.py",
+  "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/templates/_approvals.html",
+   "agentbox/cli.py",
+   "agentbox/policy.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Action-confirmation and approval binding",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Pending-action and user-presence confusion",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "AI-AND-LLM.md#Insecure output rendering",
+    "reason": "Escaping/bidi of the command text is owned by the container-strings rendering unit."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Preview exec timeouts recorded as hardening."
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 3,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 1. The approval-binding unit did not read sandbox.py preview or templates: impact list built by newline-splitting container output (agent-chosen names with newlines add/displace rows), only rm/curl recognised, 'could not compute' note only when both lists are empty, 200-row truncation; captures of an agent-controlled screen presented as system-taken."
+  ],
+  "x_source": "critic-2 missing_units"
  },
  {
   "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs::agentbox%2Fsandbox.py::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",

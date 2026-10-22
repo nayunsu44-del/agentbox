@@ -1,0 +1,5 @@
+logged in at http://127.0.0.1:8765/ui
+http://127.0.0.1:9999/evil.html -> frame url http://127.0.0.1:8765/ui/sandboxes/sb_09e2ae0b | approve button in frame: true
+clicked approve inside frame
+http://localhost:9999/evil.html -> frame url http://127.0.0.1:8765/login | approve button in frame: false
+apr_0fb8e904e830 executed human
