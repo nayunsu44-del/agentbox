@@ -18,12 +18,35 @@ import sys
 import tempfile
 
 RUN = "/home/user/agentbox/docs/security-audit/run-3"
-SK = "/tmp/claude-0/-home-user-agentbox/6a999763-8fbd-510d-999d-8c9821197698/scratchpad/skill-clone/repo/skills/security-audit"
-PROMOTE = "/tmp/claude-0/-home-user-agentbox/6a999763-8fbd-510d-999d-8c9821197698/scratchpad/promote.py"
+SK = "/tmp/claude-0/-home-user-agentbox/cde56229-bf0c-5d8f-8bbf-3e6a7e748654/scratchpad/skill/skills/security-audit"
+PROMOTE = "/tmp/claude-0/-home-user-agentbox/cde56229-bf0c-5d8f-8bbf-3e6a7e748654/scratchpad/promote.py"
 DECISIONS = {"confirmed", "needs_validation", "rejected"}
 
 
 def final_message(path):
+    """Last SubagentHandback message or last assistant text from a JSONL transcript;
+    a file that is not a JSONL transcript is taken as the verifier's raw final message."""
+    msg = None
+    with open(path, encoding="utf-8") as f:
+        data = f.read()
+    try:
+        lines = [json.loads(l) for l in data.splitlines() if l.strip()]
+        if not all(isinstance(o, dict) and "type" in o for o in lines):
+            raise ValueError
+    except ValueError:
+        return data
+    for o in lines:
+        c = o.get("message", {}).get("content")
+        if o.get("type") == "assistant" and isinstance(c, list):
+            for b in c:
+                if b.get("type") == "tool_use" and b.get("name") == "SubagentHandback":
+                    msg = b["input"].get("message")
+                elif b.get("type") == "text" and b.get("text", "").strip():
+                    msg = b["text"]
+    return msg
+
+
+def _unused(path):
     msg = None
     with open(path, encoding="utf-8") as f:
         for line in f:
@@ -69,7 +92,7 @@ def main():
     if not isinstance(arts, list) or not all(isinstance(a, str) for a in arts):
         fail("artifacts_to_promote must be a list of strings")
     # schema validation through the skill's own validator
-    with tempfile.TemporaryDirectory(dir="/tmp/claude-0/-home-user-agentbox/6a999763-8fbd-510d-999d-8c9821197698/scratchpad") as td:
+    with tempfile.TemporaryDirectory(dir="/tmp/claude-0/-home-user-agentbox/cde56229-bf0c-5d8f-8bbf-3e6a7e748654/scratchpad") as td:
         p = os.path.join(td, "one.json")
         json.dump([rec], open(p, "w"))
         r = subprocess.run(["node", f"{SK}/validate-findings.cjs", p], capture_output=True, text=True, cwd="/tmp")

@@ -9,7 +9,7 @@
 set -u
 TARGET=/home/user/agentbox
 RUN=$TARGET/docs/security-audit/run-3
-LOG=/tmp/claude-0/-home-user-agentbox/6a999763-8fbd-510d-999d-8c9821197698/scratchpad/sbx.log
+LOG=/tmp/claude-0/-home-user-agentbox/cde56229-bf0c-5d8f-8bbf-3e6a7e748654/scratchpad/sbx.log
 IMAGE=ubuntu:24.04
 
 id="${1:-}"; shift || true
