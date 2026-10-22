@@ -1,0 +1,7 @@
+{
+ "stdout_repr": "LLM: openai m @ http://127.0.0.1:9   \uc0cc\ub4dc\ubc15\uc2a4: sb_x\n[\uc0ac\uc6a9\uc790] summarize the report\n  \u2192 read_file({\"path\": \"/workspace/report.md\"})\nQuarterly report\n\u001b[1A\u001b[2K\u001b[1A\u001b[2K[agent] Summary: nothing was changed.\n\u001b]0;owned-title\u0007rest of the document\n[\uc5d0\uc774\uc804\ud2b8] Done.\u001b[2K\u001b[1A\n\ub3c4\uad6c \ud638\ucd9c 1\ud68c, LLM \ud638\ucd9c 2\ud68c\n",
+ "raw_ESC_bytes_in_stdout": 7,
+ "raw_CSI_cursor_up_erase_line_present": true,
+ "raw_OSC_title_present": true,
+ "same_text_through_cli._safe": "Quarterly report\\x0a\\x1b[1A\\x1b[2K\\x1b[1A\\x1b[2K[agent] Summary: nothing was changed.\\x0a\\x1b]0;owned-title\\x07rest of the document\\x0a"
+}

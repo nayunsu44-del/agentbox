@@ -206,13 +206,76 @@
   "prior_status": "prior_covered_same_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-wild",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/agent.py",
+   "agentbox/api.py",
+   "agentbox/cli.py",
+   "agentbox/mcp_server.py",
+   "demo/injected_agent.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/mcp_server.py",
+     "agentbox/api.py"
+    ],
+    "invariant": "MCP tool calls and polling are bound to the single env-configured sandbox and agent token.",
+    "method": "source",
+    "result": "One httpx client with env sandbox id/token; fixed tool functions; approval ids from the same authenticated response; GET /approvals/{aid} and desktop/state are sandbox-scoped. No identity confusion.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/agent.py",
+     "agentbox/api.py",
+     "demo/injected_agent.py"
+    ],
+    "invariant": "Content entering the LLM context cannot reach another principal or grant authority beyond the agent token.",
+    "method": "source",
+    "result": "Only list_dir/read_file/exec names accepted (agent.py:261); args forwarded to the tools route and re-decided by policy/approval; no cross-sandbox retrieval, durable memory or human-token path (cmd_agent refuses hum_).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/cli.py",
+     "agentbox/agent.py"
+    ],
+    "invariant": "Sandbox/model strings printed to the operator terminal are neutralised like cli._safe.",
+    "method": "local",
+    "result": "Real cli.main(['agent',...]) with fake LLM/ToolClient: file content with ESC[1A ESC[2K and an OSC 0 title plus model text ESC[2K written raw (7 ESC bytes); _safe escapes them. Same root cause as h-webui's cmd_agent candidate.",
+    "artifact": "agents/h-wild/artifacts/h_term.out"
+   },
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/agent.py",
+     "agentbox/cli.py"
+    ],
+    "invariant": "LLM API key only sent to the operator-chosen endpoint.",
+    "method": "source",
+    "result": "Sent to operator-set --base-url incl. plain http; operator-controlled, hardening only.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-wild"
+  "x_planned_hunter": "h-wild",
+  "x_hardening": [
+   "POST /login failures and agent POST /approvals append audit rows without rate limit; attribute as anonymous/agent.",
+   "/static/novnc creates/removes a container per request when the image lacks noVNC; cache negative results.",
+   "Full noVNC client served unauthenticated; serve an allowlist.",
+   "/healthz exposes runtime/image/templates.",
+   "agentbox agent sends the LLM key to any base URL incl. plain http.",
+   "preview _expand/_walk run agent globs/find without a timeout while holding a concurrency slot.",
+   "A paused sandbox still produces docker commit snapshots for allowed delete_file calls up to the quota."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%20%2B%20takeover%2Fhandback%20%2B%20state::agentbox%2Fdesktop.py%23ticket%20redeem%20%2B%20session%20scope%20%2B%20lease::agentbox%2Fdesktop.py::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
@@ -436,13 +499,47 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-policy",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/approvals.py",
+   "agentbox/cli.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-policy",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/approvals.py"
+    ],
+    "invariant": "The approved tool call (tool + full args + sandbox) is bound immutably at creation and only a human can approve it.",
+    "method": "source",
+    "result": "POST /approvals/{aid} rejects non-human principals (403 + approval_forbidden) before decide (api.py:240-252); ApprovalStore.create persists tool/args once (approvals.py:49-59) and nothing mutates them; claim is an atomic UPDATE ... WHERE status=PENDING (82-89).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-policy",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/cli.py"
+    ],
+    "invariant": "Execution after approval uses exactly the object shown, and destructive effects stay recoverable (AP-2).",
+    "method": "source",
+    "result": "decide (service.py:384-422) runs the stored sid/tool/args verbatim after an AP-2 snapshot (406) and fails without re-running on error. The terminal approver renders the command line-by-line with a count through _safe (C0/DEL/C1/bidi). Only preview.affected (system-computed at creation) can go stale; command text is bound and snapshot keeps it recoverable.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
-  "x_planned_hunter": "h-policy"
+  "x_planned_hunter": "h-policy",
+  "x_hardening": [
+   "policy.py reduces program names to basename (./ls, /workspace/cat count as allowlisted); latent bypass if the agent ever gets an executable in /workspace or an interpreter is allowlisted. Match resolved program or reject operands with '/'.",
+   "default_policy.yaml lists bare true/false, which yaml.safe_load parses as booleans -> 'True'/'False', so true/false are not actually allowlisted. Quote them.",
+   "`file -C -m <name>` writes a .mgc file and `touch -d` mutates existing mtimes without AP-2; consider dropping file or gating -C.",
+   "Approval preview.affected is computed at creation and can go stale before execution (globs re-expand); recompute at decision time or flag dynamic globs."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%20source_dir%20%2B%20agentbox%2Fweb.py%23POST%20%2Fui%2Fsandboxes::agentbox%2Fsandbox.py%23create%20source_dir%20overlap%20check::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
@@ -956,13 +1053,47 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-policy",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/default_policy.yaml",
+   "agentbox/policy.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-policy",
+    "reviewed_paths": [
+     "agentbox/policy.py",
+     "agentbox/default_policy.yaml"
+    ],
+    "invariant": "The read-only-exec allowlist lets a command run unapproved only when every program bash would execute is allowlisted and read-only.",
+    "method": "local",
+    "result": "42-command battery under sbx: substitutions ($, backtick, ${}), redirections to real targets, process substitution and env-prefix assignments return None -> approval; subshells, brace groups, functions, brace expansion, exec/time/xargs/find/tee surface non-allowlisted tokens -> approval; rm/curl caught by the earlier rule. Every ALLOWed command executes only allowlisted read-only programs. No bypass.",
+    "artifact": "agents/h-policy/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-policy",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "An allowed command cannot mutate/delete /workspace outside AP-2, and basename stripping cannot run attacker code.",
+    "method": "source",
+    "result": "Allowlist has no deleting/truncating program. Basename stripping (./ls) is unreachable: write_file/upload create 0664 files, touch creates non-exec files, no chmod/install allowlisted; only human /source files keep exec bits.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
-  "x_planned_hunter": "h-policy"
+  "x_planned_hunter": "h-policy",
+  "x_hardening": [
+   "policy.py reduces program names to basename (./ls, /workspace/cat count as allowlisted); latent bypass if the agent ever gets an executable in /workspace or an interpreter is allowlisted. Match resolved program or reject operands with '/'.",
+   "default_policy.yaml lists bare true/false, which yaml.safe_load parses as booleans -> 'True'/'False', so true/false are not actually allowlisted. Quote them.",
+   "`file -C -m <name>` writes a .mgc file and `touch -d` mutates existing mtimes without AP-2; consider dropping file or gating -C.",
+   "Approval preview.affected is computed at creation and can go stale before execution (globs re-expand); recompute at decision time or flag dynamic globs."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws::agentbox%2Fapi.py%23cookie%20session%20%2B%20same_origin%20%2B%20lease%20on%20WebSocket::agentbox%2Fapi.py::CLIENT-SIDE.md%23Cross-site%20WebSocket%20request%20use",
@@ -2437,12 +2568,114 @@
   "prior_status": "prior_covered_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-wild",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/approvals.py",
+   "agentbox/audit.py",
+   "agentbox/cli.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/templates/_audit.html",
+   "agentbox/templates/sandbox.html",
+   "agentbox/web.py",
+   "images/desktop/Dockerfile",
+   "images/desktop/agentbox-desktop-start",
+   "tests/test_m2_acceptance.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/api.py",
+     "agentbox/web.py",
+     "agentbox/sandbox.py",
+     "tests/test_m2_acceptance.py"
+    ],
+    "invariant": "GUI burst bookkeeping stays consistent across restore and pause/resume.",
+    "method": "local",
+    "result": "Real AgentBox + fake SandboxManager: control burst kills a mid-burst stray and logs gui_changes. After restore, _gui_input_at/_gui_snap_at kept; first post-restore GUI input opens no burst; gap stray absorbed into the next baseline [1,10,60], never killed; gap change never logged. Pause: idle close pops the burst, desktop_processes fails, stray not killed, no gui_changes; next baseline [1,10,70].",
+    "artifact": "agents/h-wild/artifacts/h_burst.out"
+   },
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/audit.py",
+     "agentbox/web.py",
+     "agentbox/cli.py",
+     "agentbox/api.py",
+     "agentbox/templates/_audit.html",
+     "agentbox/templates/sandbox.html"
+    ],
+    "invariant": "Human audit surfaces show the newest events.",
+    "method": "local",
+    "result": "Real build() app (fake Docker manager/templates): 1701 allowed list_dir calls -> 5103 rows; /ui/audit shows ids 4601-5000, total 5000; GET /audit?limit=5000 returns 1-5000; marker row (id>5000) absent. Same root cause as h-audit's candidate.",
+    "artifact": "agents/h-wild/artifacts/h_audit.out"
+   },
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Unauthenticated /static/novnc cannot traverse, extract attacker content or repeatedly create containers.",
+    "method": "source",
+    "result": "Extracts from the operator image with filter='data', resolve()+is_relative_to; repeated create/remove only if the image lacks noVNC. Hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/sandbox.py",
+     "agentbox/approvals.py"
+    ],
+    "invariant": "Delete/restore/pause/restart with pending or claimed approvals cannot execute against an unintended container or bypass claim.",
+    "method": "source",
+    "result": "Atomic claim; deleted/paused sandboxes make the run fail; approvals persist and expire by wall clock. No new defect.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/sandbox.py",
+     "images/desktop/Dockerfile",
+     "images/desktop/agentbox-desktop-start"
+    ],
+    "invariant": "Upload over agent symlinks, exec during a human lease, and the root restore start script give the agent no new authority.",
+    "method": "source",
+    "result": "uid 1000 operations only; exec not GUI-gated by design; start script touches root-owned sticky-/tmp paths. No defect.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-wild",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/api.py"
+    ],
+    "invariant": "Unauthenticated requests cannot write attributed audit records.",
+    "method": "source",
+    "result": "POST /login failures append ui_login_failed actor='human' without rate limit; agent POST /approvals appends approval_forbidden outside tool_concurrency. Hardening; accelerates the audit-reader candidate.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause",
+   "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-wild"
+  "x_planned_hunter": "h-wild",
+  "x_hardening": [
+   "POST /login failures and agent POST /approvals append audit rows without rate limit; attribute as anonymous/agent.",
+   "/static/novnc creates/removes a container per request when the image lacks noVNC; cache negative results.",
+   "Full noVNC client served unauthenticated; serve an allowlist.",
+   "/healthz exposes runtime/image/templates.",
+   "agentbox agent sends the LLM key to any base URL incl. plain http.",
+   "preview _expand/_walk run agent globs/find without a timeout while holding a concurrency slot.",
+   "A paused sandbox still produces docker commit snapshots for allowed delete_file calls up to the quota."
+  ]
  }
 ]

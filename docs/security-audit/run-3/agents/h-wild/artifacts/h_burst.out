@@ -1,0 +1,129 @@
+{
+ "A_control": {
+  "snapshots": [
+   "snap_1"
+  ],
+  "killed": [
+   50
+  ],
+  "burst_open": false,
+  "events": [
+   [
+    "snapshot",
+    {
+     "snapshot_id": "snap_1",
+     "reason": null,
+     "count": null,
+     "modified": null,
+     "added": null
+    }
+   ],
+   [
+    "gui_processes_stopped",
+    {
+     "snapshot_id": "snap_1",
+     "reason": "idle",
+     "count": 1,
+     "modified": null,
+     "added": null
+    }
+   ],
+   [
+    "gui_changes",
+    {
+     "snapshot_id": "snap_1",
+     "reason": "idle",
+     "count": null,
+     "modified": [
+      "report.md"
+     ],
+     "added": []
+    }
+   ]
+  ]
+ },
+ "B_after_restore": {
+  "after_end_desktop": {
+   "burst_open": false,
+   "_gui_input_at_kept": true,
+   "_gui_snap_at_kept": true
+  },
+  "gap": {
+   "new_snapshot_on_first_input": false,
+   "burst_open": false,
+   "snapshots_during_gap": []
+  },
+  "new_burst_baseline_pids": [
+   1,
+   10,
+   60
+  ],
+  "snapshots": [
+   "snap_1",
+   "snap_2"
+  ],
+  "killed": [],
+  "stray_60_still_running": true,
+  "events": [
+   [
+    "snapshot",
+    {
+     "snapshot_id": "snap_1",
+     "reason": null,
+     "count": null,
+     "modified": null,
+     "added": null
+    }
+   ],
+   [
+    "snapshot",
+    {
+     "snapshot_id": "snap_2",
+     "reason": null,
+     "count": null,
+     "modified": null,
+     "added": null
+    }
+   ]
+  ]
+ },
+ "C_pause_during_burst": {
+  "during_pause": {
+   "burst_still_tracked": false,
+   "killed": []
+  },
+  "new_burst_baseline_pids": [
+   1,
+   10,
+   70
+  ],
+  "snapshots": [
+   "snap_1",
+   "snap_2"
+  ],
+  "killed": [],
+  "stray_70_still_running": true,
+  "events": [
+   [
+    "snapshot",
+    {
+     "snapshot_id": "snap_1",
+     "reason": null,
+     "count": null,
+     "modified": null,
+     "added": null
+    }
+   ],
+   [
+    "snapshot",
+    {
+     "snapshot_id": "snap_2",
+     "reason": null,
+     "count": null,
+     "modified": null,
+     "added": null
+    }
+   ]
+  ]
+ }
+}
