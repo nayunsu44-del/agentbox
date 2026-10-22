@@ -30,7 +30,7 @@
 
 ## 남은 일
 
-1. **N-1 결정과 수정.** 선택지와 권장안은 `run-2/VALIDATION.md` §N-1에 있다. 사용자가 아직 고르지 않았다.
+1. **N-1 결정과 수정.** 방안 8가지와 비교·권장 조합은 `run-2/N-1-OPTIONS.md`에 있다. 사용자가 아직 고르지 않았다.
    - 공통 부분(README 알려진 한계에 기록)은 이미 했다.
    - 권장안은 "GUI 입력 전 자동 스냅샷"이다. AP-2 복구 가능성을 되살리고, N-3 상한과 맞물린다.
    - 터미널 제거는 경계가 아니어서 권장하지 않는다.
@@ -57,6 +57,7 @@ pytest                                                 # 149 passed
 ## 파일 맵
 
 - `run-2/VALIDATION.md`: 5건 + 신규 1건의 재현·관측·수정 요약(한국어).
+- `run-2/N-1-OPTIONS.md`: N-1 대응 방안 8가지 비교와 권장 조합, 결정할 것.
 - `run-2/findings.json`: 현재 기준 전체 10건 구조화 레코드(확정 9 · 기각 1, 검증기 통과). 트레이스 줄 번호는 감사 기준 커밋 `7fc501f` 기준이다.
 - `run-2/repro/`: 재현 스크립트 8개. `run-2/n1-terminal-via-gui-tools.png`: N-1 증거 스크린샷.
 - `run-1/`: 1차 감사 산출물(REPORT, FINDINGS-DETAIL, NEEDS-VALIDATION, findings, coverage-ledger, architecture, run-metadata). 기록으로 두고 고치지 않는다.
