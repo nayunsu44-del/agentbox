@@ -2,6 +2,8 @@
 """Build Phase 5 (final-record verifier) prompts for run-3.
 
 usage: gen5.py <scratchpad-dir> <verifier-id>...   (verifier ids are p5-<phase-3 id>, e.g. p5-v11)
+       gen5.py <scratchpad-dir> p5r-<phase-3 id>...  (re-check of a material Phase 5 replacement: the record is
+                                                      taken from agents/p5-<id>/result.json, without its reason)
 
 Each prompt gets only: the structured final record from findings.json (not the hunter write-up or the
 Phase 3 verifier's prompt), the Phase 5 checks for its verdict copied from the skill, the source/local
@@ -78,8 +80,12 @@ def main():
     arch = open(f"{RUN}/architecture.md", encoding="utf-8").read()
     records = {r["fingerprint"]: r for r in json.load(open(f"{RUN}/findings.json", encoding="utf-8"))}
     for vid in ids:
-        base = vid.removeprefix("p5-")
-        rec = records[FP[base]]
+        recheck = vid.startswith("p5r-")
+        base = vid.removeprefix("p5r-").removeprefix("p5-")
+        if recheck:
+            rec = json.load(open(f"{RUN}/agents/p5-{base}/result.json", encoding="utf-8"))["record"]
+        else:
+            rec = records[FP[base]]
         verdict = rec["verdict"]
         named = sorted(set(re.findall(r"agents/parent-live/artifacts/[\w./-]+", json.dumps(rec))))
         late = [f"agents/parent-live/artifacts/{f}" for f in LATE.get(base, [])]
@@ -87,9 +93,12 @@ def main():
         d = f"{RUN}/agents/{vid}/scratch"
         os.makedirs(d, exist_ok=True)
         os.chown(d, 65534, 65534)
-        out = [f"""You are Phase 5 final-record verifier `{vid}` in a defensive security audit of agentbox.
+        intro = (f"""You are independent re-verifier `{vid}` in a defensive security audit of agentbox.
+A Phase 5 verifier proposed the replacement record below; it changes the verdict, root cause, evidence or demonstrated result of an earlier final record, so it may be applied only after an independent check. You did not hunt it, validate it in Phase 3, or propose it. Recheck the current audited source and independently reproduce any decisive local result under the execution boundary (where the decisive result is the parent's live run, re-read the script and output and judge whether they establish it), then return `verified` or another replacement.
+""" if recheck else f"""You are Phase 5 final-record verifier `{vid}` in a defensive security audit of agentbox.
 You did not hunt this record and did not perform its Phase 3 validation. Check the structured record below with fresh eyes, inside source/local boundaries.
-
+""")
+        out = [intro + f"""
 # Source under audit
 
 - Read source ONLY from the audited tree `{sp}/src-audited/` (git worktree at commit {AUDITED}; agentbox/, images/, deploy/, tests/ are byte-identical to the run's source_ref 0e4b958). Record paths and line numbers refer to this tree.
@@ -102,8 +111,7 @@ You did not hunt this record and did not perform its Phase 3 validation. Check t
             """
 A replacement may correct wording or lines, demote, reject, or promote. If evidence below (yours or the parent's) establishes the complete path and a bounded observed result, a promotion to `confirmed` is a full replacement record in the `confirmed` branch; it will be checked again by another fresh verifier before it is applied. If a check fails only on a non-material wording or line issue, say so in `reason` and return the corrected record. Do not invent a stronger result than the evidence shows.
 
-# Final record (from findings.json)
-""",
+# """ + ("Proposed replacement record" if recheck else "Final record (from findings.json)") + "\n",
             "```json\n" + json.dumps(rec, ensure_ascii=False, indent=1) + "\n```\n",
             "Artifacts referenced by the record are under /home/user/agentbox/docs/security-audit/run-3/ (paths relative to it). Read them; do not modify them.\n"]
         if live:
