@@ -537,13 +537,57 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-pool",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-pool",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "Agent tool calls run on a dedicated pool separate from human API threads, and per-sandbox tool_concurrency bounds how many pool threads one sandbox can hold",
+    "method": "source",
+    "result": "api.py:81 creates a 32-thread tool_pool used only by POST /sandboxes/{sid}/tools/{tool} (api.py:206-211). service.py:274-278 enforces 4 concurrent calls per sandbox (429 beyond) and decrements in finally (288-290). One sandbox can hold at most 4 of 32 pool threads; saturating the pool takes 8 or more sandboxes acting together (aggregate, not a single-principal bypass). Approved actions run on the human request thread (service.py:414-415, Starlette threadpool), and exec there is bounded by timeout -k 5 exec_timeout (sandbox.py:531).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-pool",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/api.py"
+    ],
+    "invariant": "Work done on behalf of sandbox B is charged to B's tool_concurrency and never runs on another sandbox's or a human's request thread",
+    "method": "local",
+    "result": "Mocked harness in sbx: with an idle open GUI burst for sbB, sbA's call_tool('list_dir') ran sbB's workspace_manifest on sbA's thread (manifest calls [('sbB','sbA-request')], elapsed 0.50s = stub delay) while _busy only shows sbA. expire_stale() (reached from GET/POST approvals and decide) ran the same sbB close on the human thread (0.50s). service.py:273 calls close_idle_gui_bursts() before the busy check, and it iterates every sandbox's bursts (service.py:250-256).",
+    "artifact": "agents/h-pool/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-pool",
+    "reviewed_paths": [
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Every docker exec reached from the burst-close and GUI paths has a deadline",
+    "method": "source",
+    "result": "Of the execs, only exec (sandbox.py:531), read_file (561) and outbox_read (665) carry a timeout. workspace_manifest (499), desktop_processes ps and xdotool (689-691), kill_processes (697), and the _x GUI calls (683-684, used by click/type/key/screenshot/geometry) use exec_run with no timeout, and the docker SDK exec_run has no deadline parameter. Whether container state can actually keep these execs from returning is runtime behaviour, not visible in source.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/service.py:close_idle_gui_bursts:cross-sandbox-untimed-exec-outside-tool-concurrency"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-pool"
+  "x_planned_hunter": "h-pool",
+  "x_hardening": [
+   "tool_pool (32) / tool_concurrency (4) means 8 or more cooperating sandboxes can occupy every tool thread for up to exec_timeout+5 s per call; human routes run on the separate Starlette pool, so the effect is limited to other agents' tool latency. Consider a global cap tied to the pool size or a fair queue.",
+   "Client disconnect does not cancel tool_pool work (api.py:209 run_in_executor); bounded for exec by its timeout, but the untimed execs listed above have no such bound. Add a deadline to every container exec (e.g. wrap in timeout as exec does).",
+   "snapshot_quota counts human manual and import snapshots toward the agent's quota (sandbox.py:503-505 counts all rows). That is conservative, but it can push an agent into approval mode earlier than the operator expects."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bwrite_file%2Cdelete_file%2CGUI%7D::agentbox%2Fservice.py%23snapshot%20quota%20%2B%20_snap_locks%20%2B%20GUI%20burst%20snapshots::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
@@ -610,13 +654,46 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-pool",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/config.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-pool",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "An agent cannot take more than snapshot_quota docker commits per sandbox without human approval, including under concurrent calls",
+    "method": "local",
+    "result": "Mocked harness in sbx, quota=3, 8 concurrent write_file overwrites on one sandbox: statuses [200,200,200,202,429,429,429,429], snapshots taken 3. The quota check (service.py:300, _over_snapshot_quota 199-204) and the snapshot (339-341) both run under the per-sandbox _snap_locks lock (280-286); the 429s come from tool_concurrency=4.",
+    "artifact": "agents/h-pool/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-pool",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/sandbox.py",
+     "agentbox/config.py"
+    ],
+    "invariant": "Every agent-reachable docker commit path counts toward the quota on a dimension the agent cannot change",
+    "method": "source",
+    "result": "The count is a per-sandbox DB row count (sandbox.py:503-505) keyed by sid, which is bound to the agent token. There is no agent-reachable delete-snapshot path, so the count never resets except on sandbox delete (sandbox.py:443-456). GUI_INPUT tools enter the quota via _needs_snapshot -> _gui_needs_snapshot (service.py:182-197). Commits outside the quota are human-initiated only: the approved-run pre-snapshot (decide, service.py:406), the overwrite snapshot in import_file (446), and the manual POST snapshots (api.py:179). Restore does not commit. Burst open/close runs find/ps, not commit (206-248). snapshot_quota=0 disables the quota by operator choice (config.py).",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
-  "x_planned_hunter": "h-pool"
+  "x_planned_hunter": "h-pool",
+  "x_hardening": [
+   "tool_pool (32) / tool_concurrency (4) means 8 or more cooperating sandboxes can occupy every tool thread for up to exec_timeout+5 s per call; human routes run on the separate Starlette pool, so the effect is limited to other agents' tool latency. Consider a global cap tied to the pool size or a fair queue.",
+   "Client disconnect does not cancel tool_pool work (api.py:209 run_in_executor); bounded for exec by its timeout, but the untimed execs listed above have no such bound. Add a deadline to every container exec (e.g. wrap in timeout as exec does).",
+   "snapshot_quota counts human manual and import snapshots toward the agent's quota (sandbox.py:503-505 counts all rows). That is conservative, but it can push an agent into approval mode earlier than the operator expects."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2Fexec::agentbox%2Fpolicy.py%23Policy.decide%20read-only-exec%20allowlist::agentbox%2Fpolicy.py::ATTACK-CLASSES.md%23Injection",
