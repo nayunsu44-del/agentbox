@@ -1,0 +1,12 @@
+settings.home = /scratch/ci/C/Users/Me/proj/data | db dir = /scratch/ci/C/Users/Me/proj/data
+REFUSED  '/scratch/ci/C/Users/Me/proj' -> 원본 폴더가 agentbox 데이터 폴더(/scratch/ci/C/Users/Me/proj/data)와 겹침
+REFUSED  '/scratch/ci/C/Users/Me/proj/' -> 원본 폴더가 agentbox 데이터 폴더(/scratch/ci/C/Users/Me/proj/data)와 겹침
+REFUSED  '/scratch/ci/C/Users/Me/proj/data' -> 원본 폴더가 agentbox 데이터 폴더(/scratch/ci/C/Users/Me/proj/data)와 겹침
+REFUSED  '/scratch/ci/C/Users' -> 원본 폴더가 agentbox 데이터 폴더(/scratch/ci/C/Users/Me/proj/data)와 겹침
+REFUSED  '/scratch/ci/C/Users/Me/proj/data/../../proj' -> 원본 폴더가 agentbox 데이터 폴더(/scratch/ci/C/Users/Me/proj/data)와 겹침
+ACCEPTED '/scratch/ci/C/users/me/proj' -> bind {'/scratch/ci/C/users/me/proj': {'bind': '/source', 'mode': 'ro'}}
+ACCEPTED '/scratch/ci/C/users/me/proj/data' -> bind {'/scratch/ci/C/users/me/proj/data': {'bind': '/source', 'mode': 'ro'}}
+ACCEPTED '/scratch/ci/C/USERS/ME/PROJ' -> bind {'/scratch/ci/C/USERS/ME/PROJ': {'bind': '/source', 'mode': 'ro'}}
+posixpath.realpath keeps caller case: /scratch/ci/C/users/me/proj
+PurePosixPath('/a/Users') == PurePosixPath('/a/users'): False
+guard uses st_ino/samefile/casefold: False
