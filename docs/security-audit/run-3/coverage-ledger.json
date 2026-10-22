@@ -510,13 +510,63 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-files",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/config.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/web.py",
+   "deploy/docker-compose.yml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-files",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/service.py",
+     "agentbox/api.py",
+     "agentbox/web.py"
+    ],
+    "invariant": "source_dir equal to, containing or contained by the data dir or DB dir is rejected (run-2 N-4 revalidation).",
+    "method": "source",
+    "result": "Fix (sandbox.py:403-405) resolves src and compares against {home.resolve(), db_path.resolve().parent} with src==d or d in src.parents or src in d.parents: rejects exact, trailing slash, .., ancestor, descendant and symlinked overlaps. Create is human_only/browser_human.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-files",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/config.py"
+    ],
+    "invariant": "The overlap decision identifies the same directory regardless of spelling, incl. case-insensitive filesystems.",
+    "method": "local",
+    "result": "Fake-docker harness in sbx: create() refuses exact/trailing/dotdot/ancestor/descendant overlaps but accepts a case-variant path (realpath preserves case; Path compare is case-sensitive). Locally benign on case-sensitive FS; exploit needs a case-insensitive deployment FS.",
+    "artifact": "agents/h-files/artifacts/guard_case.out"
+   },
+   {
+    "agent_id": "h-files",
+    "reviewed_paths": [
+     "deploy/docker-compose.yml",
+     "agentbox/config.py"
+    ],
+    "invariant": "Guard computed on control-plane paths while the host daemon mounts must not fail open in compose.",
+    "method": "source",
+    "result": "Fails safe: compose control plane sees only /var/lib/agentbox (=HOME) and docker.sock; is_dir passes only under HOME, all rejected; AGENTBOX_DB outside HOME covered.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/sandbox.py:create:source_dir-overlap-guard-case-insensitive-bypass"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-files"
+  "x_planned_hunter": "h-files",
+  "x_hardening": [
+   "Compare directory identity by os.stat (st_dev, st_ino) in the source_dir guard to cover case-insensitive filesystems, hardlinks and bind aliases.",
+   "Create UI/CLI could warn when the chosen tree contains world-unreadable files owned by another uid (README:379 documents the root copy).",
+   "exists()/is_dir() run test without the timeout wrapper; uniform hardening."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%2Cscreenshot%7D::agentbox%2Fservice.py%23GUI%20burst%20snapshot%20%2B%20gui_changes%20%2B%20stray%20kill%20%28N-1%20partial%20mitigation%29::agentbox%2Fservice.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
@@ -1218,13 +1268,64 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-files",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-files",
+    "reviewed_paths": [
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "safe_path/_workspace_path/clean_name confine agent paths and reject traversal, separators, control and null bytes.",
+    "method": "source",
+    "result": "safe_path (228-241) normpath + prefix check; _workspace_path (572-576) /workspace only; clean_name (52-57) rejects empty/./../control/separators/>200 bytes; sinks use -- and quoted args. No escape.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-files",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "FIFO/TOCTOU on human-facing reads cannot hang the control plane.",
+    "method": "source",
+    "result": "read_file and outbox_read wrap [ -f ] + head -c in timeout -k 2 30 (outbox also rejects symlinks); writes use random temp names then mv -f; test does not block on FIFOs. Prior FIFO finding fixed.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-files",
+    "reviewed_paths": [
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Root-run execs on agent paths do not follow agent symlinks across a boundary.",
+    "method": "source",
+    "result": "Manifest find as root without -L and with -xdev; create-time cp -a/chown/chmod run before agent foothold on read-only /source. No agent-steered root read/write outside /workspace.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-files",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "rm/mv via agent symlinks or import_file TOCTOU cannot cross a boundary.",
+    "method": "source",
+    "result": "delete/write run as uid 1000 in the agent's own container; import_file snapshots then uploads as uid 1000; same-authority effects only.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
-  "x_planned_hunter": "h-files"
+  "x_planned_hunter": "h-files",
+  "x_hardening": [
+   "Compare directory identity by os.stat (st_dev, st_ino) in the source_dir guard to cover case-insensitive filesystems, hardlinks and bind aliases.",
+   "Create UI/CLI could warn when the chosen tree contains world-unreadable files owned by another uid (README:379 documents the root copy).",
+   "exists()/is_dir() run test without the timeout wrapper; uniform hardening."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fcli.py%23cmd_serve%20%2B%20agentbox%2Fapi.py%23create_app%20factory%20%2B%20deploy%2F%2A::agentbox%2Fcli.py%23bind_problem%20%2B%20runtime_problem%20%2B%20sandbox.py%20runtime%20selection::agentbox%2Fcli.py::CLOUD-AND-DEPLOYMENT.md%23Security-control%20precedence%20drift",

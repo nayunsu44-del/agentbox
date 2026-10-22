@@ -1,0 +1,12 @@
+settings.home = /scratch/case/Users/u/proj/data
+settings.db_path = /scratch/case/Users/u/proj/data/agentbox.db
+REFUSED  source_dir='/scratch/case/Users/u/proj': 원본 폴더가 agentbox 데이터 폴더(/scratch/case/Users/u/proj/data)와 겹침. 데이터 폴더 밖의 폴더를 고를 것
+REFUSED  source_dir='/scratch/case/Users/u/proj/': 원본 폴더가 agentbox 데이터 폴더(/scratch/case/Users/u/proj/data)와 겹침. 데이터 폴더 밖의 폴더를 고를 것
+REFUSED  source_dir='/scratch/case/Users/u/proj/../proj': 원본 폴더가 agentbox 데이터 폴더(/scratch/case/Users/u/proj/data)와 겹침. 데이터 폴더 밖의 폴더를 고를 것
+REFUSED  source_dir='/scratch/case/Users': 원본 폴더가 agentbox 데이터 폴더(/scratch/case/Users/u/proj/data)와 겹침. 데이터 폴더 밖의 폴더를 고를 것
+REFUSED  source_dir='/scratch/case/Users/u/proj/data/x/..': 원본 폴더가 agentbox 데이터 폴더(/scratch/case/Users/u/proj/data)와 겹침. 데이터 폴더 밖의 폴더를 고를 것
+ACCEPTED source_dir='/scratch/case/users/u/proj' -> bind-mount volumes={'/scratch/case/users/u/proj': {'bind': '/source', 'mode': 'ro'}}
+ACCEPTED source_dir='/scratch/case/other' -> bind-mount volumes={'/scratch/case/other': {'bind': '/source', 'mode': 'ro'}}
+os.path.realpath keeps caller case: /scratch/case/users/u/proj
+PurePosixPath case-sensitive compare: False
+guard expression for variant: [('/scratch/case/Users/u/proj/data', False)]
