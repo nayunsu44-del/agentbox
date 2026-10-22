@@ -7,6 +7,8 @@
   423으로 대기한다. 돌려주면(handback) 입력 연결을 끊고 에이전트가 다시 쓴다.
 - 브라우저는 Authorization 헤더를 못 붙인다. 사람 토큰으로 받은 1회용 티켓(60초)을 세션 쿠키로 바꾼다.
   에이전트 토큰으로는 티켓을 받을 수 없다.
+- 세션은 티켓의 범위를 이어받는다. 웹 UI 로그인('*')은 전체를, 화면 링크(샌드박스 id)는 그 샌드박스의
+  화면 경로만 쓸 수 있다. 로그아웃하면 그 세션의 화면 연결을 끊고 인수도 돌려준다.
 
 로그인 세션, 1회용 티켓, 인수 상태는 SQLite에 둔다. 쿠키와 티켓 값은 SHA-256 해시로만 저장한다.
 서버를 다시 띄우면 로그인은 유지되고, 지난 실행에서 돌려주지 않은 인수는 서비스가 server_restart로
@@ -31,7 +33,8 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS ui_tickets (
   hash TEXT PRIMARY KEY, scope TEXT NOT NULL, expires REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS ui_sessions (
-  hash TEXT PRIMARY KEY, public TEXT NOT NULL, created TEXT NOT NULL, expires REAL NOT NULL);
+  hash TEXT PRIMARY KEY, public TEXT NOT NULL, created TEXT NOT NULL, expires REAL NOT NULL,
+  scope TEXT NOT NULL DEFAULT '*');
 CREATE TABLE IF NOT EXISTS takeover_leases (
   sandbox_id TEXT PRIMARY KEY, session TEXT NOT NULL, since TEXT NOT NULL, started REAL NOT NULL);
 """
@@ -79,6 +82,10 @@ class DesktopControl:
         # 만료 시각은 재시작을 넘어가야 하므로 벽시계(time.time)로 둔다.
         self._db = sqlite3.connect(str(db_path) if db_path else ":memory:", check_same_thread=False,
                                    isolation_level=None)
+        cols = [r[1] for r in self._db.execute("PRAGMA table_info(ui_sessions)")]
+        if cols and "scope" not in cols:
+            # 범위가 없던 때의 세션은 화면 링크로 받은 것인지 알 수 없다. 버리고 다시 로그인하게 한다.
+            self._db.execute("DROP TABLE ui_sessions")
         self._db.executescript(SCHEMA)
         now = time.time()
         self._db.execute("DELETE FROM ui_tickets WHERE expires < ?", (now,))
@@ -103,16 +110,17 @@ class DesktopControl:
             self._db.execute("DELETE FROM ui_tickets WHERE hash = ?", (_h(ticket),))
             if row[0] != sid or row[1] < time.time():
                 return None
-        return self.new_session()
+        return self.new_session(sid)
 
-    def new_session(self) -> tuple[str, str]:
+    def new_session(self, scope: str = "*") -> tuple[str, str]:
+        """scope: '*'이면 웹 UI 전체, 샌드박스 id면 그 샌드박스의 화면 경로만."""
         cookie = secrets.token_urlsafe(32)
         public = "hs_" + secrets.token_hex(4)
         now = time.time()
         with self._lock:
             self._db.execute("DELETE FROM ui_sessions WHERE expires < ?", (now,))
-            self._db.execute("INSERT INTO ui_sessions VALUES (?, ?, ?, ?)",
-                             (_h(cookie), public, _now_iso(), now + self.session_ttl))
+            self._db.execute("INSERT INTO ui_sessions (hash, public, created, expires, scope) VALUES (?, ?, ?, ?, ?)",
+                             (_h(cookie), public, _now_iso(), now + self.session_ttl, scope))
         return cookie, public
 
     def end_session(self, cookie: str | None) -> str | None:
@@ -121,17 +129,26 @@ class DesktopControl:
             self._db.execute("DELETE FROM ui_sessions WHERE hash = ?", (_h(cookie or ""),))
         return row[0] if row else None
 
-    def session(self, cookie: str | None) -> str | None:
+    def session_scope(self, cookie: str | None) -> tuple[str, str] | None:
+        """(공개 세션 id, 범위). 범위는 '*' 또는 샌드박스 id."""
         if not cookie:
             return None
         with self._lock:
-            row = self._db.execute("SELECT public, expires FROM ui_sessions WHERE hash = ?", (_h(cookie),)).fetchone()
+            row = self._db.execute("SELECT public, expires, scope FROM ui_sessions WHERE hash = ?",
+                                   (_h(cookie),)).fetchone()
             if not row:
                 return None
             if row[1] < time.time():
                 self._db.execute("DELETE FROM ui_sessions WHERE hash = ?", (_h(cookie),))
                 return None
-            return row[0]
+            return row[0], row[2]
+
+    def session(self, cookie: str | None, sid: str | None = None) -> str | None:
+        """공개 세션 id. sid를 주면 그 샌드박스 화면 세션도 받고, 안 주면 웹 UI 전체 세션만 받는다."""
+        got = self.session_scope(cookie)
+        if not got or got[1] not in ("*", sid):
+            return None
+        return got[0]
 
     # ---- 인수 상태 -----------------------------------------------------
     def gui_lock(self, sid: str) -> threading.Lock:
@@ -226,6 +243,17 @@ class DesktopControl:
             if lease:
                 lease.last_active = time.monotonic()
                 lease.client_bytes += client_bytes
+
+    def leases_of(self, session: str) -> list[str]:
+        with self._lock:
+            return [sid for sid, lease in self._leases.items() if lease.session == session]
+
+    def close_session(self, session: str) -> None:
+        """로그아웃한 세션의 화면 연결을 모두 끊는다."""
+        with self._lock:
+            conns = [c for c in self._conns.values() if c.session == session]
+        for c in conns:
+            c.close()
 
     def close_all(self, sid: str) -> None:
         with self._lock:

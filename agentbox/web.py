@@ -125,7 +125,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
     def logout(request: Request):
         if not same_origin(request.headers):
             raise HTTPException(403, "다른 출처의 요청")
-        s = box.desktop.end_session(request.cookies.get(D.COOKIE))
+        s = box.end_ui_session(request.cookies.get(D.COOKIE))
         if s:
             box._safe_log(None, None, "ui_logout", {"session": s}, actor="human")
         r = RedirectResponse("/login", status_code=303)
