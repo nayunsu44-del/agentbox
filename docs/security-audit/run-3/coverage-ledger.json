@@ -909,13 +909,66 @@
   "prior_status": "prior_covered_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-access",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/web.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-access",
+    "reviewed_paths": [
+     "agentbox/api.py"
+    ],
+    "invariant": "Every route enforces the right principal kind and binds the action to the right resource; agent header tokens are confined to their own sandbox; browser cookie sessions reach only screen_principal routes.",
+    "method": "source",
+    "result": "principal() (api.py:92-101) accepts only an Authorization: Bearer header, so cookies never drive the JSON management API. human_only (103-106) blocks agents. Agent-reachable routes re-bind the resource to the token's sandbox: GET /sandboxes/{sid} (161-164), POST /tools/{tool} (206-208), GET /approvals/{aid} (226-230; agents get id/status/result/decided_at for their own sandbox only), GET /desktop/state (316-318). POST /approvals/{aid} rejects agents with 403 and audits it (242-249). screen_human requires scope '*' (126-132), desktop_human scope in ('*',sid) (134-140); both re-check kind=='human'. No weaker parallel path found; log_human-before-validate on pause/resume/snapshot/restore/delete is human-only and only appends an audit row for a bad sid.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-access",
+    "reviewed_paths": [
+     "agentbox/desktop.py"
+    ],
+    "invariant": "A sandbox-scoped ticket/session cannot become a '*' session, and a scope=A session cannot act on sandbox B or '*' routes (fix for the prior rejected claim).",
+    "method": "local",
+    "result": "redeem binds ticket scope to the requested sid (desktop.py:105-114); new_session persists scope (116-125); session()/session_scope() gate on scope in ('*',sid) (133-152). Harness: scope='sbxA' ticket redeemed as '*' -> None; as 'sbxA' -> scope-A session; that session's session(cookie,None) and session(cookie,'sbxB') -> None, session(cookie,'sbxA') ok; '*' ticket valid everywhere; reuse -> None.",
+    "artifact": "agents/h-access/artifacts/scope_check.out"
+   },
+   {
+    "agent_id": "h-access",
+    "reviewed_paths": [
+     "agentbox/web.py"
+    ],
+    "invariant": "All /ui/* routes authorize as a full-UI human; sandbox pages need a '*' session.",
+    "method": "source",
+    "result": "browser_human=screen_human (api.py:437); every /ui/* data route depends on it (web.py:157,161,176,200,204,217,228,232,241,252,260,266). Pages /, /ui, /ui/sandboxes/{sid} gate on session(cookie,None) requiring '*' (web.py:82-83,106,152,183). /login ticket path redeems only '*' tickets (111). POST /login and /logout enforce same_origin (118,130).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-access",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "The record returned to an agent for its own sandbox does not leak a stronger principal's secret.",
+    "method": "source",
+    "result": "get()/list() strip token_hash (sandbox.py:318-333); token plaintexts never returned. get() returns host source_dir path, container_id, image, runtime to the agent (hardening only: network=none, no exfil path, same value shown to the human by design).",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
-  "x_planned_hunter": "h-access"
+  "x_planned_hunter": "h-access",
+  "x_hardening": [
+   "agentbox/api.py:160-164 — GET /sandboxes/{sid} returns the host source_dir absolute path (plus container_id/image/runtime) to the sandbox's own agent; consider omitting them from the agent projection.",
+   "agentbox/api.py:440-443 — unauthenticated GET /healthz discloses image, templates, runtime and dev_only flag; consider trimming for exposed deployments.",
+   "agentbox/cli.py:130 — AGENTBOX_TRUSTED_PROXIES defaults to '*' behind a TLS proxy; pin it to the proxy address."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23tools%20read_file%2Fwrite_file%2Fdelete_file%2Flist_dir%20%2B%20POST%20files%20%2B%20GET%20outbox::agentbox%2Fsandbox.py%23safe_path%20%2B%20_workspace_path%20%2B%20clean_name%20%2B%20FIFO%20guard::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
@@ -1603,13 +1656,65 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-access",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   ".github/workflows/ci.yml",
+   ".gitignore",
+   "README.md",
+   "agentbox/api.py",
+   "agentbox/cli.py",
+   "agentbox/config.py",
+   "agentbox/web.py",
+   "deploy/Caddyfile",
+   "deploy/docker-compose.yml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-access",
+    "reviewed_paths": [
+     ".gitignore",
+     ".github/workflows/ci.yml",
+     "README.md"
+    ],
+    "invariant": "No hardcoded/test secrets; .gitignore covers secrets; CI least privilege; no committed key material.",
+    "method": "source",
+    "result": "grep for password/secret/apikey/token/BEGIN/bearer/hum_/agt_ found only legitimate uses; README keys are 'sk-...' placeholders. .gitignore covers .env/.env.*/*.env/agent.env/data//demo-data/*.log. No .env/.pem/.key/credentials.json tracked. CI sets permissions: contents: read.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-access",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/web.py",
+     "agentbox/cli.py",
+     "agentbox/config.py"
+    ],
+    "invariant": "No permissive CORS, no debug/reload, cookie attributes set, TLS gated, no stack traces, no dynamic eval.",
+    "method": "source",
+    "result": "No CORSMiddleware. FastAPI() without debug (api.py:89); uvicorn log_level warning, no reload (cli.py:131). Cookie HttpOnly+SameSite=Strict, Secure with TLS/proxy (desktop.py:51-53, cli.py:106). Plaintext non-loopback bind refused unless --insecure (cli.py:100-104). Errors are HTTPException JSON details. No eval/exec on request input; docker exec is the intended sink. /healthz unauthenticated discloses image/templates/runtime/dev_only (hardening).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-access",
+    "reviewed_paths": [
+     "deploy/docker-compose.yml",
+     "deploy/Caddyfile"
+    ],
+    "invariant": "Deployment does not expose the plaintext control plane and terminates TLS.",
+    "method": "source",
+    "result": "compose only exposes 8765 (not published); Caddy terminates TLS and proxies to agentbox:8765; AGENTBOX_BEHIND_TLS_PROXY=1. No secrets in compose/Caddyfile. forwarded_allow_ips defaults to '*' (cli.py:130) — peer-owned deploy unit.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
-  "x_planned_hunter": "h-access"
+  "x_planned_hunter": "h-access",
+  "x_hardening": [
+   "agentbox/api.py:160-164 — GET /sandboxes/{sid} returns the host source_dir absolute path (plus container_id/image/runtime) to the sandbox's own agent; consider omitting them from the agent projection.",
+   "agentbox/api.py:440-443 — unauthenticated GET /healthz discloses image, templates, runtime and dev_only flag; consider trimming for exposed deployments.",
+   "agentbox/cli.py:130 — AGENTBOX_TRUSTED_PROXIES defaults to '*' behind a TLS proxy; pin it to the proxy address."
+  ]
  },
  {
   "coverage_id": "whole-repo%23undocumented%2Fedge%20surfaces::whole-repo%23feature%20interactions%20not%20covered%20by%20other%20units::whole-repo::ATTACK-CLASSES.md%23Wildcard",

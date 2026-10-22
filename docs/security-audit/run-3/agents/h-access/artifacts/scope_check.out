@@ -1,0 +1,9 @@
+sidticket_redeem_as_star: None
+sidticket_redeem_as_A_ok: True True
+A_session_full_ui: None
+A_session_scope: ('hs_3dee6385', 'sbxA')
+A_session_for_A: hs_3dee6385
+A_session_for_B: None
+star_session_full_ui: True
+star_session_for_any: True
+sidticket_reuse: None
