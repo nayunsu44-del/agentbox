@@ -1,0 +1,15 @@
+python 3.13.16
+AGENTBOX_RUNTIME='auto'                     -> selected='runc'
+    runtime_problem(selected, exposed=True) -> REFUSE (guard fires)
+    healthz dev_only == True;  UI runc badge shown == True
+AGENTBOX_RUNTIME='runc'                     -> selected='runc'
+    runtime_problem(selected, exposed=True) -> REFUSE (guard fires)
+    healthz dev_only == True;  UI runc badge shown == True
+AGENTBOX_RUNTIME='runsc'                    -> selected="ERROR: 요청한 런타임 runsc이 Docker에 없음. 가능한 것: ['io.containerd.runc.v2', 'runc']"
+    (startup fails before serve checks)
+AGENTBOX_RUNTIME='io.containerd.runc.v2'    -> selected='io.containerd.runc.v2'
+    runtime_problem(selected, exposed=True) -> None (exposed serve allowed, no --allow-runc needed)
+    healthz dev_only == False;  UI runc badge shown == False
+bind_problem 0.0.0.0 False True -> ok | exposed = True
+bind_problem 127.0.0.1 False False -> ok | exposed = False
+bind_problem 0.0.0.0 False False -> refuse | exposed = True

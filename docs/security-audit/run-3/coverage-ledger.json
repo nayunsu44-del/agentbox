@@ -1113,13 +1113,87 @@
   "prior_status": "prior_covered_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-deploy",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "README.md",
+   "agentbox/api.py",
+   "agentbox/cli.py",
+   "agentbox/config.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox.py",
+   "agentbox/templates/base.html",
+   "agentbox/web.py",
+   "deploy/Caddyfile",
+   "deploy/Dockerfile",
+   "deploy/docker-compose.yml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-deploy",
+    "reviewed_paths": [
+     "agentbox/cli.py",
+     "agentbox/sandbox.py",
+     "agentbox/config.py",
+     "agentbox/api.py",
+     "agentbox/desktop.py",
+     "agentbox/templates/base.html",
+     "README.md"
+    ],
+    "invariant": "An exposed control plane must refuse runc-class isolation unless --allow-runc/AGENTBOX_ALLOW_RUNC, and UI/healthz must flag runc as dev-only",
+    "method": "local",
+    "result": "sbx harness on real cli.runtime_problem and SandboxManager._detect_runtime with a fake client reporting ['io.containerd.runc.v2','runc']: auto->runc and runc->runc refused when exposed; runsc fails at startup listing 'io.containerd.runc.v2' as available; AGENTBOX_RUNTIME=io.containerd.runc.v2 is selected, runtime_problem returns None (exposed serve starts without --allow-runc), healthz dev_only False, UI runc badge hidden. Auto never picks the alias; a failing preferred runtime raises, no fallback to runc.",
+    "artifact": "agents/h-deploy/artifacts/runtime_guard.out"
+   },
+   {
+    "agent_id": "h-deploy",
+    "reviewed_paths": [
+     "agentbox/cli.py",
+     "deploy/docker-compose.yml",
+     "deploy/Dockerfile",
+     "deploy/Caddyfile"
+    ],
+    "invariant": "The compose deployment renders to TLS-gated, runc-refusing serve settings",
+    "method": "source",
+    "result": "CMD agentbox serve --host 0.0.0.0 --behind-tls-proxy + AGENTBOX_BEHIND_TLS_PROXY=1 -> bind_problem None, exposed True; AGENTBOX_ALLOW_RUNC default empty -> guard enforced; AGENTBOX_RUNTIME not passed -> auto, so on this host compose refuses to start unless the operator opts in. 8765 only exposed on the compose bridge; sandboxes are network none.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-deploy",
+    "reviewed_paths": [
+     "agentbox/cli.py",
+     "agentbox/api.py",
+     "agentbox/web.py"
+    ],
+    "invariant": "Trusted-proxy '*' must not let a non-proxy peer forge identity or authorization",
+    "method": "source",
+    "result": "No bypass: no auth uses request.client or forwarded addresses; auth is Bearer token or hashed cookie session. X-Forwarded-Proto only changes request.url.scheme (secure_cookie already forced when behind; base_url in the human-only MCP snippet, web.py:167). same_origin compares Origin with Host, not rewritten by the proxy middleware.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-deploy",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "README.md"
+    ],
+    "invariant": "Bare uvicorn create_app factory must not be a maintained deployment that skips serve gates",
+    "method": "source",
+    "result": "create_app (api.py:448-450) skips bind/TLS/runtime checks; documented only in its docstring; README and deploy/ use agentbox serve; operator must choose it and a non-loopback host deliberately. Hardening, not a finding.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/cli.py:runtime_problem:runc-alias-io.containerd.runc.v2-bypasses-exposed-runc-guard"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-deploy"
+  "x_planned_hunter": "h-deploy",
+  "x_hardening": [
+   "create_app() (api.py:448-450) skips bind_problem, TLS gate, runtime gate and secure_cookie forcing; move checks into build() or refuse non-loopback there.",
+   "AGENTBOX_TRUSTED_PROXIES defaults to '*' (cli.py:130); default to the proxy peer or 127.0.0.1.",
+   "Ambient AGENTBOX_BEHIND_TLS_PROXY=1 silently disables the plaintext non-loopback refusal for plain serve; print a notice when the TLS gate is satisfied only by this assertion.",
+   "Desktop start script opens /tmp/xvfb.log, /tmp/xfce.log via root redirections and chmods /tmp/.X11-unix as root on every start/restore; safe only because these are root-owned in sticky /tmp after first start; move under a root-only dir or into as_desktop.",
+   "No-new-privileges inheritance by docker exec processes is assumed from Docker behaviour; a live spot check (grep NoNewPrivs /proc/self/status under docker exec -u 1000) would confirm."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fweb.py%23%2Fui%2F%2A%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fapi.py%23same_origin%20%2B%20SameSite%3DStrict%20HttpOnly%20cookie::agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
@@ -1262,13 +1336,59 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-deploy",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/sandbox.py",
+   "images/desktop/Dockerfile",
+   "images/desktop/agentbox-desktop-start"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-deploy",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/api.py"
+    ],
+    "invariant": "Lower-trust workloads cannot select privileged mode, capabilities, host namespaces, host paths, devices or runtime sockets",
+    "method": "source",
+    "result": "_run_container (sandbox.py:367-388) hard-codes network_mode=none, one ro bind of the human-chosen source_dir at /source, cap_drop ALL + CHOWN/DAC_OVERRIDE/FOWNER/SETUID/SETGID, no-new-privileges, init, mem/cpu/pids limits; no docker.sock/device/host ns/privileged. Image/template/create/restore/snapshot are human_only (api.py:151-198).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-deploy",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "images/desktop/agentbox-desktop-start",
+     "images/desktop/Dockerfile"
+    ],
+    "invariant": "Root-run execs and the root start script must not follow agent/desktop-controlled paths so uid 1000/1001 reaches root",
+    "method": "source",
+    "result": "No path: create setup exec runs once before agent code; manifest is find -xdev -printf (no -exec/-L); ps reads /proc; kill and xdotool run as desktop; start script (root-owned, fixed path) does rm -f on X lock/socket (last component not followed), chmod 1777 /tmp/.X11-unix (root dir from first start, sticky /tmp prevents replacement), root redirections to /tmp/xvfb.log and /tmp/xfce.log (root-owned after first start); setpriv drops with env -i and fixed PATH; setuid binaries neutralised by no-new-privileges.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-deploy",
+    "reviewed_paths": [
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Root inside the container must not reach host or control-plane authority",
+    "method": "source",
+    "result": "No crossing short of a kernel bug (runtime class): no SYS_ADMIN/MKNOD/SYS_PTRACE/NET_ADMIN, no mount/cgroup/device, ro /source, network none, no runtime socket; the control plane reads only container stdout; extract_novnc reads the operator-built image. Root-in-container could only tamper with the same sandbox's state, already reachable via the desktop user by design.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
-  "x_planned_hunter": "h-deploy"
+  "x_planned_hunter": "h-deploy",
+  "x_hardening": [
+   "create_app() (api.py:448-450) skips bind_problem, TLS gate, runtime gate and secure_cookie forcing; move checks into build() or refuse non-loopback there.",
+   "AGENTBOX_TRUSTED_PROXIES defaults to '*' (cli.py:130); default to the proxy peer or 127.0.0.1.",
+   "Ambient AGENTBOX_BEHIND_TLS_PROXY=1 silently disables the plaintext non-loopback refusal for plain serve; print a notice when the TLS gate is satisfied only by this assertion.",
+   "Desktop start script opens /tmp/xvfb.log, /tmp/xfce.log via root redirections and chmods /tmp/.X11-unix as root on every start/restore; safe only because these are root-owned in sticky /tmp after first start; move under a root-only dir or into as_desktop.",
+   "No-new-privileges inheritance by docker exec processes is assumed from Docker behaviour; a live spot check (grep NoNewPrivs /proc/self/status under docker exec -u 1000) would confirm."
+  ]
  },
  {
   "coverage_id": "container%20output%20and%20agent%20request%20bodies::agentbox%2Fsandbox.py%23_Head%20exec%20cap%20%2B%20read%2Foutbox%2Fmanifest%2Fscreenshot%20caps::agentbox%2Fsandbox.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Unbounded%20buffering%20and%20cardinality",
