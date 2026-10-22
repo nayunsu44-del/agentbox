@@ -1,0 +1,3 @@
+exec: 200 {'status': 'executed', 'result': {'exit_code': 254, 'stdout': '', 'stderr': 'bash: fork: retry: Resource temporarily unavailable\nbash: fork: retry: Resource temporarily unavailable\n... (truncated by the parent when recording)
+container processes by (comm, state, uid): [(('tail', 'S', '1000'), 1002), (('agentbox-deskto', 'S', '0'), 2), (('docker-init', 'S', '0'), 1), (('sleep', 'S', '0'), 1), (('Xvfb', 'S', '1001'), 1), (('xfce4-session', 'S', '1001'), 1), (('dbus-launch', 'S', '1001'), 1), (('dbus-daemon', 'S', '1001'), 1)]
+pid 1 in container: /sbin/docker-init -- /usr/local/bin/agentbox-desktop-start
