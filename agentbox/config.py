@@ -41,6 +41,9 @@ class Settings:
     # 디스크 상한은 overlay가 xfs+pquota일 때만 동작한다. 비워 두면 적용하지 않는다.
     disk_limit: str = field(default_factory=lambda: _env("AGENTBOX_DISK", ""))
     exec_timeout: int = field(default_factory=lambda: int(_env("AGENTBOX_EXEC_TIMEOUT", "60")))
+    # 샌드박스 하나의 스냅샷이 이만큼 쌓이면, 에이전트의 덮어쓰기·삭제는 허용 규칙이어도 승인을 거친다.
+    # docker commit은 매번 쓰기 레이어 전체를 복사하므로 사람 없이 호스트 디스크를 채우지 못하게 한다. 0이면 끔.
+    snapshot_quota: int = field(default_factory=lambda: int(_env("AGENTBOX_SNAPSHOT_QUOTA", "50")))
     max_read_bytes: int = 256 * 1024
     max_write_bytes: int = 1024 * 1024
     # UX-3, UX-4 사람이 넣고 받는 파일 하나의 상한

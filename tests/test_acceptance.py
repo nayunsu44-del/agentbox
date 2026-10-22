@@ -206,3 +206,32 @@ def test_path_escape_refused(env):
 
 
 # 8. 화면 인수 중 사람의 조작이 "사람 세션"으로 로그에 남는다 → tests/test_m2_acceptance.py
+
+
+# 보안 검수 N-3: 허용된 덮어쓰기가 매번 docker commit을 일으켜도 호스트 디스크를 사람 없이 채우지 못한다
+def test_snapshot_quota_escalates_and_delete_removes_images(env):
+    e = env
+    e.box.sandboxes.settings.snapshot_quota = 2
+
+    def write(path, content):
+        return e.c.post(f"/sandboxes/{e.sid}/tools/write_file",
+                        json={"args": {"path": path, "content": content}}, headers=e.A)
+
+    for i in range(2):  # 상한 전: 허용 규칙대로 바로 실행하고 스냅샷
+        assert write("/workspace/old-report.md", f"v{i}\n").status_code == 200
+    assert e.box.sandboxes.snapshot_count(e.sid) == 2
+    r = write("/workspace/old-report.md", "v2\n")  # 상한부터는 승인 대기
+    assert r.status_code == 202, r.text
+    apr = e.c.get(f"/approvals/{r.json()['approval_id']}", headers=e.H).json()
+    assert apr["rule_id"] == "snapshot-quota"
+    assert e.box.sandboxes.snapshot_count(e.sid) == 2
+    res = approve(e, apr["id"])  # 승인하면 AP-2대로 스냅샷을 뜨고 실행
+    assert res["status"] == "executed" and res["snapshot_id"]
+    assert write("/workspace/brand-new.md", "x\n").status_code == 200  # 새 파일은 스냅샷이 없어 그대로 허용
+
+    images = [s["image"] for s in e.box.sandboxes.list_snapshots(e.sid)]
+    assert len(images) == 3
+    assert e.c.delete(f"/sandboxes/{e.sid}", headers=e.H).status_code == 200
+    for img in images:
+        with pytest.raises(docker.errors.ImageNotFound):
+            e.box.sandboxes.client.images.get(img)

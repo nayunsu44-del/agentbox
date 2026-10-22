@@ -340,6 +340,12 @@ class SandboxManager:
         except NotFound:
             pass
         self._set(sid, status="deleted")
+        # 스냅샷 이미지는 컨테이너와 따로 남는다. 샌드박스를 지우면 같이 지워 디스크를 돌려준다.
+        for s in self.list_snapshots(sid):
+            try:
+                self.client.images.remove(s["image"], force=True)
+            except (NotFound, APIError):
+                pass
 
     # ---- SB-2 일시정지·재개 -------------------------------------------
     def pause(self, sid: str) -> None:
@@ -378,6 +384,10 @@ class SandboxManager:
             cols = [d[0] for d in cur.description]
             rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
+
+    def snapshot_count(self, sid: str) -> int:
+        with self._lock:
+            return self.conn.execute("SELECT COUNT(*) FROM snapshots WHERE sandbox_id = ?", (sid,)).fetchone()[0]
 
     def restore(self, sid: str, snap_id: str) -> dict[str, Any]:
         rec = self._rec(sid)

@@ -22,7 +22,7 @@ from . import approvals as A
 from .approvals import ApprovalStore
 from .audit import AuditLog, AuditWriteError
 from .desktop import DesktopControl, Lease
-from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Policy
+from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Decision, Policy
 from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, safe_path
 
 FILE_TOOLS = {"list_dir", "read_file", "exec", "write_file", "delete_file"}
@@ -168,6 +168,13 @@ class AgentBox:
                 return False
         return False
 
+    def _over_snapshot_quota(self, sid: str, tool: str, args: dict[str, Any]) -> bool:
+        """허용 규칙이 매번 docker commit을 일으켜 호스트 디스크를 채우지 못하게, 상한부터는 승인으로 돌린다."""
+        quota = self.sandboxes.settings.snapshot_quota
+        if quota <= 0 or self.sandboxes.snapshot_count(sid) < quota:
+            return False
+        return self._needs_snapshot(sid, tool, args)
+
     def _snapshot(self, sid: str, tool: str, reason: str, ref: dict[str, Any]) -> dict[str, Any]:
         snap = self.sandboxes.snapshot(sid, reason=reason)
         self.audit.append(actor="system", event="snapshot", sandbox_id=sid, tool=tool,
@@ -183,6 +190,11 @@ class AgentBox:
             req_id = self.audit.append(actor=actor, event="tool_request", sandbox_id=sid, tool=tool,
                                        payload={"args": self._logged_args(tool, args)})
             decision = self.policy.decide(tool, args)
+            if decision.action == ALLOW and self._over_snapshot_quota(sid, tool, args):
+                quota = self.sandboxes.settings.snapshot_quota
+                decision = Decision(REQUIRE_APPROVAL, "snapshot-quota",
+                                    f"스냅샷이 {quota}개 이상 쌓여 덮어쓰기·삭제마다 사람의 승인을 받음",
+                                    decision.matched)
             self.audit.append(actor="system", event="policy_decision", sandbox_id=sid, tool=tool,
                               payload={"request": req_id, **decision.as_dict()})
         except AuditWriteError as e:
