@@ -147,22 +147,22 @@ def _parse_outbox(raw: bytes) -> list[dict[str, Any]]:
 _MANIFEST_CAP = 8 * 1024 * 1024
 
 
-def _parse_manifest(raw: bytes) -> tuple[dict[str, tuple[int, str]], bool]:
-    """`find -printf '%P\\0%s\\0%T@\\0'` 출력(앞 _MANIFEST_CAP 바이트)을 {경로: (크기, 수정시각)}으로.
+def _parse_manifest(raw: bytes) -> tuple[dict[str, tuple[int, str, str]], bool]:
+    """`find -printf '%P\\0%s\\0%T@\\0%C@\\0'` 출력(앞 _MANIFEST_CAP 바이트)을 {경로: (크기, mtime, ctime)}으로.
     상한에서 잘렸으면 끝의 불완전한 레코드는 버리고 truncated를 돌려준다."""
     truncated = len(raw) >= _MANIFEST_CAP
     fields = raw.decode("utf-8", errors="replace").split("\0")[:-1]  # 끝의 NUL 없는 조각은 잘린 것
-    out: dict[str, tuple[int, str]] = {}
-    for i in range(0, len(fields) - 2, 3):
-        path, size, mtime = fields[i:i + 3]
+    out: dict[str, tuple[int, str, str]] = {}
+    for i in range(0, len(fields) - 3, 4):
+        path, size, mtime, ctime = fields[i:i + 4]
         try:
-            out[path] = (int(size), mtime)
+            out[path] = (int(size), mtime, ctime)
         except ValueError:
             continue
     return out, truncated
 
 
-def diff_manifest(old: dict[str, tuple[int, str]], new: dict[str, tuple[int, str]]) -> dict[str, list[str]]:
+def diff_manifest(old: dict[str, tuple], new: dict[str, tuple]) -> dict[str, list[str]]:
     return {"added": sorted(new.keys() - old.keys()),
             "modified": sorted(k for k in new.keys() & old.keys() if new[k] != old[k]),
             "deleted": sorted(old.keys() - new.keys())}
@@ -435,10 +435,11 @@ class SandboxManager:
             rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
 
-    def workspace_manifest(self, sid: str) -> tuple[dict[str, tuple[int, str]], bool]:
-        """/workspace의 파일 목록 {경로: (크기, 수정시각)}. root로 읽어 에이전트가 권한으로 숨기지 못하게 한다."""
+    def workspace_manifest(self, sid: str) -> tuple[dict[str, tuple[int, str, str]], bool]:
+        """/workspace의 파일 목록 {경로: (크기, mtime, ctime)}. root로 읽어 에이전트가 권한으로 숨기지 못하게 한다.
+        mtime은 파일 주인이 touch로 되돌릴 수 있지만 ctime은 못 되돌린다(시계를 바꿀 권한이 없다)."""
         c = self._container(sid)
-        res = c.exec_run(["sh", "-c", f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0' "
+        res = c.exec_run(["sh", "-c", f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0%C@\\0' "
                                       f"| head -c {_MANIFEST_CAP}"], user="0:0", demux=True)
         return _parse_manifest(res.output[0] or b"")
 

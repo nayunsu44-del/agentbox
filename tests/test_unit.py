@@ -100,6 +100,12 @@ ALLOWLIST = Policy.load("agentbox/default_policy.yaml")
     # 따옴표 밖 평범한 주석도 승인으로 보낸다 (bash가 버리는 부분을 정책이 보지 못하므로).
     "ls # harmless",
     "cat f.txt #note",
+    # 따옴표 밖 \" 는 bash에서 글자 그대로라 따옴표를 열지 않는다 (Codex 리뷰, 퍼저로 찾은 변형).
+    'ls \\" #\'\npython3 -c "open(\'pwn\',\'w\').write(\'x\')"\n#\'',
+    'ls \\"ls\t #\'\\ \npython3 -c pass\n\' x',
+    'ls ls\\"\\\' ## \'\npython3 -c pass\n\'  ',
+    # 큰따옴표 안 \" 는 따옴표를 닫지 않는다.
+    'ls "\\"" #\'\npython3 -c pass\n#\'',
 ])
 def test_bash_comment_forces_approval(cmd):
     # 허용 목록(simple_programs)에 맞지 않아야 한다 (None).
@@ -114,6 +120,8 @@ def test_bash_comment_forces_approval(cmd):
     ("echo ok > /dev/null", {"echo"}),          # /dev/null 버리기는 읽기 전용 예외
     ("grep '#' file", {"grep"}),                # 따옴표 안 '#' 은 주석이 아니다 → 그대로 허용
     ("echo 'a #b'", {"echo"}),                  # 따옴표 안 공백+'#' 도 주석 아님
+    ("grep 'a\\|b' f", {"grep"}),                # 작은따옴표 안 백슬래시는 그대로
+    ("ls \\#x", {"ls"}),                          # 이스케이프한 '#' 은 주석이 아니다
 ])
 def test_simple_programs_still_allows_read_only(cmd, progs):
     assert simple_programs(cmd) == progs
@@ -125,6 +133,10 @@ def test_has_bash_comment_boundaries():
     assert has_bash_comment("ls;#x")            # 구분자 뒤
     assert not has_bash_comment("echo a#b")     # 단어 중간 '#' 은 주석 아님
     assert not has_bash_comment("grep '#' f")   # 따옴표 안 '#'
+    assert has_bash_comment('ls \\" #x')         # 따옴표 밖 \\" 는 따옴표 시작이 아니다
+    assert has_bash_comment('ls "\\"" #x')       # 큰따옴표 안 \\" 는 닫지 않는다
+    assert not has_bash_comment("ls \\#x")       # 이스케이프한 '#'
+    assert has_bash_comment("echo '\\' #'")      # 작은따옴표 안 \\ 는 이스케이프가 아니라 따옴표가 닫힌다
 
 
 # --- 검수 반영: 결과함 목록이 컨테이너가 정한 파일 이름에 깨지지 않는다 ---
@@ -201,10 +213,11 @@ def test_terminal_approval_neutralizes_control_chars(monkeypatch, capsys):
 def test_workspace_manifest_parse_and_diff():
     from agentbox.sandbox import _parse_manifest, diff_manifest
 
-    raw = "a.md\x0010\x001.5\x00dir/줄\n바꿈 이름\x002\x002.0\x00".encode()
+    raw = "a.md\x0010\x001.5\x001.6\x00dir/줄\n바꿈 이름\x002\x002.0\x002.1\x00".encode()
     m, truncated = _parse_manifest(raw)
-    assert m == {"a.md": (10, "1.5"), "dir/줄\n바꿈 이름": (2, "2.0")} and not truncated
-    assert _parse_manifest(b"a\x00x\x001\x00b\x003\x00")[0] == {}   # 숫자가 아닌 크기는 버림, 불완전한 끝도 버림
-    d = diff_manifest({"keep": (1, "1"), "edit": (1, "1"), "gone": (1, "1")},
-                      {"keep": (1, "1"), "edit": (2, "2"), "new": (1, "3")})
-    assert d == {"added": ["new"], "modified": ["edit"], "deleted": ["gone"]}
+    assert m == {"a.md": (10, "1.5", "1.6"), "dir/줄\n바꿈 이름": (2, "2.0", "2.1")} and not truncated
+    assert _parse_manifest(b"a\x00x\x001\x001\x00b\x003\x002\x00")[0] == {}   # 숫자 아닌 크기, 불완전한 끝은 버림
+    d = diff_manifest({"keep": (1, "1", "1"), "edit": (1, "1", "1"), "touched": (1, "1", "1"), "gone": (1, "1", "1")},
+                      {"keep": (1, "1", "1"), "edit": (2, "2", "2"), "touched": (1, "1", "9"), "new": (1, "3", "3")})
+    # 크기·mtime을 되돌려도 ctime이 바뀌면 변경으로 본다
+    assert d == {"added": ["new"], "modified": ["edit", "touched"], "deleted": ["gone"]}

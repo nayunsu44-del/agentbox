@@ -226,8 +226,11 @@ def test_gui_burst_changes_logged(desk):
     snap = e.box.sandboxes.list_snapshots(e.sid)[0]["id"]
     # GUI 앱(터미널·파일 관리자)이 화면 계정으로 바꾼 것처럼
     c = e.box.sandboxes._container(e.sid)
+    # new-report.md는 같은 길이로 바꾸고 mtime을 되돌린다 (크기·mtime만 보면 놓친다)
     assert c.exec_run(["sh", "-c", "rm /workspace/old-report.md; echo x > /workspace/gui-new.txt; "
-                       "echo more >> /workspace/new-report.md"], user="desktop").exit_code == 0
+                       "cp -p /workspace/new-report.md /tmp/ref; "
+                       "sed -i 's/12/99/' /workspace/new-report.md; touch -r /tmp/ref /workspace/new-report.md"],
+                      user="desktop").exit_code == 0
     assert not [x for x in events(e) if x["event"] == "gui_changes"]   # 아직 구간 안
     e.box._gui_input_at[e.sid] -= 61                                   # 입력이 끊기면 구간이 닫힌다
     ch = [x for x in events(e) if x["event"] == "gui_changes"]
@@ -239,6 +242,19 @@ def test_gui_burst_changes_logged(desk):
     assert "삭제됨: old-report.md" in page
     assert e.c.post(f"/sandboxes/{e.sid}/restore", json={"snapshot_id": snap}, headers=e.H).status_code == 200
     assert "old-report.md" in ls(e) and "gui-new.txt" not in ls(e)
+
+
+@needs_desktop
+def test_gui_burst_logged_before_restore(desk):
+    """구간이 열린 채 사람이 되돌려도, 그때까지 바뀐 파일은 남긴다."""
+    e = desk
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200
+    snap = e.box.sandboxes.list_snapshots(e.sid)[0]["id"]
+    c = e.box.sandboxes._container(e.sid)
+    assert c.exec_run(["rm", "/workspace/old-report.md"], user="desktop").exit_code == 0
+    assert e.c.post(f"/sandboxes/{e.sid}/restore", json={"snapshot_id": snap}, headers=e.H).status_code == 200
+    ch = [x["payload"] for x in events(e) if x["event"] == "gui_changes"]
+    assert len(ch) == 1 and ch[0]["reason"] == "sandbox_restored" and ch[0]["deleted"] == ["old-report.md"]
 
 
 @needs_desktop

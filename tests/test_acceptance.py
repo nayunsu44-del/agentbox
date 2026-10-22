@@ -243,6 +243,26 @@ def test_snapshot_quota_escalates_and_delete_removes_images(env):
             e.box.sandboxes.client.images.get(img)
 
 
+# 동시에 덮어써도 사람 없이 뜨는 스냅샷은 상한을 넘지 않는다 (Codex 리뷰)
+def test_snapshot_quota_holds_under_concurrency(env):
+    e = env
+    e.box.sandboxes.settings.snapshot_quota = 1
+    codes = []
+
+    def write(i):
+        r = e.c.post(f"/sandboxes/{e.sid}/tools/write_file",
+                     json={"args": {"path": "/workspace/old-report.md", "content": f"v{i}\n"}}, headers=e.A)
+        codes.append(r.status_code)
+
+    ts = [threading.Thread(target=write, args=(i,)) for i in range(4)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert sorted(codes) == [200, 202, 202, 202], codes
+    assert e.box.sandboxes.snapshot_count(e.sid) == 1
+
+
 # 보안 검수 N-2: exec 출력은 앞부분만 컨트롤 플레인에 남고, 잘린 길이·종료 코드는 그대로 보고된다
 def test_exec_output_streamed_with_cap(env):
     e = env

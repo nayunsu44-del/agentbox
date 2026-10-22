@@ -29,6 +29,7 @@ from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, diff_m
 FILE_TOOLS = {"list_dir", "read_file", "exec", "write_file", "delete_file"}
 GUI_TOOLS = {"screenshot", "click", "type", "key"}
 GUI_INPUT = GUI_TOOLS - {"screenshot"}
+SNAPSHOT_TOOLS = {"write_file", "delete_file"} | GUI_INPUT   # 허용 경로에서 스냅샷을 뜰 수 있는 도구
 TOOLS = FILE_TOOLS | GUI_TOOLS
 
 
@@ -63,6 +64,7 @@ class AgentBox:
         self.approval_timeout = approval_timeout
         self.captures = captures
         self._busy: dict[str, int] = {}
+        self._snap_locks: dict[str, threading.Lock] = {}
         # GUI 구간 스냅샷용 (time.monotonic). 서버를 다시 켜면 비어서 첫 GUI 입력 때 스냅샷을 뜬다.
         self._gui_input_at: dict[str, float] = {}
         self._gui_snap_at: dict[str, float] = {}
@@ -258,6 +260,13 @@ class AgentBox:
                 raise ServiceError(429, f"이 샌드박스의 도구 호출이 이미 {limit}개 실행 중. 끝난 뒤 다시 호출할 것.")
             self._busy[sid] = self._busy.get(sid, 0) + 1
         try:
+            if tool in SNAPSHOT_TOOLS:
+                # 스냅샷 상한 확인부터 스냅샷 생성까지 한 번에 하나씩. 아니면 동시 호출이 모두 상한 확인을
+                # 통과한 뒤 각자 스냅샷을 떠 상한을 넘는다 (GUI 구간 판단도 같다).
+                with self._busy_lock:
+                    lock = self._snap_locks.setdefault(sid, threading.Lock())
+                with lock:
+                    return self._call_tool(sid, tool, args, actor)
             return self._call_tool(sid, tool, args, actor)
         finally:
             with self._busy_lock:
@@ -490,7 +499,7 @@ class AgentBox:
 
     def end_desktop(self, sid: str, reason: str) -> None:
         """삭제·복원 때: 인수 상태를 기록하고 정리, 열린 화면 연결을 끊는다."""
-        self._gui_burst.pop(sid, None)  # 되돌리거나 지우면 구간 비교가 의미 없다
+        self._close_gui_burst(sid, reason)  # 되돌리거나 지우기 전에, 그때까지 바뀐 것을 남긴다
         if self.desktop.lease(sid):
             try:
                 self.handback(sid, None, reason)

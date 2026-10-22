@@ -87,14 +87,31 @@ def has_bash_comment(command: str) -> bool:
 
     정책 렉서는 commenters=""라 '#'을 평범한 글자로 보지만 bash는 주석으로 버린다.
     이 틈을 막으려고, 따옴표 밖 단어-시작 '#'이 하나라도 있으면 '단순 명령'으로 보지 않는다.
-    따옴표는 넉넉히(이스케이프 무시) 닫아, bash보다 '따옴표 안'이라고 더 오래 판단해서
-    실제 주석을 놓치는 일(=승인 우회)이 없게 한다. 과하게 승인으로 보내는 쪽은 안전하다.
+    따옴표·이스케이프는 bash와 같게 따라간다. 따옴표 안이라고 bash보다 오래 판단하면 실제 주석을
+    놓쳐 승인을 건너뛴다(예: 따옴표 밖 \\"를 따옴표 시작으로 보면). 애매하면 주석이 있다고 본다.
+    - 작은따옴표 안: 이스케이프 없음. ' 만 닫는다.
+    - 큰따옴표 안·따옴표 밖: \\ 다음 글자는 글자 그대로라 따옴표를 열거나 닫지 않고 주석도 시작하지 않는다.
+    ($'…' 같은 다른 따옴표는 simple_programs가 '$'에서 이미 승인으로 보낸다.)
     """
     quote: str | None = None
     prev = ""   # 따옴표 밖에서 바로 앞 글자 ("" = 문자열 시작)
+    escaped = False
     for ch in command:
-        if quote is not None:
-            if ch == quote:
+        if escaped:
+            escaped = False
+            prev = ch
+            continue
+        if quote == "'":
+            if ch == "'":
+                quote = None
+            prev = ch
+            continue
+        if ch == "\\":
+            escaped = True
+            prev = ch
+            continue
+        if quote == '"':
+            if ch == '"':
                 quote = None
             prev = ch
             continue
