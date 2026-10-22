@@ -1,0 +1,4 @@
+WORKSPACE const: /workspace
+manifest find scoped to {WORKSPACE} only (no /home): True
+strays when payload is in baseline (restart case): [] -> survives: True
+strays when payload launched during burst: [200] -> killed: True

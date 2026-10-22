@@ -1,0 +1,13 @@
+agentbox imported from /tmp/claude-0/-home-user-agentbox/1357e46b-55dd-58a4-b1d6-d791486808ee/scratchpad/src-audited/agentbox
+agent key ctrl+alt+t: 200
+agent type: 200
+agent key Return: 200
+observer (root, read-only check): autostart dir -> total 4 | -rw-rw-r-- 1 desktop desktop 92 Oct 22 22:31 t.desktop | [Desktop Entry] | Type=Application | Name=t | Exec=sh -c "id -u > /workspace/PROOF_autostart.txt"
+PROOF before restore: False
+gui_changes mention /home/desktop: False
+human snapshot: snap_9051d98e
+human restore: running
+PROOF after restore (autostart re-executed): True
+PROOF content (uid): 1001
+audit events after restore: ['policy_decision', 'tool_result', 'tool_request', 'policy_decision', 'tool_result']
+done

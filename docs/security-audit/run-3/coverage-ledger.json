@@ -37,14 +37,52 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 3,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-autostart",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/config.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "images/desktop/Dockerfile",
+   "images/desktop/agentbox-desktop-start"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-autostart",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/service.py",
+     "agentbox/config.py",
+     "images/desktop/agentbox-desktop-start",
+     "images/desktop/Dockerfile"
+    ],
+    "invariant": "Every file mutation reachable from a GUI burst that can later re-execute must be captured by the burst's change tracking (gui_changes) or neutralized by stray-kill before a snapshot can persist it.",
+    "method": "source",
+    "result": "The desktop template command is ['/usr/local/bin/agentbox-desktop-start'] (config.py:74), whose start script execs startxfce4 as uid 1001 desktop with HOME=/home/desktop (agentbox-desktop-start:13-14,30). /home/desktop is mode 700 owned by desktop (Dockerfile:28-30), so the burst principal (uid 1001, reachable via the run-2 N-1 xfce4-terminal path) can write /home/desktop/.config/autostart/*.desktop. workspace_manifest's find is scoped to {WORKSPACE} (/workspace) only (sandbox.py:499), so _close_gui_burst's diff_manifest (service.py:237-248) never records a write under /home/desktop. snapshot() docker-commits the whole container including /home/desktop (sandbox.py:478). restore() rebuilds from the committed image and re-runs tpl.command (sandbox.py:516-520), re-executing startxfce4 and any ~/.config/autostart entry as uid 1001 outside any burst. The re-executed process launches at container boot, so it is always present in the burst-open baseline and exempt from gui_strays (sandbox.py:216). Net: a GUI-burst write outside /workspace is invisible to gui_changes, survives into snapshots, and re-executes on restore/restart with no monitoring.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-autostart",
+    "reviewed_paths": [
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "gui_strays must stop a uid-1001 payload that an autostart entry launches after a restore/restart.",
+    "method": "local",
+    "result": "sbx5 harness importing agentbox.sandbox (python3.13, no net/Docker). Confirmed (1) workspace_manifest's find is scoped to {WORKSPACE} with no /home component; (2) gui_strays([session, autostart-payload], window_pids=set(), baseline={1,100,200}) returns [] (payload survives) when the payload is present at burst open (the restart case, since autostart runs at boot before any burst), whereas the identical payload launched DURING the burst (baseline={1,100}) is returned [200] (killed). This demonstrates the baseline exemption that lets a re-executed autostart process evade stray-kill after restore/restart.",
+    "artifact": "agents/h-autostart/artifacts/h.out"
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore"
+  ],
   "unresolved": [],
   "x_source": "critic-2 missing_units",
-  "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 3. Desktop session start on restore honours ~/.config/autostart written by uid 1001; never in gui_changes; needs live-image validation."
+  "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 3. Desktop session start on restore honours ~/.config/autostart written by uid 1001; never in gui_changes; needs live-image validation.",
+  "x_hardening": [
+   "images/desktop/agentbox-desktop-start:30 — startxfce4 re-runs ~/.config/autostart on every container start with no allowlist; consider setting GLib/XDG so the session ignores the per-user autostart dir, or chowning /home/desktop/.config/autostart to root and making it read-only to uid 1001.",
+   "agentbox/sandbox.py:499 — workspace_manifest/gui_changes only observes /workspace; the desktop user's writable HOME (/home/desktop) that is re-executed at session start is outside all burst monitoring. A manifest/snapshot-diff that also covers /home/desktop (at least .config/autostart, .bashrc, .config/xfce4, .config/sessions) would surface persistence writes.",
+   "agentbox/sandbox.py:216 — gui_strays unconditionally exempts baseline pids; a process whose executable/entry was introduced by a prior burst (e.g., an autostart file committed into the snapshot) is indistinguishable from a legitimate boot process after restore, so baseline membership is not a safe trust signal across restore boundaries."
+  ]
  },
  {
   "coverage_id": "agent%20tool%20calls%20that%20require%20approval%20%28POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%20-%3E%20REQUIRE_APPROVAL%29%20on%20desktop%20templates::agentbox%2Fservice.py%23_call_tool%20approval%20creation%3A%20no%20per-sandbox%20pending-approval%20cap%2C%20plus%20a%20per-approval%20PNG%20written%20to%20settings.home%2Fcaptures%20that%20is%20never%20removed%20on%20decision%2C%20expiry%20or%20sandbox%20delete::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
@@ -89,14 +127,50 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 3,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-queue",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/approvals.py",
+   "agentbox/default_policy.yaml",
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-queue",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/approvals.py",
+     "agentbox/default_policy.yaml"
+    ],
+    "invariant": "Each agent-triggered REQUIRE_APPROVAL call on a desktop template is bounded: per-sandbox pending-approval count is capped, and the request-time PNG capture is reclaimed on decision/expiry/delete.",
+    "method": "local",
+    "result": "Drove the real AgentBox._call_tool through the delete_file REQUIRE_APPROVAL branch 30x on a desktop template (stub screenshot). All 30 created pending approvals (ApprovalStore.create has no count guard) and wrote 30 captures/{aid}.png files. Denying 1 and expiring the other 29 via the real decide()/expire_stale() left all 30 PNGs on disk. No source path removes captures.",
+    "artifact": "agents/h-queue/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-queue",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Sandbox deletion reclaims all per-sandbox disk artifacts under settings.home.",
+    "method": "source",
+    "result": "DELETE /sandboxes/{sid} -> end_desktop + sandboxes.delete (sandbox.py:443-455) removes only the container and snapshot images; it never touches settings.home/captures. grep over agentbox/ shows the only write of captures/*.png is service.py:325 and NO unlink/rmtree/remove of captures anywhere, so the PNGs outlive the sandbox.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed"
+  ],
   "unresolved": [],
   "x_source": "critic-2 missing_units",
-  "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 2. Every gated call creates an approval, preview and captures/{aid}.png with no pending cap; no code removes captures; host disk grows without a quota and the queue renders every card."
+  "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 2. Every gated call creates an approval, preview and captures/{aid}.png with no pending cap; no code removes captures; host disk grows without a quota and the queue renders every card.",
+  "x_hardening": [
+   "Approval rows themselves (approvals.py) are also never deleted — expire_stale/decide only transition status — so the SQLite approvals table grows unboundedly alongside the captures; a retention/prune policy for terminal approvals would bound both. (Audit-table row growth is peer-owned and excluded.)",
+   "sandbox.py screenshot() reads the whole scrot PNG with no size cap (unlike exec output _Head/64KB), so each retained capture can be large on a busy desktop; capping/downscaling the stored capture would reduce per-item cost."
+  ]
  },
  {
   "coverage_id": "agent-controlled%20audit%20content%20%28tool%20args%2C%20file%20names%2C%20process%20args%29::agentbox%2Faudit.py%23hash%20chain%20%2B%20append-only%20triggers%20%2B%20event%20provenance::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Business%20logic",
