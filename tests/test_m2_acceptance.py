@@ -258,6 +258,40 @@ def test_gui_burst_logged_before_restore(desk):
 
 
 @needs_desktop
+def test_gui_background_jobs_stopped_when_burst_closes(desk):
+    """보안 검수 N-1 보강: GUI 터미널로 띄운 백그라운드 일은 구간이 끝나면 멈춘다 (정책 밖 변경이 구간 뒤로 이어지지 않게)."""
+    e = desk
+    c = e.box.sandboxes._container(e.sid)
+
+    def desktop_pids(pattern):
+        out = c.exec_run(["pgrep", "-u", "desktop", "-f", pattern]).output.decode().split()
+        return [int(x) for x in out]
+
+    # 구간 시작 + 터미널. 막 뜬 Xfce는 단축키를 아직 받지 않을 수 있어 터미널이 뜰 때까지 다시 누른다
+    for _ in range(15):
+        assert tool(e, "key", keys="ctrl+alt+t").status_code == 200
+        time.sleep(2)
+        if desktop_pids("xfce4-terminal"):
+            break
+    time.sleep(2)
+    cmd = ("nohup sh -c 'sleep 4; rm -f /workspace/old-report.md' >/dev/null 2>&1 & "
+           "setsid sh -c 'sleep 4; rm -f /workspace/new-report.md' >/dev/null 2>&1 &")
+    assert tool(e, "type", text=cmd).status_code == 200
+    assert tool(e, "key", keys="Return").status_code == 200
+    time.sleep(1)
+    assert len(desktop_pids("sleep 4")) == 4                           # 일 두 개, 각각 sh와 sleep
+    panel = desktop_pids("xfce4-panel")
+    e.box._gui_input_at[e.sid] -= 61                                   # 입력이 끊기면 구간이 닫힌다
+    stopped = [x["payload"] for x in events(e) if x["event"] == "gui_processes_stopped"]
+    assert len(stopped) == 1 and stopped[0]["reason"] == "idle"
+    assert any("sleep 4; rm" in x["args"] for x in stopped[0]["processes"])
+    assert desktop_pids("sleep 4") == []
+    assert desktop_pids("xfce4-panel") == panel                       # 데스크톱 세션은 그대로
+    time.sleep(5)
+    assert {"old-report.md", "new-report.md"} <= set(ls(e))           # 멈춘 일은 파일을 지우지 못했다
+
+
+@needs_desktop
 def test_agent_cannot_reach_display_directly(desk):
     """에이전트 exec는 X 쿠키를 못 읽으니 xdotool로 화면을 직접 조작할 수 없다 (GUI 도구를 거쳐야 한다)."""
     from agentbox.policy import Policy
@@ -370,6 +404,28 @@ def test_logout_hands_back_and_closes_screen(desk):
     back = [x for x in events(e) if x["event"] == "human_handback"]
     assert back and back[-1]["payload"]["reason"] == "logout"
     assert e.c.get(f"/sandboxes/{e.sid}/desktop/state", headers=u).status_code == 401   # 세션도 사라짐
+
+
+@needs_desktop
+def test_screen_connection_closed_when_session_expires(desk):
+    """세션은 연결할 때만 확인했다. 열린 화면 연결도 세션이 만료되면 끊기고, 그 세션의 인수는 돌려준다."""
+    e = desk
+    e.box.desktop.session_ttl = 3
+    e.box.desktop.recheck = 0.5
+    u = _ui_session(e)
+    assert e.c.post(f"/sandboxes/{e.sid}/desktop/takeover", headers=u).json()["controller"] == "human"
+    with e.c.websocket_connect(f"/sandboxes/{e.sid}/desktop/ws?mode=view", headers=u,
+                               subprotocols=["binary"]) as ws:
+        assert ws.receive_bytes().startswith(b"RFB 003.")
+        for _ in range(100):
+            if not [c for c in e.box.desktop._conns.values() if c.sandbox_id == e.sid]:
+                break
+            time.sleep(0.1)
+        assert not [c for c in e.box.desktop._conns.values() if c.sandbox_id == e.sid]
+    gone = [x["payload"] for x in events(e) if x["event"] == "desktop_disconnect"]
+    assert gone and gone[-1].get("reason") == "session_ended"
+    assert e.c.get(f"/sandboxes/{e.sid}/desktop/state", headers=e.A).json()["controller"] == "agent"
+    assert [x for x in events(e) if x["event"] == "human_handback"][-1]["payload"]["reason"] == "session_ended"
 
 
 # 수용 테스트 8. 화면 인수 중 사람의 조작이 "사람 세션"으로 로그에 남는다

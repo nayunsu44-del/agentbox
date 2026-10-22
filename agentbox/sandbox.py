@@ -39,6 +39,7 @@ _READ_TIMEOUT = 30
 
 # 데스크톱 템플릿 (images/desktop/Dockerfile과 맞춘다)
 DESKTOP_USER = "desktop"
+DESKTOP_UID = 1001
 DESKTOP_ENV = {"DISPLAY": ":0", "XAUTHORITY": "/home/desktop/.Xauthority", "HOME": "/home/desktop"}
 _SHOT = "/home/desktop/.cache/agentbox-shot.png"
 _BUTTONS = {"left": "1", "middle": "2", "right": "3"}
@@ -168,6 +169,60 @@ def diff_manifest(old: dict[str, tuple], new: dict[str, tuple]) -> dict[str, lis
     return {"added": sorted(new.keys() - old.keys()),
             "modified": sorted(k for k in new.keys() & old.keys() if new[k] != old[k]),
             "deleted": sorted(old.keys() - new.keys())}
+
+
+def _parse_ps(raw: bytes) -> list[dict[str, Any]]:
+    """`ps -eo pid=,ppid=,sid=,uid=,args=` 출력."""
+    out = []
+    for line in raw.decode("utf-8", errors="replace").splitlines():
+        parts = line.split(None, 4)
+        if len(parts) < 4:
+            continue
+        try:
+            pid, ppid, sid, uid = (int(x) for x in parts[:4])
+        except ValueError:
+            continue
+        out.append({"pid": pid, "ppid": ppid, "sid": sid, "uid": uid, "args": parts[4] if len(parts) > 4 else ""})
+    return out
+
+
+def gui_strays(procs: list[dict[str, Any]], window_pids: set[int], baseline: set[int]) -> list[int]:
+    """GUI 구간이 끝날 때 멈출 화면 계정 프로세스. baseline은 구간이 시작될 때 있던 pid.
+
+    구간 동안 새로 생긴 화면 계정 프로세스 가운데
+    - 구간 시작 때 없던 세션에 있는 것 (터미널 안의 셸과 거기서 띄운 일, nohup·setsid로 떼어 낸 일)
+    - 같은 세션이라도 자신도, 새로 생긴 조상도 창이 없는 것 (파일 관리자 등에서 실행한 스크립트)
+    은 멈춘다. 창이 있는 앱(편집기, 터미널 창)과 그 도우미, 구간 전부터 있던 것(데스크톱 세션, 사람이 연 것),
+    컨트롤 플레인이 docker exec로 띄운 것(화면 보기 연결, GUI 도구)은 그대로 둔다.
+    """
+    by = {p["pid"]: p for p in procs}
+    base_sids = {by[pid]["sid"] for pid in baseline if pid in by and by[pid]["uid"] == DESKTOP_UID}
+
+    def ancestors(p: dict[str, Any]):
+        seen = set()
+        while p["ppid"] in by and p["ppid"] not in seen:
+            seen.add(p["ppid"])
+            p = by[p["ppid"]]
+            yield p
+
+    def exec_root(p: dict[str, Any]) -> bool:   # docker exec로 뜬 것은 부모 pid가 0이다 (PID 1도 0이라 뺀다)
+        return p["ppid"] == 0 and p["pid"] != 1
+
+    def from_exec(p: dict[str, Any]) -> bool:
+        return exec_root(p) or any(exec_root(a) for a in ancestors(p))
+
+    out = []
+    for p in procs:
+        if p["uid"] != DESKTOP_UID or p["pid"] in baseline or p["pid"] == 1 or from_exec(p):
+            continue
+        if p["sid"] not in base_sids:
+            out.append(p["pid"])
+            continue
+        windowed = p["pid"] in window_pids or any(
+            a["pid"] in window_pids and a["pid"] not in baseline for a in ancestors(p))
+        if not windowed:
+            out.append(p["pid"])
+    return sorted(out)
 
 
 def safe_path(path: str) -> str:
@@ -627,6 +682,19 @@ class SandboxManager:
     @staticmethod
     def _x(c, argv: list[str]):
         return c.exec_run(argv, user=DESKTOP_USER, environment=DESKTOP_ENV, demux=True)
+
+    def desktop_processes(self, sid: str) -> tuple[list[dict[str, Any]], set[int]]:
+        """컨테이너의 프로세스 목록과, 보이는 창을 가진 pid (_NET_WM_PID)."""
+        c = self._desktop(sid)
+        procs = _parse_ps(c.exec_run(["ps", "-eo", "pid=,ppid=,sid=,uid=,args="]).output or b"")
+        res = self._x(c, ["sh", "-c", "for w in $(xdotool search --onlyvisible --name . 2>/dev/null); do "
+                                      "xdotool getwindowpid $w 2>/dev/null; done"])
+        wins = {int(x) for x in (res.output[0] or b"").split() if x.isdigit()}
+        return procs, wins
+
+    def kill_processes(self, sid: str, pids: list[int]) -> None:
+        if pids:
+            self._desktop(sid).exec_run(["kill", "-KILL", "--", *map(str, pids)], user=DESKTOP_USER)
 
     def _wait_display(self, c, timeout: float = 45) -> None:
         deadline = time.monotonic() + timeout

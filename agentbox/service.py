@@ -24,7 +24,7 @@ from .approvals import ApprovalStore
 from .audit import AuditLog, AuditWriteError
 from .desktop import DesktopControl, Lease
 from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Decision, Policy
-from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, diff_manifest, safe_path
+from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, diff_manifest, gui_strays, safe_path
 
 FILE_TOOLS = {"list_dir", "read_file", "exec", "write_file", "delete_file"}
 GUI_TOOLS = {"screenshot", "click", "type", "key"}
@@ -206,9 +206,25 @@ class AgentBox:
     def _open_gui_burst(self, sid: str, snapshot_id: str) -> None:
         try:
             manifest, truncated = self.sandboxes.workspace_manifest(sid)
+            procs, _ = self.sandboxes.desktop_processes(sid)
         except Exception:  # 기록용이라 실패해도 도구 호출은 막지 않는다
             return
-        self._gui_burst[sid] = {"snapshot_id": snapshot_id, "manifest": manifest, "truncated": truncated}
+        self._gui_burst[sid] = {"snapshot_id": snapshot_id, "manifest": manifest, "truncated": truncated,
+                                "pids": {p["pid"] for p in procs}}
+
+    def _stop_gui_strays(self, sid: str, burst: dict[str, Any], reason: str) -> None:
+        """구간에서 GUI로 띄운 백그라운드 일을 멈춘다. 그대로 두면 구간이 끝난 뒤에도 정책 밖에서 파일을 바꾼다."""
+        try:
+            procs, wins = self.sandboxes.desktop_processes(sid)
+            pids = gui_strays(procs, wins, burst["pids"])
+            self.sandboxes.kill_processes(sid, pids)
+        except Exception:
+            return
+        if pids:
+            args = {p["pid"]: p["args"][:200] for p in procs}
+            self._safe_log(sid, None, "gui_processes_stopped", {
+                "snapshot_id": burst["snapshot_id"], "reason": reason,
+                "processes": [{"pid": pid, "args": args.get(pid, "")} for pid in pids[:50]], "count": len(pids)})
 
     def _close_gui_burst(self, sid: str, reason: str) -> None:
         """GUI 구간 동안 /workspace에서 바뀐 파일을 감사 로그에 남긴다. 정책 밖에서 바뀐 것을 사람이 보고,
@@ -216,6 +232,7 @@ class AgentBox:
         burst = self._gui_burst.pop(sid, None)
         if not burst:
             return
+        self._stop_gui_strays(sid, burst, reason)
         try:
             manifest, truncated = self.sandboxes.workspace_manifest(sid)
         except Exception:

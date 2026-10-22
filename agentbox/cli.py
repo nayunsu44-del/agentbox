@@ -275,6 +275,8 @@ def cmd_audit(a: argparse.Namespace) -> None:
             detail = f"{p.get('reason')} {p.get('session', '')}"
         elif e["event"] in ("snapshot",):
             detail = p.get("snapshot_id", "")
+        elif e["event"] == "gui_processes_stopped":
+            detail = f"{p.get('count')}개 멈춤 " + " / ".join(str(x.get("args", "")) for x in p.get("processes") or [])
         elif e["event"] == "gui_changes":
             n = p.get("counts") or {}
             detail = (f"{p.get('snapshot_id')}부터 +{n.get('added', 0)} ~{n.get('modified', 0)} "
