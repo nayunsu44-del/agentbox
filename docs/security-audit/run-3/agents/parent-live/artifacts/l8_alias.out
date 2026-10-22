@@ -1,0 +1,5 @@
+human_token mode: 0o600
+alias is a symlink: False | same inode as project dir: True
+exact project dir: REFUSED (원본 폴더가 agentbox 데이터 폴더(/tmp/abx-l8-t4gcuij1/Users/Me/proj/data)와 겹침. 데)
+bind-mount alias: ACCEPTED as sb_5f282ecc; agent read_file /workspace/data/human_token -> status 200, equals real human token: True
+done

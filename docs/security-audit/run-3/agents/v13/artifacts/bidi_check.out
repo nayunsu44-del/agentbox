@@ -1,0 +1,3 @@
+bidi codepoints surviving HTML-escape: ['0x2067', '0x2069']
+terminal _safe output: echo 'summary done \u2067' ; python3 /workspace/job.py ; echo '\u2069'
+web <pre> output has raw bidi: True
