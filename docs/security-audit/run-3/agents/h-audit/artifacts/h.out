@@ -1,0 +1,38 @@
+== 1. timeline window ==
+total rows in DB: 5101 verify: {'ok': True, 'checked': 5101, 'broken_at': None, 'reason': None}
+status 200 template _audit.html rows passed to template: 400 max id: 5000 min id: 4601 total: 5000
+latest id in DB: 5101 in UI rows? False | gui_changes in UI rows? False
+template footer would read: 최근 400개만 표시 (전체 5000개)
+describe(gui_changes row): GUI 구간(snap_X부터) 바뀐 파일: 추가 0 · 변경 0 · 삭제 1 · 삭제됨: /workspace/important.txt
+CLI/API default /audit?limit=5000 -> first id 1 last id 5000 contains latest? False
+== 2. verify round-trip ==
+verify after odd JSON values: {'ok': True, 'checked': 8, 'broken_at': None, 'reason': None}
+non-AuditWriteError escapes append: UnicodeEncodeError 'utf-8' codec can't encode character '\ud800' in position 71: surrogates not all
+non-AuditWriteError escapes append: ValueError Exceeds the limit (4300 digits) for integer string conversion; use sys.set_int_m
+verify after failed appends: {'ok': True, 'checked': 8, 'broken_at': None, 'reason': None}
+== 3. mask_text ==
+'OPENAI_API_KEY=sk-abcdefghijklmnopqrstuv' -> 'OPENAI_API_KEY=***'
+'export TOKEN="$(rm -rf /workspace/proj)"' -> 'export TOKEN="***"'
+'password: hunter2hunter2' -> 'password: ***'
+'{"client_secret": "abcdefgh12345"}' -> '{"client_secret": "***"}'
+'secret%3Dabcdefgh12345' -> 'secret%3Dabcdefgh12345'
+'ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' -> '***'
+'x_agt_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB' -> 'x_agt_BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB'
+'Authorization: Bearer abcdefghijklmnop' -> 'Authorization: ***'
+'AWS_SECRET_ACCESS_KEY = wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEK' -> 'AWS_SECRET_ACCESS_KEY = ***'
+'aws_secret_access_key\n= wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEK' -> 'aws_secret_access_key\n= ***'
+'SECRET\xa0=\xa0abcdefgh12345' -> 'SECRET\xa0=\xa0***'
+'ＴＯＫＥＮ=abcdefgh12345' -> 'ＴＯＫＥＮ=abcdefgh12345'
+'-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PR' -> '-----PRIVATE KEY ***-----'
+'postgres://user:pa55word@host/db' -> 'postgres://user:***@host/db'
+'hf_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC' -> 'hf_CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'
+'npm_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD' -> 'npm_DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD'
+== 4. mask_text timing (adversarial, bounded 200 KB) ==
+assign_chain: len=100100 0.038s
+dash_chain: len=100000 0.036s
+quote_open: len=100008 0.044s
+flag_chain: len=119999 0.062s
+url: len=100104 0.035s
+begin_pk: len=135000 0.003s
+bearer: len=175000 0.064s
+upass: len=100103 0.004s

@@ -65,13 +65,79 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-audit",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/audit.py",
+   "agentbox/cli.py",
+   "agentbox/service.py",
+   "agentbox/templates/_audit.html",
+   "agentbox/web.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-audit",
+    "reviewed_paths": [
+     "agentbox/audit.py",
+     "agentbox/web.py",
+     "agentbox/cli.py",
+     "agentbox/api.py",
+     "agentbox/templates/_audit.html"
+    ],
+    "invariant": "Human audit timelines (web UI /ui/audit and `agentbox audit` CLI) show the newest events, so an agent cannot push its later actions out of view by creating rows",
+    "method": "local",
+    "result": "Fails. AuditLog.list orders by id ascending with LIMIT; both readers ask limit=5000 with no after_id. After 5101 rows for one dummy sandbox, the real web.py audit_frag route (Jinja stubbed) passed ids 4601..5000 with total=5000; newest row 5101 (gui_changes) not shown; footer claims 'most recent 400 of 5000'. Default CLI/API query returned ids 1..5000. Agent creates rows without approval: approval_forbidden (api.py:245, 1 row per request, no Docker) or allowed exec true / list_dir (3 rows per call).",
+    "artifact": "agents/h-audit/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-audit",
+    "reviewed_paths": [
+     "agentbox/audit.py"
+    ],
+    "invariant": "Agent-supplied JSON cannot make verify() report a false break",
+    "method": "local",
+    "result": "Holds. NaN, Infinity, -0.0, 1e308, 2**200, bidi, nested lists, null, bool round-trip; verify ok. Lone surrogate or >4300-digit int make append raise UnicodeEncodeError/ValueError (not AuditWriteError); nothing inserted; tool_request path fails closed before policy. Container output decoded with errors='replace'.",
+    "artifact": "agents/h-audit/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-audit",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/cli.py",
+     "agentbox/templates/_audit.html",
+     "agentbox/service.py"
+    ],
+    "invariant": "Agent-controlled args, file names, process args cannot render as another event/actor/row or crash rendering",
+    "method": "source",
+    "result": "Holds. Event, actor, tool are system-set (tool must be in TOOLS, service.py:293-294). Agent text only in the detail cell: UI via describe/_short + autoescape, CLI via _safe. payload.session not agent-settable.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-audit",
+    "reviewed_paths": [
+     "agentbox/audit.py",
+     "agentbox/api.py"
+    ],
+    "invariant": "An agent cannot modify, delete or reorder audit rows",
+    "method": "source",
+    "result": "Holds against the agent: append is the only writer (BEGIN IMMEDIATE + lock), UPDATE/DELETE triggers abort, /audit and /audit/verify human_only. Unkeyed chain only defends against non-DB-holders (hardening).",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-audit"
+  "x_planned_hunter": "h-audit",
+  "x_hardening": [
+   "mask_text misses URL-encoded NAME%3Dvalue, fullwidth names, hf_/npm_ tokens, and agt_/hum_ preceded by a word character (\\b fails); dict keys not masked. Human-only readers.",
+   "service.py _summary cuts exec heads at 500 chars before masking; a secret crossing the cut can leak a partial prefix. Mask before truncating.",
+   "Masking is lossy on agent-controlled text (e.g. GUI type 'TOKEN=\"$(rm -rf /workspace/x)\"' logged as 'TOKEN=\"***\"'); log a sha256 of the unmasked args alongside.",
+   "AuditLog.append lets UnicodeEncodeError/ValueError escape instead of AuditWriteError; _safe_log would not catch them.",
+   "Unkeyed SHA-256 chain with triggers in the same DB file; a DB holder can rewrite. Keep the head outside or HMAC.",
+   "Agent tokens registered in memory only; after restart only the agt_ shape pattern masks them, so its word-boundary gap matters more."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fagent.py%23LLM%20loop%20%2B%20agentbox%2Fmcp_server.py%20tools::agentbox%2Fagent.py%23prompt-injection%20to%20tool%20action%20%28approval%20is%20only%20control%29::agentbox%2Fagent.py::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
@@ -1701,13 +1767,65 @@
   "prior_status": "prior_covered_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-audit",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/approvals.py",
+   "agentbox/audit.py",
+   "agentbox/config.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/web.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-audit",
+    "reviewed_paths": [
+     "agentbox/audit.py"
+    ],
+    "invariant": "mask_text stays linear on agent input",
+    "method": "local",
+    "result": "Holds: 100-175 KB adversarial inputs took at most 0.064 s each.",
+    "artifact": "agents/h-audit/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-audit",
+    "reviewed_paths": [
+     "agentbox/audit.py",
+     "agentbox/sandbox.py",
+     "agentbox/config.py"
+    ],
+    "invariant": "Common secret shapes and agentbox tokens are masked",
+    "method": "local",
+    "result": "Masked: sk-, ghp_, Bearer, Authorization, NAME=/NAME:/NAME = (incl. newline/NBSP), JSON client_secret, URL credentials, private keys. Not masked: URL-encoded secret%3D, fullwidth ＴＯＫＥＮ=, hf_/npm_ tokens, agt_/hum_ preceded by a word char. Only audit readers affected.",
+    "artifact": "agents/h-audit/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-audit",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/web.py",
+     "agentbox/service.py",
+     "agentbox/approvals.py"
+    ],
+    "invariant": "Masked/unmasked audit and approval copies do not reach a lower-trust reader",
+    "method": "source",
+    "result": "Holds: /audit, /audit/verify, /approvals human_only; /ui/* need scope '*'; captures need screen_human; agents get only id/status/result/decided_at of their own approvals; human token registered; ui_login_failed does not log the token. Masking gaps are hardening.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
-  "x_planned_hunter": "h-audit"
+  "x_planned_hunter": "h-audit",
+  "x_hardening": [
+   "mask_text misses URL-encoded NAME%3Dvalue, fullwidth names, hf_/npm_ tokens, and agt_/hum_ preceded by a word character (\\b fails); dict keys not masked. Human-only readers.",
+   "service.py _summary cuts exec heads at 500 chars before masking; a secret crossing the cut can leak a partial prefix. Mask before truncating.",
+   "Masking is lossy on agent-controlled text (e.g. GUI type 'TOKEN=\"$(rm -rf /workspace/x)\"' logged as 'TOKEN=\"***\"'); log a sha256 of the unmasked args alongside.",
+   "AuditLog.append lets UnicodeEncodeError/ValueError escape instead of AuditWriteError; _safe_log would not catch them.",
+   "Unkeyed SHA-256 chain with triggers in the same DB file; a DB holder can rewrite. Keep the head outside or HMAC.",
+   "Agent tokens registered in memory only; after restart only the agt_ shape pattern masks them, so its word-boundary gap matters more."
+  ]
  },
  {
   "coverage_id": "whole-repo%23basic%20exposures::whole-repo%23obvious%20controls%20%28secrets%2C%20debug%2C%20cookies%2C%20CORS%2C%20redirects%2C%20errors%29::whole-repo::ATTACK-CLASSES.md%23Obvious%20things",
