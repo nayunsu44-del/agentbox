@@ -310,6 +310,68 @@ def test_view_websocket_speaks_rfb(desk):
             ws.receive_bytes()
 
 
+def _ui_session(e):
+    """웹 UI 전체 로그인 세션 (agentbox ui 링크)."""
+    r = e.c.get(e.c.post("/ui/ticket", headers=e.H).json()["path"], follow_redirects=False)
+    assert r.status_code == 303
+    cookie = r.cookies[COOKIE]
+    e.c.cookies.clear()
+    return {"cookie": f"{COOKIE}={cookie}", "origin": "http://testserver"}
+
+
+@needs_desktop
+def test_desktop_link_session_is_scoped(desk):
+    """화면 링크로 받은 세션은 그 샌드박스 화면만. 웹 UI·다른 샌드박스·승인·파일은 안 된다."""
+    e = desk
+    other = e.c.post("/sandboxes", json={}, headers=e.H).json()
+    try:
+        B = {"Authorization": f"Bearer {other['agent_token']}"}
+        pend = e.c.post(f"/sandboxes/{other['id']}/tools/exec", json={"args": {"command": "rm -f /workspace/x"}},
+                        headers=B).json()
+        s = {**_session(e), "origin": "http://testserver"}
+        assert e.c.get(f"/sandboxes/{e.sid}/desktop/state", headers=s).status_code == 200
+        assert e.c.get(f"/sandboxes/{e.sid}/desktop", headers=s).status_code == 200
+        assert e.c.post(f"/sandboxes/{e.sid}/desktop/takeover", headers=s).status_code == 200
+        assert e.c.post(f"/sandboxes/{e.sid}/desktop/handback", headers=s).status_code == 200
+        for path in ("/ui/sandboxes", "/ui/audit", "/ui/approvals", f"/sandboxes/{e.sid}/outbox",
+                     f"/sandboxes/{other['id']}/outbox", f"/sandboxes/{other['id']}/desktop/state"):
+            assert e.c.get(path, headers=s).status_code == 403, path
+        assert e.c.get("/ui", headers=s, follow_redirects=False).headers["location"] == "/login"
+        r = e.c.post(f"/ui/approvals/{pend['approval_id']}/approve", headers=s)
+        assert r.status_code == 403
+        assert e.c.get(f"/approvals/{pend['approval_id']}", headers=e.H).json()["status"] == "pending"
+        # 웹 UI 로그인 세션은 그대로 전부 쓴다
+        u = _ui_session(e)
+        assert e.c.get("/ui/sandboxes", headers=u).status_code == 200
+        assert e.c.get(f"/sandboxes/{e.sid}/desktop/state", headers=u).status_code == 200
+    finally:
+        e.c.delete(f"/sandboxes/{other['id']}", headers=e.H)
+
+
+@needs_desktop
+def test_logout_hands_back_and_closes_screen(desk):
+    e = desk
+    u = _ui_session(e)
+    assert e.c.post(f"/sandboxes/{e.sid}/desktop/takeover", headers=u).json()["controller"] == "human"
+    with e.c.websocket_connect(f"/sandboxes/{e.sid}/desktop/ws?mode=view", headers=u,
+                               subprotocols=["binary"]) as ws:
+        assert ws.receive_bytes().startswith(b"RFB 003.")
+        def open_conns():
+            return [c for c in e.box.desktop._conns.values() if c.sandbox_id == e.sid]
+
+        assert len(open_conns()) == 1
+        assert e.c.post("/logout", headers=u, follow_redirects=False).status_code == 303
+        for _ in range(50):              # 로그아웃하면 열린 화면 연결이 끊긴다 (기다리며 막히지 않게 상태를 본다)
+            if not open_conns():
+                break
+            time.sleep(0.1)
+        assert not open_conns()
+    assert e.c.get(f"/sandboxes/{e.sid}/desktop/state", headers=e.A).json()["controller"] == "agent"
+    back = [x for x in events(e) if x["event"] == "human_handback"]
+    assert back and back[-1]["payload"]["reason"] == "logout"
+    assert e.c.get(f"/sandboxes/{e.sid}/desktop/state", headers=u).status_code == 401   # 세션도 사라짐
+
+
 # 수용 테스트 8. 화면 인수 중 사람의 조작이 "사람 세션"으로 로그에 남는다
 @needs_desktop
 def test_human_takeover_logged(desk):

@@ -497,6 +497,18 @@ class AgentBox:
             n += 1
         return n
 
+    def end_ui_session(self, cookie: str | None) -> str | None:
+        """로그아웃: 세션을 지우고, 그 세션이 인수한 화면은 돌려주고, 열린 화면 연결을 끊는다."""
+        session = self.desktop.end_session(cookie)
+        if session:
+            for sid in self.desktop.leases_of(session):
+                try:
+                    self.handback(sid, session, "logout")
+                except ServiceError:
+                    pass
+            self.desktop.close_session(session)
+        return session
+
     def end_desktop(self, sid: str, reason: str) -> None:
         """삭제·복원 때: 인수 상태를 기록하고 정리, 열린 화면 연결을 끊는다."""
         self._close_gui_burst(sid, reason)  # 되돌리거나 지우기 전에, 그때까지 바뀐 것을 남긴다

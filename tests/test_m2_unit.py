@@ -16,7 +16,8 @@ def test_ticket_is_one_time_and_bound_to_sandbox():
     assert d.redeem(t, "sb_b") is None          # 다른 샌드박스로는 못 쓴다 (그리고 소진된다)
     t = d.issue_ticket("sb_a")
     cookie, public = d.redeem(t, "sb_a")
-    assert d.session(cookie) == public and public.startswith("hs_")
+    assert d.session(cookie, "sb_a") == public and public.startswith("hs_")
+    assert d.session(cookie) is None and d.session(cookie, "sb_b") is None   # 웹 UI 전체·다른 샌드박스는 안 됨
     assert d.redeem(t, "sb_a") is None          # 두 번째는 실패
 
 

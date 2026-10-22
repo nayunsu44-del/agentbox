@@ -39,6 +39,23 @@ def test_expiry_uses_wall_clock(tmp_path):
     assert d2.redeem(t, "*") is None and d2.session(cookie) is None
 
 
+def test_sessions_without_scope_dropped_on_upgrade(tmp_path):
+    """범위가 없던 때의 세션은 화면 링크용인지 알 수 없어 버린다 (다시 로그인)."""
+    import sqlite3
+
+    db = tmp_path / "a.db"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE ui_sessions (hash TEXT PRIMARY KEY, public TEXT NOT NULL, created TEXT NOT NULL,"
+                " expires REAL NOT NULL)")
+    con.execute("INSERT INTO ui_sessions VALUES ('h', 'hs_old', 't', ?)", (time.time() + 3600,))
+    con.commit()
+    con.close()
+    d = DesktopControl(db_path=db)
+    assert d._db.execute("SELECT COUNT(*) FROM ui_sessions").fetchone()[0] == 0
+    cookie, public = d.new_session()
+    assert d.session(cookie) == public
+
+
 def test_secrets_stored_hashed(tmp_path):
     db = tmp_path / "a.db"
     d = DesktopControl(db_path=db)
