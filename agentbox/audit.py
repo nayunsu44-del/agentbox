@@ -38,15 +38,55 @@ CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit
 BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 """
 
-# AU-4 비밀값 가림. 흔한 형태만 잡는다. 등록된 토큰은 register_secret()으로 추가.
-_SECRET_PATTERNS = [
-    re.compile(r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*([^\s'\"&]+)"),
-    re.compile(r"\bsk-[A-Za-z0-9_\-]{16,}"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+# AU-4 비밀값 가림. 값만 *** 로 바꾸고 이름은 남긴다. 등록된 토큰은 register_secret()으로 추가.
+# 에이전트가 정한 긴 문자열에도 선형으로 돌게, 이름 길이를 제한하고 왼쪽 끝을 고정한다.
+#
+# 1) 이름=값: 이름에 비밀 낱말이 있으면 값을 가린다.
+#    DB_PASSWORD=…, GITHUB_TOKEN=…, "api_key": "…", password='…', --client-secret …, X-Api-Key: …
+_SECRET_NAME = re.compile(
+    r"(?i)passw(?:or)?d|pwd|passphrase|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|credential"
+    r"|(?:^|[_.-])key$")
+_VALUE = r"""(?:"(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?|[^\s'"&;,|)]+)"""   # 닫히지 않은 따옴표도 줄 끝까지
+_ASSIGN = re.compile(r"""(?<![\w.-])([\w.-]{1,100})(["'\]]{0,2}\s*[=:]\s*)(""" + _VALUE + ")")
+_FLAG = re.compile(r"(?<![\w-])(--?[\w-]{1,100})(\s+)(" + _VALUE + ")")
+# 2) 이름 없이 모양으로 아는 것
+_PRIVATE_KEY = re.compile(
+    r"-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----(?:[\s\S]*?-----END [A-Z ]{0,40}PRIVATE KEY-----|[\s\S]*)")
+_URL_CRED = re.compile(r"(?i)\b([a-z][a-z0-9+.-]{0,20}://[^\s:/@]{1,100}):[^\s@/]{1,200}@")
+_USER_PASS_FLAG = re.compile(r"(?<![\w-])(-u|--user)(\s+|=)([^\s:'\"]{1,100}):[^\s'\"]+")   # curl -u user:pass
+_AUTH_HEADER = re.compile(r"(?i)\b((?:proxy-)?authorization\s*[:=]\s*)(?:(?:bearer|basic|token|digest)\s+)?[^\s'\"]+")
+_TOKENS = [
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{8,}"),
+    re.compile(r"\bsk-[A-Za-z0-9_\-]{16,}"),                      # OpenAI·Anthropic
+    re.compile(r"\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}"),        # Stripe
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),                 # AWS 키 ID
     re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),
+    re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}"),
+    re.compile(r"\bglpat-[A-Za-z0-9_\-]{20,}"),                   # GitLab
+    re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,}"),               # Slack
+    re.compile(r"\bAIza[0-9A-Za-z_\-]{35}"),                      # Google API
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"),   # JWT
     re.compile(r"\b(agt|hum)_[A-Za-z0-9_\-]{16,}"),
-    re.compile(r"(?i)authorization:\s*bearer\s+\S+"),
 ]
+
+
+def _hide_named(m: re.Match) -> str:
+    name, sep, val = m.groups()
+    if not _SECRET_NAME.search(name.lstrip("-")):
+        return m.group(0)
+    q = val[0] if val[:1] in ("'", '"') else ""
+    return f"{name}{sep}{q}***{q}"
+
+
+def mask_text(text: str) -> str:
+    text = _PRIVATE_KEY.sub("-----PRIVATE KEY ***-----", text)
+    text = _URL_CRED.sub(r"\1:***@", text)
+    text = _USER_PASS_FLAG.sub(r"\1\2\3:***", text)
+    text = _AUTH_HEADER.sub(lambda m: m.group(1) + "***", text)
+    for pat in _TOKENS:
+        text = pat.sub("***", text)
+    text = _FLAG.sub(_hide_named, text)
+    return _ASSIGN.sub(_hide_named, text)
 
 
 class AuditWriteError(RuntimeError):
@@ -92,12 +132,7 @@ class AuditLog:
             out = value
             for s in self._secrets:
                 out = out.replace(s, "***")
-            for pat in _SECRET_PATTERNS:
-                if pat.groups >= 2:
-                    out = pat.sub(lambda m: f"{m.group(1)}=***", out)
-                else:
-                    out = pat.sub("***", out)
-            return out
+            return mask_text(out)
         if isinstance(value, dict):
             return {k: self._mask(v) for k, v in value.items()}
         if isinstance(value, list):

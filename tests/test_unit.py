@@ -221,3 +221,58 @@ def test_workspace_manifest_parse_and_diff():
                       {"keep": (1, "1", "1"), "edit": (2, "2", "2"), "touched": (1, "1", "9"), "new": (1, "3", "3")})
     # 크기·mtime을 되돌려도 ctime이 바뀌면 변경으로 본다
     assert d == {"added": ["new"], "modified": ["edit", "touched"], "deleted": ["gone"]}
+
+
+# --- AU-4 비밀값 가림: 이름=값 꼴과 이름 없는 형식 ---
+from agentbox.audit import mask_text
+
+_S = "s3cr3t" + "Val42xyzQ"   # 실행할 때 합친다. 비밀값 스캐너가 진짜 값으로 오인하지 않게
+
+
+@pytest.mark.parametrize("text,masked", [
+    (f"export DB_PASSWORD={_S}", "export DB_PASSWORD=***"),
+    (f"GITHUB_TOKEN={_S} gh api", "GITHUB_TOKEN=*** gh api"),
+    (f'password="{_S} with space"', 'password="***"'),
+    (f"password='{_S}'", "password='***'"),
+    (f'password="{_S}', 'password="***"'),                       # 닫히지 않은 따옴표
+    (f'{{"api_key": "{_S}"}}', '{"api_key": "***"}'),
+    (f"mysql --password {_S} db", "mysql --password *** db"),
+    (f"--client-secret={_S}", "--client-secret=***"),
+    (f"X-Api-Key: {_S}", "X-Api-Key: ***"),
+    (f'os.environ["AWS_SECRET_ACCESS_KEY"] = "{_S}"', 'os.environ["AWS_SECRET_ACCESS_KEY"] = "***"'),
+    (f"STRIPE_KEY={_S}", "STRIPE_KEY=***"),
+    (f"curl -u admin:{_S} http://x", "curl -u admin:*** http://x"),
+    (f"curl https://admin:{_S}@example.com/x", "curl https://admin:***@example.com/x"),
+    (f"curl -H 'Authorization: Basic {_S}'", "curl -H 'Authorization: ***'"),
+    (f"curl -H 'Authorization: Bearer {_S}'", "curl -H 'Authorization: ***'"),
+    ("-----BEGIN RSA PRIVATE KEY-----\n" + _S + "\n-----END RSA PRIVATE KEY-----", "-----PRIVATE KEY ***-----"),
+    ("-----BEGIN OPENSSH PRIVATE KEY-----\n" + _S, "-----PRIVATE KEY ***-----"),    # 끝 표시가 잘려도
+    ("xox" + "b-1234567890-" + _S, "***"),
+    ("AI" + "za" + "A" * 35, "***"),
+    ("github" + "_pat_" + _S * 3, "***"),
+    ("gl" + "pat-" + _S * 3, "***"),
+    ("eyJ" + _S + ".eyJ" + _S + "." + _S, "***"),
+    ("sk" + "_live_" + _S * 2, "***"),
+    ("AS" + "IA" + "ABCDEFGHIJKLMNOP", "***"),
+])
+def test_mask_secret_forms(text, masked):
+    assert mask_text(text) == masked
+
+
+@pytest.mark.parametrize("text", [
+    "ls -la /workspace", "grep -rn token src/", "echo author=kim", "git log --author=kim", "sort -k 2 file",
+    "cat key_points.md", "python3 -c 'print(1)'", "curl http://example.com:8080/x", "monkey=1 keyboard=us",
+    "find . -name '*.py' | wc -l", "ssh user@host",
+])
+def test_mask_leaves_ordinary_text(text):
+    assert mask_text(text) == text
+
+
+def test_mask_linear_on_adversarial_input():
+    import time
+
+    t0 = time.time()
+    for t in ("a=" * 100000, "-" * 200000, "a." * 100000 + "=", '"' * 200000, "x" * 200000 + "=1",
+              "token" + " " * 200000, "-a " * 70000, "http://" + "a" * 200000, 'password="' * 20000):
+        mask_text(t)
+    assert time.time() - t0 < 10     # 로컬 약 0.8초. 역추적 폭발이면 몇 분 이상 걸린다
