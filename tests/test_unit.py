@@ -276,3 +276,33 @@ def test_mask_linear_on_adversarial_input():
               "token" + " " * 200000, "-a " * 70000, "http://" + "a" * 200000, 'password="' * 20000):
         mask_text(t)
     assert time.time() - t0 < 10     # 로컬 약 0.8초. 역추적 폭발이면 몇 분 이상 걸린다
+
+
+# 보안 검수 N-1 보강: GUI 구간이 끝날 때 멈출 화면 계정 프로세스 (실제 데스크톱 컨테이너의 ps를 본뜸)
+def test_gui_strays():
+    from agentbox.sandbox import gui_strays
+
+    D = 1001
+
+    def p(pid, ppid, sid, uid=D, args=""):
+        return {"pid": pid, "ppid": ppid, "sid": sid, "uid": uid, "args": args}
+
+    base = [p(1, 0, 1, 0, "docker-init"), p(6, 1, 1, 0, "sleep infinity"), p(17, 15, 1, args="Xvfb"),
+            p(38, 37, 1, args="xfce4-session"), p(50, 1, 50, args="dbus-daemon"), p(71, 38, 1, args="xfwm4"),
+            p(76, 38, 1, args="xfsettingsd"), p(85, 38, 1, args="Thunar --daemon"), p(80, 38, 1, args="xfce4-panel")]
+    new = [
+        p(150, 76, 1, args="xfce4-terminal"),          # 단축키로 연 터미널 창: 둔다
+        p(152, 150, 152, args="bash"),                 # 그 안의 셸: 새 세션 → 멈춘다
+        p(160, 152, 152, args="sleep 600"),            # 셸에서 띄운 일 → 멈춘다
+        p(172, 1, 152, args="sh -c sleep 600; rm"),    # nohup으로 떼어 내 PID 1 아래로 간 일 → 멈춘다
+        p(174, 1, 174, args="sh -c sleep 700"),        # setsid → 멈춘다
+        p(180, 38, 1, args="mousepad"),                # 메뉴로 연 편집기 창: 둔다
+        p(181, 180, 1, args="mousepad helper"),        # 창 있는 새 앱의 도우미: 둔다
+        p(190, 85, 1, args="sh ./script.sh"),          # 파일 관리자(구간 전부터 있던 창)에서 실행한 스크립트 → 멈춘다
+        p(200, 0, 200, args="socat … x11vnc"),         # 컨트롤 플레인이 docker exec로 띄운 화면 연결: 둔다
+        p(201, 200, 200, args="x11vnc -inetd"),
+        p(210, 1, 210, uid=1000, args="agent exec"),   # 에이전트 계정 프로세스는 대상 아님
+    ]
+    windows = {71, 80, 85, 150, 180}
+    assert gui_strays(base + new, windows, {q["pid"] for q in base}) == [152, 160, 172, 174, 190]
+    assert gui_strays(base, windows, {q["pid"] for q in base}) == []

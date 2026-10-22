@@ -55,6 +55,10 @@ def describe(e: dict[str, Any]) -> str:
             err = (p.get("stderr_head") or "").strip()
             return f"exit {p.get('exit_code')}" + (f" · {_short(err, 100)}" if err else "")
         return _short({k: v for k, v in p.items() if k != "request"})
+    if ev == "gui_processes_stopped":
+        procs = p.get("processes") or []
+        return _short(f"GUI 구간({p.get('snapshot_id')}부터)에서 띄운 프로세스 {p.get('count', len(procs))}개 멈춤: "
+                      + ", ".join(str(x.get("args", "")) for x in procs[:3]), 240)
     if ev == "gui_changes":
         n = p.get("counts") or {}
         s = (f"GUI 구간({p.get('snapshot_id')}부터) 바뀐 파일: 추가 {n.get('added', 0)} · 변경 {n.get('modified', 0)}"

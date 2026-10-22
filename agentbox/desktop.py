@@ -78,6 +78,7 @@ class DesktopControl:
         self.ticket_ttl = ticket_ttl
         self.session_ttl = session_ttl
         self.idle = idle
+        self.recheck = 30.0   # 열린 화면 연결이 세션을 다시 확인하는 간격(초). 만료·로그아웃되면 끊는다
         self._lock = threading.Lock()
         # 만료 시각은 재시작을 넘어가야 하므로 벽시계(time.time)로 둔다.
         self._db = sqlite3.connect(str(db_path) if db_path else ":memory:", check_same_thread=False,

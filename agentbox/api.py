@@ -332,7 +332,8 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     @app.websocket("/sandboxes/{sid}/desktop/ws")
     async def desktop_ws(ws: WebSocket, sid: str, mode: str = "view"):
-        session = box.desktop.session(ws.cookies.get(D.COOKIE), sid)
+        cookie = ws.cookies.get(D.COOKIE)
+        session = box.desktop.session(cookie, sid)
         if not session or not same_origin(ws.headers) or mode not in ("view", "control"):
             await ws.close(code=4401)
             return
@@ -385,10 +386,27 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
                 down += len(chunk)
                 await ws.send_bytes(chunk)
 
+        ended = None
+
+        async def session_watch() -> None:
+            """세션은 연결할 때만 확인한다. 열린 채로 만료되거나 지워지면 끊고, 그 세션의 인수도 돌려준다."""
+            nonlocal ended
+            while True:
+                await asyncio.sleep(box.desktop.recheck)
+                if not box.desktop.session(cookie, sid):
+                    ended = "session_ended"
+                    lease = box.desktop.lease(sid)
+                    if lease and lease.session == session:
+                        try:
+                            await run_in_threadpool(box.handback, sid, session, "session_ended")
+                        except ServiceError:
+                            pass
+                    return
+
         started = loop.time()
-        # 셋 중 하나라도 끝나면 연결을 닫는다 (x11vnc가 죽었는데 출력 EOF가 늦게 오는 경우 포함).
+        # 넷 중 하나라도 끝나면 연결을 닫는다 (x11vnc가 죽었는데 출력 EOF가 늦게 오는 경우 포함).
         tasks = [asyncio.create_task(browser_to_vnc()), asyncio.create_task(vnc_to_browser()),
-                 asyncio.create_task(proc.wait())]
+                 asyncio.create_task(proc.wait()), asyncio.create_task(session_watch())]
         try:
             await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
         finally:
@@ -396,7 +414,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
             box.desktop.drop_conn(conn)
             box._safe_log(sid, None, "desktop_disconnect", {
                 "session": session, "mode": mode, "conn": conn.id, "seconds": round(loop.time() - started, 1),
-                "client_bytes": up, "server_bytes": down}, actor="human")
+                "client_bytes": up, "server_bytes": down, **({"reason": ended} if ended else {})}, actor="human")
             for t in tasks:
                 t.cancel()
             kill()
