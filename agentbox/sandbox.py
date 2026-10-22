@@ -144,6 +144,30 @@ def _parse_outbox(raw: bytes) -> list[dict[str, Any]]:
     return sorted(out, key=lambda x: x["name"])
 
 
+_MANIFEST_CAP = 8 * 1024 * 1024
+
+
+def _parse_manifest(raw: bytes) -> tuple[dict[str, tuple[int, str]], bool]:
+    """`find -printf '%P\\0%s\\0%T@\\0'` 출력(앞 _MANIFEST_CAP 바이트)을 {경로: (크기, 수정시각)}으로.
+    상한에서 잘렸으면 끝의 불완전한 레코드는 버리고 truncated를 돌려준다."""
+    truncated = len(raw) >= _MANIFEST_CAP
+    fields = raw.decode("utf-8", errors="replace").split("\0")[:-1]  # 끝의 NUL 없는 조각은 잘린 것
+    out: dict[str, tuple[int, str]] = {}
+    for i in range(0, len(fields) - 2, 3):
+        path, size, mtime = fields[i:i + 3]
+        try:
+            out[path] = (int(size), mtime)
+        except ValueError:
+            continue
+    return out, truncated
+
+
+def diff_manifest(old: dict[str, tuple[int, str]], new: dict[str, tuple[int, str]]) -> dict[str, list[str]]:
+    return {"added": sorted(new.keys() - old.keys()),
+            "modified": sorted(k for k in new.keys() & old.keys() if new[k] != old[k]),
+            "deleted": sorted(old.keys() - new.keys())}
+
+
 def safe_path(path: str) -> str:
     """에이전트가 준 경로를 /workspace 또는 /source 아래로 제한한다."""
     p = path.strip() or WORKSPACE
@@ -410,6 +434,13 @@ class SandboxManager:
             cols = [d[0] for d in cur.description]
             rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
+
+    def workspace_manifest(self, sid: str) -> tuple[dict[str, tuple[int, str]], bool]:
+        """/workspace의 파일 목록 {경로: (크기, 수정시각)}. root로 읽어 에이전트가 권한으로 숨기지 못하게 한다."""
+        c = self._container(sid)
+        res = c.exec_run(["sh", "-c", f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0' "
+                                      f"| head -c {_MANIFEST_CAP}"], user="0:0", demux=True)
+        return _parse_manifest(res.output[0] or b"")
 
     def snapshot_count(self, sid: str) -> int:
         with self._lock:

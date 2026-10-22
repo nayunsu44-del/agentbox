@@ -55,6 +55,13 @@ def describe(e: dict[str, Any]) -> str:
             err = (p.get("stderr_head") or "").strip()
             return f"exit {p.get('exit_code')}" + (f" · {_short(err, 100)}" if err else "")
         return _short({k: v for k, v in p.items() if k != "request"})
+    if ev == "gui_changes":
+        n = p.get("counts") or {}
+        s = (f"GUI 구간({p.get('snapshot_id')}부터) 바뀐 파일: 추가 {n.get('added', 0)} · 변경 {n.get('modified', 0)}"
+             f" · 삭제 {n.get('deleted', 0)}")
+        if p.get("deleted"):
+            s += " · 삭제됨: " + ", ".join(p["deleted"][:5]) + (" …" if n.get("deleted", 0) > 5 else "")
+        return _short(s, 240)
     if ev in ("file_imported", "file_exported", "file_import_request"):
         return f"{p.get('name')} · {p.get('bytes')} bytes · sha256 {str(p.get('sha256', ''))[:16]}…"
     return _short({k: v for k, v in p.items() if k not in ("request",)})
@@ -247,6 +254,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
     # ---- 감사 로그 타임라인 (UX-6) -----------------------------------------
     @app.get("/ui/audit", include_in_schema=False)
     def audit_frag(request: Request, sandbox_id: str | None = None, p=Depends(browser_human)):
+        box.close_idle_gui_bursts()
         rows = box.audit.list(sandbox_id=sandbox_id, limit=5000)
         return render(request, "_audit.html", rows=rows[-400:][::-1], total=len(rows), broken=None)
 

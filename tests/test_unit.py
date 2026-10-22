@@ -195,3 +195,16 @@ def test_terminal_approval_neutralizes_control_chars(monkeypatch, capsys):
     assert real in out and "(2줄)" in out
     assert "\\x1b[2K" in out and "\\u202e" in out and "\\x9b" in out and "/workspace/a\\x1b[1Ab" in out
     assert not [ch for ch in out if ch != "\n" and (ord(ch) < 0x20 or 0x7f <= ord(ch) <= 0x9f or ch == "‮")]
+
+
+# 보안 검수 N-1(방안 G): GUI 구간 동안 바뀐 파일 목록
+def test_workspace_manifest_parse_and_diff():
+    from agentbox.sandbox import _parse_manifest, diff_manifest
+
+    raw = "a.md\x0010\x001.5\x00dir/줄\n바꿈 이름\x002\x002.0\x00".encode()
+    m, truncated = _parse_manifest(raw)
+    assert m == {"a.md": (10, "1.5"), "dir/줄\n바꿈 이름": (2, "2.0")} and not truncated
+    assert _parse_manifest(b"a\x00x\x001\x00b\x003\x00")[0] == {}   # 숫자가 아닌 크기는 버림, 불완전한 끝도 버림
+    d = diff_manifest({"keep": (1, "1"), "edit": (1, "1"), "gone": (1, "1")},
+                      {"keep": (1, "1"), "edit": (2, "2"), "new": (1, "3")})
+    assert d == {"added": ["new"], "modified": ["edit"], "deleted": ["gone"]}

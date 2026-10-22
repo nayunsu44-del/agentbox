@@ -219,6 +219,29 @@ def test_gui_input_snapshots_per_burst(desk):
 
 
 @needs_desktop
+def test_gui_burst_changes_logged(desk):
+    """보안 검수 N-1(방안 G): GUI 구간 동안 정책 밖에서 바뀐 파일을 기록하고, 시작 스냅샷으로 되돌릴 수 있다."""
+    e = desk
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200       # 구간 시작 (스냅샷 + 파일 목록)
+    snap = e.box.sandboxes.list_snapshots(e.sid)[0]["id"]
+    # GUI 앱(터미널·파일 관리자)이 화면 계정으로 바꾼 것처럼
+    c = e.box.sandboxes._container(e.sid)
+    assert c.exec_run(["sh", "-c", "rm /workspace/old-report.md; echo x > /workspace/gui-new.txt; "
+                       "echo more >> /workspace/new-report.md"], user="desktop").exit_code == 0
+    assert not [x for x in events(e) if x["event"] == "gui_changes"]   # 아직 구간 안
+    e.box._gui_input_at[e.sid] -= 61                                   # 입력이 끊기면 구간이 닫힌다
+    ch = [x for x in events(e) if x["event"] == "gui_changes"]
+    assert len(ch) == 1 and ch[0]["actor"] == "system"
+    p = ch[0]["payload"]
+    assert p["snapshot_id"] == snap and p["reason"] == "idle"
+    assert (p["added"], p["modified"], p["deleted"]) == (["gui-new.txt"], ["new-report.md"], ["old-report.md"])
+    page = e.c.get(f"/ui/audit?sandbox_id={e.sid}", headers=e.H).text
+    assert "삭제됨: old-report.md" in page
+    assert e.c.post(f"/sandboxes/{e.sid}/restore", json={"snapshot_id": snap}, headers=e.H).status_code == 200
+    assert "old-report.md" in ls(e) and "gui-new.txt" not in ls(e)
+
+
+@needs_desktop
 def test_agent_cannot_reach_display_directly(desk):
     """에이전트 exec는 X 쿠키를 못 읽으니 xdotool로 화면을 직접 조작할 수 없다 (GUI 도구를 거쳐야 한다)."""
     from agentbox.policy import Policy

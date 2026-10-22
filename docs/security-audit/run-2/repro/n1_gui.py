@@ -34,6 +34,11 @@ print("gui-id.txt:", j.get("result", {}).get("content", j))
 print("approvals:", len(c.get("/approvals", headers=H).json()), " snapshots:", len(box.sandboxes.list_snapshots(sid)))
 ev = [e["event"] + ("/" + e["tool"] if e["tool"] else "") for e in c.get("/audit", headers=H).json() if e["sandbox_id"] == sid]
 print("audit trail tools:", sorted(set(ev)))
+box._gui_input_at[sid] -= 61   # 60초 쉰 것으로 → 구간이 닫히며 바뀐 파일이 기록된다 (방안 G)
+from agentbox.web import describe
+for e in c.get("/audit", params={"sandbox_id": sid}, headers=H).json():
+    if e["event"] == "gui_changes":
+        print("audit gui_changes:", describe(e))
 snaps = box.sandboxes.list_snapshots(sid)
 if snaps:  # GUI 구간 스냅샷(수정 후)으로 되돌리면 지운 파일이 돌아오는지
     c.post(f"/sandboxes/{sid}/restore", json={"snapshot_id": snaps[0]["id"]}, headers=H)

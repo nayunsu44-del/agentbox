@@ -254,6 +254,10 @@ def cmd_audit(a: argparse.Namespace) -> None:
             detail = f"{p.get('reason')} {p.get('session', '')}"
         elif e["event"] in ("snapshot",):
             detail = p.get("snapshot_id", "")
+        elif e["event"] == "gui_changes":
+            n = p.get("counts") or {}
+            detail = (f"{p.get('snapshot_id')}부터 +{n.get('added', 0)} ~{n.get('modified', 0)} "
+                      f"-{n.get('deleted', 0)} " + " ".join(p.get("deleted") or [])[:80])
         elif e["event"] == "tool_result":
             if "exit_code" in p:
                 detail = f"exit {p.get('exit_code')}" + (f"  {p.get('stderr_head', '').strip()[:80]}" if p.get("stderr_head") else "")
