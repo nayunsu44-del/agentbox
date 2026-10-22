@@ -84,3 +84,75 @@ def test_secret_masking(tmp_path):
     text = log.list()[0]["payload"]["cmd"]
     assert "abcd1234" not in text and "SuperSecret" not in text and "sk-abcdefghij" not in text
     assert log.verify().ok
+
+
+# --- 검수 반영: 정책 렉서와 bash 해석 불일치 (주석·리다이렉션) ---
+from agentbox.policy import simple_programs, has_bash_comment
+
+ALLOWLIST = Policy.load("agentbox/default_policy.yaml")
+
+
+@pytest.mark.parametrize("cmd", [
+    # 따옴표로 감싼 '#' 뒤에 숨긴 비허용 명령: bash는 주석을 버리고 숨긴 줄을 실행한다.
+    "ls #'\nfind . -delete\n#'",
+    "ls #'\npython3 -c pass\n#'",
+    "ls; #'\ncp a b\n#'",
+    # 따옴표 밖 평범한 주석도 승인으로 보낸다 (bash가 버리는 부분을 정책이 보지 못하므로).
+    "ls # harmless",
+    "cat f.txt #note",
+])
+def test_bash_comment_forces_approval(cmd):
+    # 허용 목록(simple_programs)에 맞지 않아야 한다 (None).
+    assert simple_programs(cmd) is None
+    assert ALLOWLIST.decide("exec", {"command": cmd}).action == "require_approval"
+
+
+@pytest.mark.parametrize("cmd,progs", [
+    ("ls -la /workspace", {"ls"}),
+    ("cat a.txt | grep x", {"cat", "grep"}),
+    ("echo 'a#b' > out.txt", None),             # 진짜 '>' 리다이렉션은 여전히 승인
+    ("echo ok > /dev/null", {"echo"}),          # /dev/null 버리기는 읽기 전용 예외
+    ("grep '#' file", {"grep"}),                # 따옴표 안 '#' 은 주석이 아니다 → 그대로 허용
+    ("echo 'a #b'", {"echo"}),                  # 따옴표 안 공백+'#' 도 주석 아님
+])
+def test_simple_programs_still_allows_read_only(cmd, progs):
+    assert simple_programs(cmd) == progs
+
+
+def test_has_bash_comment_boundaries():
+    assert has_bash_comment("ls #x")            # 공백 뒤 '#'
+    assert has_bash_comment("#x")               # 줄 맨 앞
+    assert has_bash_comment("ls;#x")            # 구분자 뒤
+    assert not has_bash_comment("echo a#b")     # 단어 중간 '#' 은 주석 아님
+    assert not has_bash_comment("grep '#' f")   # 따옴표 안 '#'
+
+
+# --- 검수 반영: 결과함 목록이 컨테이너가 정한 파일 이름에 깨지지 않는다 ---
+from agentbox.sandbox import _parse_outbox
+
+
+def test_parse_outbox_basic():
+    raw = b"12\t1700000000.0\treport.md\x00007\t1700000001.5\tnotes.txt\x00"
+    rows = _parse_outbox(raw)
+    assert [r["name"] for r in rows] == ["notes.txt", "report.md"]
+    assert rows[1]["bytes"] == 12
+
+
+def test_parse_outbox_tolerates_hostile_names():
+    # 이름에 탭·줄바꿈이 들어가도 이름 안에 머물고 (NUL 레코드 구분), 가짜 행이 생기지 않는다.
+    raw = b"5\t1700000000.0\tevil\tFAKE\nNOTANUM\tx\x00"
+    rows = _parse_outbox(raw)
+    assert len(rows) == 1
+    assert rows[0]["name"] == "evil\tFAKE\nNOTANUM\tx"
+    assert rows[0]["bytes"] == 5
+
+
+def test_parse_outbox_skips_malformed_numeric():
+    # 숫자가 아닌 크기/시각은 그 레코드만 건너뛴다 (500 대신).
+    raw = b"NOTANUM\tNOTFLOAT\tbad.bin\x009\t1700000000.0\tgood.bin\x00"
+    rows = _parse_outbox(raw)
+    assert [r["name"] for r in rows] == ["good.bin"]
+
+
+def test_parse_outbox_empty():
+    assert _parse_outbox(b"") == []

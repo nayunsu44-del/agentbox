@@ -76,10 +76,42 @@ def command_names(command: str) -> set[str]:
 # 출력을 버리는 리다이렉션은 파일을 바꾸지 않으므로 읽기 전용 판정에서 빼고 본다.
 _DEVNULL = re.compile(r"\d*>>?\s*/dev/null|\d*>&\d")
 
+# bash에서 '#'이 주석을 여는 자리(줄 맨 앞, 또는 따옴표 밖 공백·구분자 바로 뒤).
+_COMMENT_BOUNDARY = set(" \t\n\r;&|()")
+
+
+def has_bash_comment(command: str) -> bool:
+    """bash가 주석으로 버리는 '#'(따옴표 밖, 단어 시작 위치)이 있으면 True.
+
+    정책 렉서는 commenters=""라 '#'을 평범한 글자로 보지만 bash는 주석으로 버린다.
+    이 틈을 막으려고, 따옴표 밖 단어-시작 '#'이 하나라도 있으면 '단순 명령'으로 보지 않는다.
+    따옴표는 넉넉히(이스케이프 무시) 닫아, bash보다 '따옴표 안'이라고 더 오래 판단해서
+    실제 주석을 놓치는 일(=승인 우회)이 없게 한다. 과하게 승인으로 보내는 쪽은 안전하다.
+    """
+    quote: str | None = None
+    prev = ""   # 따옴표 밖에서 바로 앞 글자 ("" = 문자열 시작)
+    for ch in command:
+        if quote is not None:
+            if ch == quote:
+                quote = None
+            prev = ch
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            prev = ch
+            continue
+        if ch == "#" and (prev == "" or prev in _COMMENT_BOUNDARY):
+            return True
+        prev = ch
+    return False
+
 
 def simple_programs(command: str) -> set[str] | None:
     """변수·명령 치환, 파일 쓰기 리다이렉션, 환경 변수 접두가 없는 단순 명령이면 실행될 프로그램 이름들.
     아니면 None. 읽기 전용 허용 목록(only_commands)은 None이면 맞지 않는 것으로 친다."""
+    # bash 주석('#')이 있으면 정책 렉서와 bash의 해석이 갈린다. 승인으로 보낸다.
+    if has_bash_comment(command):
+        return None
     cmd = _DEVNULL.sub(" ", command)
     if any(s in cmd for s in ("$", "`", ">", "<(")):
         return None

@@ -99,6 +99,30 @@ def _truncate(b: bytes | None) -> str:
     return s
 
 
+def _parse_outbox(raw: bytes) -> list[dict[str, Any]]:
+    """`find -printf '%s\\t%T@\\t%f\\0'` 출력을 결과함 목록으로 바꾼다.
+
+    레코드는 NUL로 나누고, 각 레코드는 크기·수정시각·이름 순서로 탭 둘(이름은 탭 2개 뒤 전부)이다.
+    이름에 탭·줄바꿈이 들어가도 split(maxsplit=2)로 이름 안에 머문다. 숫자 변환이 깨지는 레코드는
+    건너뛰어, 믿을 수 없는 컨테이너 출력이 컨트롤 플레인에서 500을 일으키지 못하게 한다.
+    """
+    out: list[dict[str, Any]] = []
+    for rec in raw.decode("utf-8", errors="replace").split("\0"):
+        if not rec:
+            continue
+        parts = rec.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        size, mtime, name = parts
+        try:
+            nbytes = int(size)
+            when = datetime.fromtimestamp(float(mtime), timezone.utc).isoformat(timespec="seconds")
+        except (ValueError, OverflowError, OSError):
+            continue
+        out.append({"name": name, "bytes": nbytes, "mtime": when})
+    return sorted(out, key=lambda x: x["name"])
+
+
 def safe_path(path: str) -> str:
     """에이전트가 준 경로를 /workspace 또는 /source 아래로 제한한다."""
     p = path.strip() or WORKSPACE
@@ -482,18 +506,16 @@ class SandboxManager:
         return c.exec_run(["test", "-d", safe_path(path)], user=AGENT_UID).exit_code == 0
 
     def outbox_list(self, sid: str) -> list[dict[str, Any]]:
-        """결과함(/workspace/outbox) 바로 아래의 일반 파일. 링크와 폴더는 보이지 않는다."""
+        """결과함(/workspace/outbox) 바로 아래의 일반 파일. 링크와 폴더는 보이지 않는다.
+
+        파일 이름은 에이전트가 정하므로 믿을 수 없는 데이터다. 레코드는 NUL로 나누고 이름(%f)을
+        맨 뒤에 둬서, 이름에 탭·줄바꿈이 들어가도 가짜 행을 끼워 넣거나 파싱을 깨지 못하게 한다.
+        """
         c = self._require_running(sid)
         script = (f'[ -d {OUTBOX} ] && [ ! -L {OUTBOX} ] || exit 0; '
-                  f'find {OUTBOX} -mindepth 1 -maxdepth 1 -type f -printf "%f\\t%s\\t%T@\\n"')
+                  f"find {OUTBOX} -mindepth 1 -maxdepth 1 -type f -printf '%s\\t%T@\\t%f\\0'")
         res = c.exec_run(["sh", "-c", script], user=AGENT_UID, demux=True)
-        out = []
-        for line in (res.output[0] or b"").decode("utf-8", errors="replace").splitlines():
-            parts = line.split("\t")
-            if len(parts) == 3:
-                out.append({"name": parts[0], "bytes": int(parts[1]),
-                            "mtime": datetime.fromtimestamp(float(parts[2]), timezone.utc).isoformat(timespec="seconds")})
-        return sorted(out, key=lambda x: x["name"])
+        return _parse_outbox(res.output[0] or b"")
 
     def outbox_read(self, sid: str, name: str) -> bytes:
         c = self._require_running(sid)
