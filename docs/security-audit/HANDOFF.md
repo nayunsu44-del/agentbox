@@ -79,7 +79,7 @@ pytest                                                 # 160 passed
 
 ## 3차 감사(run-3) 진행 상태 — 다음 세션이 여기서 이어받는다
 
-작업 브랜치: `ccr-0da6ba34-sc9pu1` (이전 run-3 브랜치 `ccr-df7eb88d-1nmb5q`, PR #7을 이어받음). **4단계(findings.json)까지 끝났고 사용량 한도로 멈췄다.** 5단계 독립 재검증과 6단계 보고서는 아직이다(`run-metadata.json`의 `run_status: incomplete`).
+작업 브랜치: `ccr-e2c70e17-r0gmhn` (`ccr-0da6ba34-sc9pu1`의 `d2537f0`에서 이어받음. 그 전은 `ccr-df7eb88d-1nmb5q`, PR #7). **4단계(findings.json)까지 끝났고 사용량 한도로 멈췄다.** 5단계 독립 재검증과 6단계 보고서는 아직이다(`run-metadata.json`의 `run_status: incomplete`).
 
 ### 3단계 결과 (`run-3/findings.json`, 14건, 두 검증기 통과)
 | 판정 | 심각도 | 검증자 | 내용 | 수정 |
@@ -117,7 +117,7 @@ v07(이전 세션, 레코드 소실)은 같은 fingerprint로 v15가 대신했�
 45/60 (이전 32 + 이번 13: 검증자 11 + v03 재실행 2). 남은 15로 5단계를 레코드당 1개(13개: 확정 7 + 검증 필요 6)로 돌릴 수 있다. 재실행 2회분이 남는다.
 
 ### 이어서 하는 법
-1. 환경: `nohup dockerd >/tmp/dockerd.log 2>&1 &` → `pip install -e '.[test]' pyte` → `docker pull buildpack-deps:noble-curl ubuntu:24.04`(429면 `mirror.gcr.io/library/<이미지>`를 받아 `docker tag`) → `docker build -t agentbox-desktop:0.1 images/desktop` → 스킬 `git clone --depth 1 https://github.com/cloudflare/security-audit-skill`.
+1. 환경: `nohup dockerd >/tmp/dockerd.log 2>&1 &` → `pip install -e '.[test]' pyte` → `docker pull buildpack-deps:noble-curl ubuntu:24.04`(429면 `mirror.gcr.io/library/<이미지>`를 받아 `docker tag`) → `docker build -t agentbox-desktop:0.1 images/desktop` → 스킬 `git clone --depth 1 https://github.com/cloudflare/security-audit-skill`. 이 세션(2026-10-22)에서 1~2번을 다시 맞췄다: pytest 214개 통과, 두 검증기 통과(findings 14건, ledger 26단위), `sbx` 안에서 python3 실행·네트워크 차단 확인. 호스트의 `/usr/bin/python3`가 `/etc/alternatives`를 거치는 링크라서 `sbx`에 `/etc/alternatives`를 읽기 전용으로 붙였다.
 2. 도구 `run-3/tools/`의 `sbx`, `ingest.py`, `promote.py`에서 스크래치패드 경로(`/tmp/claude-0/.../scratchpad`)를 새 세션 값으로 바꾸고 스크래치패드에 복사한다. `ingest.py`는 서브에이전트 transcript(JSONL)의 마지막 텍스트도 결과로 읽는다: `python3 -I ingest.py <id> <task output 파일> <fingerprint>`. 검증자별 `agents/<id>/scratch`는 `chown 65534`로 미리 만든다.
 3. **5단계**: `findings.json`의 확정·검증 필요 레코드마다 새 검증자 1개. 스킬의 VALIDATION-AND-REPORTING.md 5단계 지시(확정 6항목, 검증 필요 5항목)와 레코드를 주고 `{"decision":"verified",...}` 또는 `{"decision":"replace",...}`만 받는다. v06·v09·v10 검증자에게는 위 l8·l9·l10을 근거로 준다. 확정으로 올리는 replace는 **다른 새 검증자가 한 번 더** 확인해야 적용할 수 있다(남은 재실행 2회로 부족하면 사용자에게 상한 확인).
 4. 6단계: `REPORT.md`, `FINDINGS-DETAIL.md`, `NEEDS-VALIDATION.md`(한국어 요약은 HANDOFF·VALIDATION 스타일).

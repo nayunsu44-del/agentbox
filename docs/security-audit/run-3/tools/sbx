@@ -41,6 +41,7 @@ timeout -k 10 140 docker run --rm -i \
   --ulimit nofile=256:256 \
   --ulimit core=0 \
   -v /usr:/usr:ro \
+  -v /etc/alternatives:/etc/alternatives:ro \
   -v "$TARGET:/target:ro" \
   -v "$scratch:/scratch:rw" \
   -w /scratch \
