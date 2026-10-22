@@ -3,7 +3,12 @@
 최소 증명 데모 범위 밖인 항목(웹 UI, 결과함 화면, 화면 인수)은 건너뛴다고 명시한다.
 """
 
+import os
+import socket
 import sqlite3
+import subprocess
+import sys
+import threading
 import time
 
 import pytest
@@ -14,6 +19,7 @@ try:
 except Exception:  # pragma: no cover
     pytest.skip("Docker 데몬이 없음", allow_module_level=True)
 
+import httpx  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 
@@ -206,3 +212,130 @@ def test_path_escape_refused(env):
 
 
 # 8. 화면 인수 중 사람의 조작이 "사람 세션"으로 로그에 남는다 → tests/test_m2_acceptance.py
+
+
+# 보안 검수 N-3: 허용된 덮어쓰기가 매번 docker commit을 일으켜도 호스트 디스크를 사람 없이 채우지 못한다
+def test_snapshot_quota_escalates_and_delete_removes_images(env):
+    e = env
+    e.box.sandboxes.settings.snapshot_quota = 2
+
+    def write(path, content):
+        return e.c.post(f"/sandboxes/{e.sid}/tools/write_file",
+                        json={"args": {"path": path, "content": content}}, headers=e.A)
+
+    for i in range(2):  # 상한 전: 허용 규칙대로 바로 실행하고 스냅샷
+        assert write("/workspace/old-report.md", f"v{i}\n").status_code == 200
+    assert e.box.sandboxes.snapshot_count(e.sid) == 2
+    r = write("/workspace/old-report.md", "v2\n")  # 상한부터는 승인 대기
+    assert r.status_code == 202, r.text
+    apr = e.c.get(f"/approvals/{r.json()['approval_id']}", headers=e.H).json()
+    assert apr["rule_id"] == "snapshot-quota"
+    assert e.box.sandboxes.snapshot_count(e.sid) == 2
+    res = approve(e, apr["id"])  # 승인하면 AP-2대로 스냅샷을 뜨고 실행
+    assert res["status"] == "executed" and res["snapshot_id"]
+    assert write("/workspace/brand-new.md", "x\n").status_code == 200  # 새 파일은 스냅샷이 없어 그대로 허용
+
+    images = [s["image"] for s in e.box.sandboxes.list_snapshots(e.sid)]
+    assert len(images) == 3
+    assert e.c.delete(f"/sandboxes/{e.sid}", headers=e.H).status_code == 200
+    for img in images:
+        with pytest.raises(docker.errors.ImageNotFound):
+            e.box.sandboxes.client.images.get(img)
+
+
+# 동시에 덮어써도 사람 없이 뜨는 스냅샷은 상한을 넘지 않는다 (Codex 리뷰)
+def test_snapshot_quota_holds_under_concurrency(env):
+    e = env
+    e.box.sandboxes.settings.snapshot_quota = 1
+    codes = []
+
+    def write(i):
+        r = e.c.post(f"/sandboxes/{e.sid}/tools/write_file",
+                     json={"args": {"path": "/workspace/old-report.md", "content": f"v{i}\n"}}, headers=e.A)
+        codes.append(r.status_code)
+
+    ts = [threading.Thread(target=write, args=(i,)) for i in range(4)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert sorted(codes) == [200, 202, 202, 202], codes
+    assert e.box.sandboxes.snapshot_count(e.sid) == 1
+
+
+# 보안 검수 N-2: exec 출력은 앞부분만 컨트롤 플레인에 남고, 잘린 길이·종료 코드는 그대로 보고된다
+def test_exec_output_streamed_with_cap(env):
+    e = env
+    res = exec_(e, "head -c 300000 /dev/zero").json()["result"]
+    assert res["stdout"].endswith(f"…({300000 - 65536} bytes 생략)") and res["exit_code"] == 0
+    res = exec_(e, "head -c 70000 /dev/zero >&2").json()["result"]
+    assert res["stderr"].endswith(f"…({70000 - 65536} bytes 생략)") and res["stdout"] == ""
+    res = exec_(e, "test -e /nope").json()["result"]
+    assert res["exit_code"] == 1 and not res["timed_out"]
+    res = exec_(e, "echo hi").json()["result"]
+    assert res == {"exit_code": 0, "stdout": "hi\n", "stderr": "", "timed_out": False}
+
+
+# 보안 검수 N-2: 출력 없는 허용 명령으로 스레드를 붙잡아도 사람 API는 멈추지 않는다.
+# TestClient는 요청마다 이벤트 루프·스레드 풀을 따로 만들어 재현되지 않으므로 실제 서버 프로세스로 띄운다.
+def test_blocking_execs_cannot_starve_human_api(tmp_path):
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    env = {**os.environ, "AGENTBOX_HOME": str(tmp_path / "data"), "AGENTBOX_HUMAN_TOKEN": "hum_starve_test",
+           "AGENTBOX_EXEC_TIMEOUT": "6", "AGENTBOX_TOOL_CONCURRENCY": "0"}  # 샌드박스별 상한 없이도 버텨야 한다
+    srv = subprocess.Popen([sys.executable, "-m", "agentbox", "serve", "--port", str(port)], env=env,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    base, H = f"http://127.0.0.1:{port}", {"Authorization": "Bearer hum_starve_test"}
+    try:
+        for _ in range(100):
+            try:
+                httpx.get(f"{base}/sandboxes", headers=H, timeout=1)
+                break
+            except httpx.TransportError:
+                time.sleep(0.2)
+        sb = httpx.post(f"{base}/sandboxes", json={}, headers=H, timeout=60).json()
+        A = {"Authorization": f"Bearer {sb['agent_token']}"}
+        holders = [threading.Thread(target=httpx.post, args=(f"{base}/sandboxes/{sb['id']}/tools/exec",),
+                                    kwargs={"json": {"args": {"command": "tail -f /dev/null"}}, "headers": A,
+                                            "timeout": 60})
+                   for _ in range(45)]
+        for t in holders:
+            t.start()
+        time.sleep(2)
+        t0 = time.time()
+        assert httpx.get(f"{base}/approvals", headers=H, timeout=60).status_code == 200
+        assert time.time() - t0 < 2
+        for t in holders:
+            t.join()
+        httpx.delete(f"{base}/sandboxes/{sb['id']}", headers=H, timeout=60)
+    finally:
+        srv.terminate()
+        srv.wait()
+
+
+# 보안 검수 N-2: 샌드박스 하나가 동시에 돌리는 도구 호출 수는 제한된다
+def test_tool_concurrency_limit_per_sandbox(env):
+    e = env
+    e.box.sandboxes.settings.exec_timeout = 4
+    e.box.sandboxes.settings.tool_concurrency = 1
+    held = threading.Thread(target=exec_, args=(e, "tail -f /dev/null"))
+    held.start()
+    time.sleep(1)
+    assert exec_(e, "echo hi").status_code == 429
+    held.join()
+    assert exec_(e, "echo hi").status_code == 200
+
+
+# 보안 검수 N-4: 데이터 폴더와 겹치는 원본 폴더는 거부한다 (사람 토큰이 에이전트 작업 폴더로 복사되지 않게)
+def test_source_dir_overlapping_data_dir_refused(env):
+    e = env
+    home = e.box.sandboxes.settings.home
+    assert (home / "human_token").exists()
+    for src in (home, home.parent, home / "sources"):
+        src.mkdir(exist_ok=True)
+        r = e.c.post("/sandboxes", json={"source_dir": str(src)}, headers=e.H)
+        assert r.status_code == 400 and "데이터 폴더" in r.json()["detail"], (src, r.text)
+    r = e.c.post("/sandboxes", json={"source_dir": str(e.src)}, headers=e.H)
+    assert r.status_code == 201
+    e.c.delete(f"/sandboxes/{r.json()['id']}", headers=e.H)

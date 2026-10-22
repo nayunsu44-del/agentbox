@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -22,11 +23,13 @@ from . import approvals as A
 from .approvals import ApprovalStore
 from .audit import AuditLog, AuditWriteError
 from .desktop import DesktopControl, Lease
-from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Policy
-from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, safe_path
+from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Decision, Policy
+from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, diff_manifest, safe_path
 
 FILE_TOOLS = {"list_dir", "read_file", "exec", "write_file", "delete_file"}
 GUI_TOOLS = {"screenshot", "click", "type", "key"}
+GUI_INPUT = GUI_TOOLS - {"screenshot"}
+SNAPSHOT_TOOLS = {"write_file", "delete_file"} | GUI_INPUT   # 허용 경로에서 스냅샷을 뜰 수 있는 도구
 TOOLS = FILE_TOOLS | GUI_TOOLS
 
 
@@ -60,6 +63,14 @@ class AgentBox:
         self.desktop = desktop or DesktopControl()
         self.approval_timeout = approval_timeout
         self.captures = captures
+        self._busy: dict[str, int] = {}
+        self._snap_locks: dict[str, threading.Lock] = {}
+        # GUI 구간 스냅샷용 (time.monotonic). 서버를 다시 켜면 비어서 첫 GUI 입력 때 스냅샷을 뜬다.
+        self._gui_input_at: dict[str, float] = {}
+        self._gui_snap_at: dict[str, float] = {}
+        # 열린 GUI 구간: 시작 스냅샷과 그때의 /workspace 파일 목록. 구간이 끝나면 바뀐 파일을 기록한다.
+        self._gui_burst: dict[str, dict[str, Any]] = {}
+        self._busy_lock = threading.Lock()
 
     def capture_path(self, aid: str) -> Path | None:
         if not self.captures or not aid.replace("_", "").isalnum():
@@ -94,6 +105,8 @@ class AgentBox:
         if tool in GUI_TOOLS:
             with self.desktop.gui_lock(sid):
                 self._check_control(sid)
+                if tool in GUI_INPUT:
+                    self._gui_input_at[sid] = time.monotonic()
                 if tool == "screenshot":
                     shot = sb.screenshot(sid)
                     png = shot.pop("png")
@@ -166,16 +179,100 @@ class AgentBox:
                 return self.sandboxes.exists(sid, str(args.get("path", "")))
             except SandboxError:
                 return False
+        if tool in GUI_INPUT:
+            return self._gui_needs_snapshot(sid)
         return False
 
+    def _gui_needs_snapshot(self, sid: str) -> bool:
+        """GUI 입력은 터미널·파일 관리자 등으로 정책 밖에서 /workspace를 바꿀 수 있다. 막을 수는 없으니
+        AP-2의 복구 지점만이라도 남긴다: GUI 구간이 시작될 때와, 구간이 길면 interval마다."""
+        s = self.sandboxes.settings
+        if s.gui_snapshot_interval <= 0:
+            return False
+        if self.desktop.lease(sid) and not self.desktop.is_stale(sid):
+            return False  # 사람이 조작 중이라 어차피 423
+        now = time.monotonic()
+        last_input, last_snap = self._gui_input_at.get(sid), self._gui_snap_at.get(sid)
+        return (last_input is None or now - last_input > s.gui_snapshot_idle
+                or last_snap is None or now - last_snap > s.gui_snapshot_interval)
+
+    def _over_snapshot_quota(self, sid: str, tool: str, args: dict[str, Any]) -> bool:
+        """허용 규칙이 매번 docker commit을 일으켜 호스트 디스크를 채우지 못하게, 상한부터는 승인으로 돌린다."""
+        quota = self.sandboxes.settings.snapshot_quota
+        if quota <= 0 or self.sandboxes.snapshot_count(sid) < quota:
+            return False
+        return self._needs_snapshot(sid, tool, args)
+
+    def _open_gui_burst(self, sid: str, snapshot_id: str) -> None:
+        try:
+            manifest, truncated = self.sandboxes.workspace_manifest(sid)
+        except Exception:  # 기록용이라 실패해도 도구 호출은 막지 않는다
+            return
+        self._gui_burst[sid] = {"snapshot_id": snapshot_id, "manifest": manifest, "truncated": truncated}
+
+    def _close_gui_burst(self, sid: str, reason: str) -> None:
+        """GUI 구간 동안 /workspace에서 바뀐 파일을 감사 로그에 남긴다. 정책 밖에서 바뀐 것을 사람이 보고,
+        필요하면 구간 시작 스냅샷으로 되돌릴 수 있게."""
+        burst = self._gui_burst.pop(sid, None)
+        if not burst:
+            return
+        try:
+            manifest, truncated = self.sandboxes.workspace_manifest(sid)
+        except Exception:
+            return
+        diff = diff_manifest(burst["manifest"], manifest)
+        if not any(diff.values()):
+            return
+        self._safe_log(sid, None, "gui_changes", {
+            "snapshot_id": burst["snapshot_id"], "reason": reason,
+            "counts": {k: len(v) for k, v in diff.items()},
+            **{k: v[:100] for k, v in diff.items()},
+            "truncated": burst["truncated"] or truncated or any(len(v) > 100 for v in diff.values()),
+        })
+
+    def close_idle_gui_bursts(self) -> None:
+        """입력이 끊긴 GUI 구간을 닫는다. 조회·도구 호출 때 부른다 (승인 기한 처리와 같은 방식)."""
+        idle = self.sandboxes.settings.gui_snapshot_idle
+        now = time.monotonic()
+        for sid in list(self._gui_burst):
+            if now - self._gui_input_at.get(sid, 0.0) > idle:
+                self._close_gui_burst(sid, "idle")
+
     def _snapshot(self, sid: str, tool: str, reason: str, ref: dict[str, Any]) -> dict[str, Any]:
+        if tool in GUI_INPUT:
+            self._close_gui_burst(sid, "next_burst")
         snap = self.sandboxes.snapshot(sid, reason=reason)
+        if tool in GUI_INPUT:
+            self._gui_snap_at[sid] = time.monotonic()
+            self._open_gui_burst(sid, snap["id"])
         self.audit.append(actor="system", event="snapshot", sandbox_id=sid, tool=tool,
                           payload={**ref, "snapshot_id": snap["id"], "image": snap["image"]})
         return snap
 
     # ---- 도구 호출 --------------------------------------------------------
     def call_tool(self, sid: str, tool: str, args: dict[str, Any], actor: str = "agent") -> ToolOutcome:
+        """샌드박스 하나가 동시에 돌리는 도구 호출 수를 제한한다. 출력 없는 허용 명령(tail -f 등)을
+        여러 개 띄워 도구 실행 스레드를 제한 시간 내내 붙잡지 못하게 한다."""
+        self.close_idle_gui_bursts()
+        limit = self.sandboxes.settings.tool_concurrency
+        with self._busy_lock:
+            if limit > 0 and self._busy.get(sid, 0) >= limit:
+                raise ServiceError(429, f"이 샌드박스의 도구 호출이 이미 {limit}개 실행 중. 끝난 뒤 다시 호출할 것.")
+            self._busy[sid] = self._busy.get(sid, 0) + 1
+        try:
+            if tool in SNAPSHOT_TOOLS:
+                # 스냅샷 상한 확인부터 스냅샷 생성까지 한 번에 하나씩. 아니면 동시 호출이 모두 상한 확인을
+                # 통과한 뒤 각자 스냅샷을 떠 상한을 넘는다 (GUI 구간 판단도 같다).
+                with self._busy_lock:
+                    lock = self._snap_locks.setdefault(sid, threading.Lock())
+                with lock:
+                    return self._call_tool(sid, tool, args, actor)
+            return self._call_tool(sid, tool, args, actor)
+        finally:
+            with self._busy_lock:
+                self._busy[sid] -= 1
+
+    def _call_tool(self, sid: str, tool: str, args: dict[str, Any], actor: str) -> ToolOutcome:
         if tool not in TOOLS:
             raise ServiceError(404, f"알 수 없는 도구: {tool}")
         self.sandboxes.get(sid)  # 없으면 SandboxError
@@ -183,6 +280,11 @@ class AgentBox:
             req_id = self.audit.append(actor=actor, event="tool_request", sandbox_id=sid, tool=tool,
                                        payload={"args": self._logged_args(tool, args)})
             decision = self.policy.decide(tool, args)
+            if decision.action == ALLOW and self._over_snapshot_quota(sid, tool, args):
+                quota = self.sandboxes.settings.snapshot_quota
+                decision = Decision(REQUIRE_APPROVAL, "snapshot-quota",
+                                    f"스냅샷이 {quota}개 이상 쌓여 덮어쓰기·삭제마다 사람의 승인을 받음",
+                                    decision.matched)
             self.audit.append(actor="system", event="policy_decision", sandbox_id=sid, tool=tool,
                               payload={"request": req_id, **decision.as_dict()})
         except AuditWriteError as e:
@@ -251,6 +353,7 @@ class AgentBox:
     # ---- 승인 결정 --------------------------------------------------------
     def expire_stale(self) -> None:
         """AP-1: 기한이 지난 대기 요청을 거부로 끝낸다. 조회·결정 때마다 부른다."""
+        self.close_idle_gui_bursts()
         limit = datetime.now(timezone.utc) - timedelta(seconds=self.approval_timeout)
         for apr in self.approvals.list(status=A.PENDING):
             if datetime.fromisoformat(apr["created_at"]) > limit:
@@ -346,6 +449,7 @@ class AgentBox:
             if cur and cur.session != session:
                 raise ServiceError(409, f"다른 사람 세션({cur.session})이 이미 조작 중")
             if not cur:
+                self._close_gui_burst(sid, "human_takeover")  # 사람이 바꾸는 것은 에이전트 구간에 넣지 않는다
                 self.log_human("human_takeover", sid, {"session": session})  # 기록 못 하면 인수하지 않는다
                 self.desktop.take(sid, session)
         return self.desktop.state(sid, session)
@@ -370,6 +474,7 @@ class AgentBox:
             # 기록 없이 에이전트에게 화면을 넘기지 않는다.
             raise ServiceError(503, f"{e}. 기록할 수 없어서 돌려주지 않음.") from e
         self.desktop.release(sid)
+        self._gui_input_at.pop(sid, None)  # 사람이 바꾼 상태까지 담도록 에이전트의 다음 GUI 입력 때 스냅샷
 
     def close(self) -> None:
         """DB 연결과 Docker 클라이언트를 닫는다 (서버 종료, 테스트)."""
@@ -394,6 +499,7 @@ class AgentBox:
 
     def end_desktop(self, sid: str, reason: str) -> None:
         """삭제·복원 때: 인수 상태를 기록하고 정리, 열린 화면 연결을 끊는다."""
+        self._close_gui_burst(sid, reason)  # 되돌리거나 지우기 전에, 그때까지 바뀐 것을 남긴다
         if self.desktop.lease(sid):
             try:
                 self.handback(sid, None, reason)

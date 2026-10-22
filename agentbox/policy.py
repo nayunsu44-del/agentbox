@@ -74,12 +74,63 @@ def command_names(command: str) -> set[str]:
 
 
 # 출력을 버리는 리다이렉션은 파일을 바꾸지 않으므로 읽기 전용 판정에서 빼고 본다.
-_DEVNULL = re.compile(r"\d*>>?\s*/dev/null|\d*>&\d")
+# 단, '/dev/null' 뒤나 'N>&M' 뒤에 파일 이름 글자가 이어지면(예: '>&2evil', '>/dev/nullx')
+# 그건 진짜 파일 리다이렉션이므로 벗겨내지 않는다(뒤의 '>' 검사가 승인으로 보내도록).
+_DEVNULL = re.compile(r"\d*>>?\s*/dev/null(?![\w./-])|\d*>&\d+(?![\w./-])")
+
+# bash에서 '#'이 주석을 여는 자리(줄 맨 앞, 또는 따옴표 밖 공백·구분자 바로 뒤).
+_COMMENT_BOUNDARY = set(" \t\n\r;&|()")
+
+
+def has_bash_comment(command: str) -> bool:
+    """bash가 주석으로 버리는 '#'(따옴표 밖, 단어 시작 위치)이 있으면 True.
+
+    정책 렉서는 commenters=""라 '#'을 평범한 글자로 보지만 bash는 주석으로 버린다.
+    이 틈을 막으려고, 따옴표 밖 단어-시작 '#'이 하나라도 있으면 '단순 명령'으로 보지 않는다.
+    따옴표·이스케이프는 bash와 같게 따라간다. 따옴표 안이라고 bash보다 오래 판단하면 실제 주석을
+    놓쳐 승인을 건너뛴다(예: 따옴표 밖 \\"를 따옴표 시작으로 보면). 애매하면 주석이 있다고 본다.
+    - 작은따옴표 안: 이스케이프 없음. ' 만 닫는다.
+    - 큰따옴표 안·따옴표 밖: \\ 다음 글자는 글자 그대로라 따옴표를 열거나 닫지 않고 주석도 시작하지 않는다.
+    ($'…' 같은 다른 따옴표는 simple_programs가 '$'에서 이미 승인으로 보낸다.)
+    """
+    quote: str | None = None
+    prev = ""   # 따옴표 밖에서 바로 앞 글자 ("" = 문자열 시작)
+    escaped = False
+    for ch in command:
+        if escaped:
+            escaped = False
+            prev = ch
+            continue
+        if quote == "'":
+            if ch == "'":
+                quote = None
+            prev = ch
+            continue
+        if ch == "\\":
+            escaped = True
+            prev = ch
+            continue
+        if quote == '"':
+            if ch == '"':
+                quote = None
+            prev = ch
+            continue
+        if ch in ("'", '"'):
+            quote = ch
+            prev = ch
+            continue
+        if ch == "#" and (prev == "" or prev in _COMMENT_BOUNDARY):
+            return True
+        prev = ch
+    return False
 
 
 def simple_programs(command: str) -> set[str] | None:
     """변수·명령 치환, 파일 쓰기 리다이렉션, 환경 변수 접두가 없는 단순 명령이면 실행될 프로그램 이름들.
     아니면 None. 읽기 전용 허용 목록(only_commands)은 None이면 맞지 않는 것으로 친다."""
+    # bash 주석('#')이 있으면 정책 렉서와 bash의 해석이 갈린다. 승인으로 보낸다.
+    if has_bash_comment(command):
+        return None
     cmd = _DEVNULL.sub(" ", command)
     if any(s in cmd for s in ("$", "`", ">", "<(")):
         return None

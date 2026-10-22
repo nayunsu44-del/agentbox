@@ -90,13 +90,82 @@ def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def _truncate(b: bytes | None) -> str:
+def _truncate(b: bytes | None, total: int | None = None) -> str:
+    """total은 잘라 낸 뒤 b만 들고 있을 때의 원래 길이."""
     if not b:
         return ""
+    total = len(b) if total is None else total
     s = b[:_OUT_LIMIT].decode("utf-8", errors="replace")
-    if len(b) > _OUT_LIMIT:
-        s += f"\n…({len(b) - _OUT_LIMIT} bytes 생략)"
+    if total > _OUT_LIMIT:
+        s += f"\n…({total - _OUT_LIMIT} bytes 생략)"
     return s
+
+
+class _Head:
+    """스트림 앞쪽 _OUT_LIMIT 바이트만 들고 나머지는 세기만 한다 (컨트롤 플레인 메모리 상한)."""
+
+    def __init__(self) -> None:
+        self.buf = bytearray()
+        self.total = 0
+
+    def add(self, chunk: bytes | None) -> None:
+        if not chunk:
+            return
+        self.total += len(chunk)
+        room = _OUT_LIMIT + 1 - len(self.buf)
+        if room > 0:
+            self.buf += chunk[:room]
+
+    def text(self) -> str:
+        return _truncate(bytes(self.buf), self.total)
+
+
+def _parse_outbox(raw: bytes) -> list[dict[str, Any]]:
+    """`find -printf '%s\\t%T@\\t%f\\0'` 출력을 결과함 목록으로 바꾼다.
+
+    레코드는 NUL로 나누고, 각 레코드는 크기·수정시각·이름 순서로 탭 둘(이름은 탭 2개 뒤 전부)이다.
+    이름에 탭·줄바꿈이 들어가도 split(maxsplit=2)로 이름 안에 머문다. 숫자 변환이 깨지는 레코드는
+    건너뛰어, 믿을 수 없는 컨테이너 출력이 컨트롤 플레인에서 500을 일으키지 못하게 한다.
+    """
+    out: list[dict[str, Any]] = []
+    for rec in raw.decode("utf-8", errors="replace").split("\0"):
+        if not rec:
+            continue
+        parts = rec.split("\t", 2)
+        if len(parts) != 3:
+            continue
+        size, mtime, name = parts
+        try:
+            nbytes = int(size)
+            when = datetime.fromtimestamp(float(mtime), timezone.utc).isoformat(timespec="seconds")
+        except (ValueError, OverflowError, OSError):
+            continue
+        out.append({"name": name, "bytes": nbytes, "mtime": when})
+    return sorted(out, key=lambda x: x["name"])
+
+
+_MANIFEST_CAP = 8 * 1024 * 1024
+
+
+def _parse_manifest(raw: bytes) -> tuple[dict[str, tuple[int, str, str]], bool]:
+    """`find -printf '%P\\0%s\\0%T@\\0%C@\\0'` 출력(앞 _MANIFEST_CAP 바이트)을 {경로: (크기, mtime, ctime)}으로.
+    상한에서 잘렸으면 끝의 불완전한 레코드는 버리고 truncated를 돌려준다."""
+    truncated = len(raw) >= _MANIFEST_CAP
+    fields = raw.decode("utf-8", errors="replace").split("\0")[:-1]  # 끝의 NUL 없는 조각은 잘린 것
+    out: dict[str, tuple[int, str, str]] = {}
+    for i in range(0, len(fields) - 3, 4):
+        path, size, mtime, ctime = fields[i:i + 4]
+        try:
+            out[path] = (int(size), mtime, ctime)
+        except ValueError:
+            continue
+    return out, truncated
+
+
+def diff_manifest(old: dict[str, tuple], new: dict[str, tuple]) -> dict[str, list[str]]:
+    return {"added": sorted(new.keys() - old.keys()),
+            "modified": sorted(k for k in new.keys() & old.keys() if new[k] != old[k]),
+            "deleted": sorted(old.keys() - new.keys())}
 
 
 def safe_path(path: str) -> str:
@@ -272,6 +341,11 @@ class SandboxManager:
             src = Path(source_dir).expanduser().resolve()
             if not src.is_dir():
                 raise SandboxError(f"원본 폴더가 없음: {src}")
+            # 원본은 컨테이너 root가 권한 검사 없이(DAC_OVERRIDE) 복사해 에이전트 소유로 바꾼다.
+            # 데이터 폴더와 겹치면 사람 토큰·DB·다른 샌드박스 원본이 에이전트에게 넘어간다.
+            for d in {self.settings.home.resolve(), self.settings.db_path.resolve().parent}:
+                if src == d or d in src.parents or src in d.parents:
+                    raise SandboxError(f"원본 폴더가 agentbox 데이터 폴더({d})와 겹침. 데이터 폴더 밖의 폴더를 고를 것")
         else:
             src = (self.settings.home / "sources" / sid).resolve()
             src.mkdir(parents=True)
@@ -316,6 +390,12 @@ class SandboxManager:
         except NotFound:
             pass
         self._set(sid, status="deleted")
+        # 스냅샷 이미지는 컨테이너와 따로 남는다. 샌드박스를 지우면 같이 지워 디스크를 돌려준다.
+        for s in self.list_snapshots(sid):
+            try:
+                self.client.images.remove(s["image"], force=True)
+            except (NotFound, APIError):
+                pass
 
     # ---- SB-2 일시정지·재개 -------------------------------------------
     def pause(self, sid: str) -> None:
@@ -355,6 +435,18 @@ class SandboxManager:
             rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
 
+    def workspace_manifest(self, sid: str) -> tuple[dict[str, tuple[int, str, str]], bool]:
+        """/workspace의 파일 목록 {경로: (크기, mtime, ctime)}. root로 읽어 에이전트가 권한으로 숨기지 못하게 한다.
+        mtime은 파일 주인이 touch로 되돌릴 수 있지만 ctime은 못 되돌린다(시계를 바꿀 권한이 없다)."""
+        c = self._container(sid)
+        res = c.exec_run(["sh", "-c", f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0%C@\\0' "
+                                      f"| head -c {_MANIFEST_CAP}"], user="0:0", demux=True)
+        return _parse_manifest(res.output[0] or b"")
+
+    def snapshot_count(self, sid: str) -> int:
+        with self._lock:
+            return self.conn.execute("SELECT COUNT(*) FROM snapshots WHERE sandbox_id = ?", (sid,)).fetchone()[0]
+
     def restore(self, sid: str, snap_id: str) -> dict[str, Any]:
         rec = self._rec(sid)
         snaps = {s["id"]: s for s in self.list_snapshots(sid)}
@@ -376,14 +468,20 @@ class SandboxManager:
         c = self._require_running(sid)
         t = self.settings.exec_timeout
         # umask 002: 데스크톱 계정도 에이전트가 만든 파일을 고칠 수 있게
-        res = c.exec_run(["timeout", "-k", "5", str(t), "bash", "-c", "umask 002\n" + command],
-                         user=AGENT_UID, workdir=WORKSPACE, demux=True)
-        out, err = res.output if isinstance(res.output, tuple) else (res.output, b"")
-        code = res.exit_code
+        # 출력은 스트림으로 받아 앞부분만 남긴다. 한꺼번에 받으면 제한 시간 동안 나온 전부가
+        # 컨트롤 플레인 메모리에 쌓인다 (cat /dev/zero 하나로 수백 MB).
+        api = self.client.api
+        ex = api.exec_create(c.id, ["timeout", "-k", "5", str(t), "bash", "-c", "umask 002\n" + command],
+                             user=AGENT_UID, workdir=WORKSPACE)
+        out, err = _Head(), _Head()
+        for o, e in api.exec_start(ex["Id"], stream=True, demux=True):
+            out.add(o)
+            err.add(e)
+        code = api.exec_inspect(ex["Id"])["ExitCode"]
         return {
             "exit_code": code,
-            "stdout": _truncate(out),
-            "stderr": _truncate(err),
+            "stdout": out.text(),
+            "stderr": err.text(),
             "timed_out": code in (124, 137),
         }
 
@@ -482,18 +580,16 @@ class SandboxManager:
         return c.exec_run(["test", "-d", safe_path(path)], user=AGENT_UID).exit_code == 0
 
     def outbox_list(self, sid: str) -> list[dict[str, Any]]:
-        """결과함(/workspace/outbox) 바로 아래의 일반 파일. 링크와 폴더는 보이지 않는다."""
+        """결과함(/workspace/outbox) 바로 아래의 일반 파일. 링크와 폴더는 보이지 않는다.
+
+        파일 이름은 에이전트가 정하므로 믿을 수 없는 데이터다. 레코드는 NUL로 나누고 이름(%f)을
+        맨 뒤에 둬서, 이름에 탭·줄바꿈이 들어가도 가짜 행을 끼워 넣거나 파싱을 깨지 못하게 한다.
+        """
         c = self._require_running(sid)
         script = (f'[ -d {OUTBOX} ] && [ ! -L {OUTBOX} ] || exit 0; '
-                  f'find {OUTBOX} -mindepth 1 -maxdepth 1 -type f -printf "%f\\t%s\\t%T@\\n"')
+                  f"find {OUTBOX} -mindepth 1 -maxdepth 1 -type f -printf '%s\\t%T@\\t%f\\0'")
         res = c.exec_run(["sh", "-c", script], user=AGENT_UID, demux=True)
-        out = []
-        for line in (res.output[0] or b"").decode("utf-8", errors="replace").splitlines():
-            parts = line.split("\t")
-            if len(parts) == 3:
-                out.append({"name": parts[0], "bytes": int(parts[1]),
-                            "mtime": datetime.fromtimestamp(float(parts[2]), timezone.utc).isoformat(timespec="seconds")})
-        return sorted(out, key=lambda x: x["name"])
+        return _parse_outbox(res.output[0] or b"")
 
     def outbox_read(self, sid: str, name: str) -> bytes:
         c = self._require_running(sid)

@@ -1,0 +1,1130 @@
+[
+  {
+    "coverage_id": "agentbox%2Fagent.py%23LLM%20loop%20%2B%20agentbox%2Fmcp_server.py%20tools::agentbox%2Fagent.py%23prompt-injection%20to%20tool%20action%20%28approval%20is%20only%20control%29::agentbox%2Fagent.py::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
+    "canonical_refs": {
+      "surface": "agentbox/agent.py#LLM loop + agentbox/mcp_server.py tools",
+      "boundary": "agentbox/agent.py#prompt-injection to tool action (approval is only control)",
+      "subsystem": "agentbox/agent.py",
+      "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content"
+    },
+    "surface": "agentbox/agent.py#LLM loop + agentbox/mcp_server.py tools",
+    "boundary": "agentbox/agent.py#prompt-injection to tool action (approval is only control)",
+    "subsystem": "agentbox/agent.py",
+    "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+    "starting_paths": [
+      "agentbox/agent.py",
+      "agentbox/mcp_server.py",
+      "agentbox/service.py",
+      "demo/injected_agent.py"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+      "AI-AND-LLM.md#Tool-argument injection into a downstream sink",
+      "AI-AND-LLM.md#Action-confirmation and approval binding",
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-deploy-wild-llm",
+    "reviewed_paths": [
+      "agentbox/agent.py",
+      "agentbox/api.py",
+      "agentbox/cli.py",
+      "agentbox/mcp_server.py",
+      "agentbox/service.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-deploy-wild-llm",
+        "reviewed_paths": [
+          "agentbox/agent.py",
+          "agentbox/mcp_server.py",
+          "agentbox/service.py",
+          "agentbox/api.py"
+        ],
+        "invariant": "Injected/retrieved file content must not let the agent invoke authority the human did not delegate, reach a sink it cannot reach directly, or defeat the approval control deterministically (guardrail prompt is not a boundary).",
+        "method": "source",
+        "result": "The agent reads content only from its own sandbox (/workspace copy of human-provided /source, or human-uploaded files). agent.py run() restricts calls to the 3 declared tools (agent.py:261); mcp_server.py exposes 9 but every call routes through the control-plane HTTP API under the sandbox's own agt_ token (mcp_server.py:_call, agent.py ToolClient.call). All exec/file/gui calls pass service.call_tool -> policy.decide -> deny/require_approval/execute; dangerous ops await the human (approval is the deterministic control, not the SYSTEM_PROMPT 'content is data' line). An agent token cannot approve: POST /approvals/{id} returns 403 and audits approval_forbidden (api.py:221-230). Injected content therefore drives only the sandbox's own delegated authority for the task the human started; it cannot invoke a new principal's authority or self-approve. network=none blocks in-sandbox exfil. No code-level boundary failure in the loop.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-deploy-wild-llm",
+        "reviewed_paths": [
+          "agentbox/agent.py",
+          "agentbox/mcp_server.py",
+          "agentbox/cli.py"
+        ],
+        "invariant": "Injected content must not redirect the agent-brain's network egress to an attacker endpoint, and the agent-brain must not leak the agent/human token into model context.",
+        "method": "source",
+        "result": "The agent-brain egress is fixed at startup: LLMConfig.base_url (env AGENTBOX_LLM_BASE_URL, cli.py:304-309) and the control-plane AGENTBOX_URL; injected file/tool content cannot mutate these (no tool sets env or base_url). The agent's in-sandbox tools are network=none, so content cannot open arbitrary egress. Tokens live only in httpx Authorization headers (agent.py:83, mcp_server.py:55); SYSTEM_PROMPT (agent.py:30-36) carries no secret, and tool results returned to the model are sandbox file/command output only. cmd_agent refuses a hum_ token for the agent (cli.py:298-299); note mcp_server.py lacks this guard (defense-in-depth gap, operator-config footgun, not reachable by injected content). No exfil-redirect or secret-into-context path.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fapi.py%23GET%20%2Fsandboxes%2F%7Bsid%7D%2Foutbox::agentbox%2Fsandbox.py%23outbox_list%20find%20-printf%20parsing%20%28container-controlled%29::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "agentbox/api.py#GET /sandboxes/{sid}/outbox",
+      "boundary": "agentbox/sandbox.py#outbox_list find -printf parsing (container-controlled)",
+      "subsystem": "agentbox/sandbox.py",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "agentbox/api.py#GET /sandboxes/{sid}/outbox",
+    "boundary": "agentbox/sandbox.py#outbox_list find -printf parsing (container-controlled)",
+    "subsystem": "agentbox/sandbox.py",
+    "attack_class": "ATTACK-CLASSES.md#Injection",
+    "starting_paths": [
+      "agentbox/sandbox.py",
+      "agentbox/web.py",
+      "agentbox/api.py",
+      "agentbox/templates/_outbox.html"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-files",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/sandbox.py",
+      "agentbox/templates/_outbox.html",
+      "agentbox/web.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-files",
+        "reviewed_paths": [
+          "agentbox/sandbox.py",
+          "agentbox/api.py",
+          "agentbox/web.py"
+        ],
+        "invariant": "Control-plane parsing of the container-controlled outbox listing must not fault on adversarial file names (the container is a lower-trust producer).",
+        "method": "source",
+        "result": "outbox_list (sandbox.py:484-496) runs `find ... -type f -printf \"%f\\t%s\\t%T@\\n\"`, then for each splitlines() line does parts=line.split('\\t'); if len(parts)==3: int(parts[1]), float(parts[2]) with no try/except. A basename containing a newline plus TAB-separated tokens (the agent controls outbox names; find prints %f raw) injects a synthetic 3-field line whose middle field is non-numeric. Bounded pure-function harness: a real `find -mindepth 1 -maxdepth 1 -type f -printf` over a dummy file named `a\\nFAKE\\tNOTANUM\\tNOTFLOAT\\nb`, fed through the exact parse loop, raised `ValueError: invalid literal for int() with base 10: 'NOTANUM'`. guard() (api.py:124) and web.outbox_frag (web.py:205-214) catch only ServiceError/SandboxError/APIError, so the ValueError surfaces as HTTP 500 for GET /sandboxes/{sid}/outbox and the /ui outbox fragment.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-files",
+        "reviewed_paths": [
+          "agentbox/web.py",
+          "agentbox/templates/_outbox.html"
+        ],
+        "invariant": "Agent-controlled outbox file names rendered in the operator UI must not become stored XSS, and the outbox must not expose files via symlinks.",
+        "method": "source",
+        "result": "_outbox.html renders {{ f.name }} / {{ f.name | urlencode }} with no |safe filter; FastAPI Jinja2Templates enables autoescape for .html by default (no override found in web.py), so HTML and attribute metacharacters in names are escaped -> no XSS (and names with newline/tab crash parsing before render). outbox_list filters `-type f` and rejects a symlinked outbox dir; outbox_read (sandbox.py:498) rejects symlinked targets and symlinked outbox, so no symlink-based exfiltration through the outbox. The only defect is the unguarded numeric parse above.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "agentbox/sandbox.py:outbox_list:unguarded-int-float-on-container-filename"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fapprovals%2F%7Baid%7D::agentbox%2Fservice.py%23decide%20%28snapshot-then-execute%20stored%20args%29::agentbox%2Fservice.py::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "agentbox/api.py#POST /approvals/{aid}",
+      "boundary": "agentbox/service.py#decide (snapshot-then-execute stored args)",
+      "subsystem": "agentbox/service.py",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "agentbox/api.py#POST /approvals/{aid}",
+    "boundary": "agentbox/service.py#decide (snapshot-then-execute stored args)",
+    "subsystem": "agentbox/service.py",
+    "attack_class": "ATTACK-CLASSES.md#Business logic",
+    "starting_paths": [
+      "agentbox/service.py",
+      "agentbox/approvals.py",
+      "agentbox/sandbox.py",
+      "agentbox/cli.py",
+      "agentbox/templates/_approvals.html"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-approval",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/approvals.py",
+      "agentbox/cli.py",
+      "agentbox/policy.py",
+      "agentbox/sandbox.py",
+      "agentbox/service.py",
+      "agentbox/templates/_approvals.html",
+      "agentbox/web.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-approval",
+        "reviewed_paths": [
+          "agentbox/service.py",
+          "agentbox/approvals.py",
+          "agentbox/policy.py",
+          "agentbox/templates/_approvals.html"
+        ],
+        "invariant": "On approve, decide() executes the exact tool+args that policy.decide() evaluated and that the human-visible approval card displayed; 'no re-policy / no re-preview' cannot let a different or more dangerous effect run than was evaluated and shown.",
+        "method": "source",
+        "result": "decide() (service.py:264-302) reads sid/tool/args straight from the stored approval row (apr['sandbox_id'],apr['tool'],apr['args']) and runs _run_tool(sid,tool,args) verbatim. The same args object was the input to policy.decide(tool,args) at request time in call_tool (service.py:185) and was stored unchanged by approvals.create -> json.dumps (approvals.py:49-58), reloaded by approvals.get/_row -> json.loads (approvals.py:61-65,98-104). No code path mutates approvals.args between create and decide, and the approvals DB is written only by the system (no agent/P1 write surface). The human card renders the exec command with NO truncation filter ({{ a.args.command }} in _approvals.html:8) and labels it the command that will actually run, so the human sees the ground-truth of what executes. Invariant holds: stored-arg execution is faithful to the evaluated+displayed request.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-approval",
+        "reviewed_paths": [
+          "agentbox/service.py",
+          "agentbox/approvals.py",
+          "agentbox/api.py",
+          "agentbox/web.py"
+        ],
+        "invariant": "An approval leaves PENDING at most once; a completed/denied/expired/failed approval cannot be re-approved or replayed to double-execute (no double-approve / double-spend).",
+        "method": "source",
+        "result": "approvals.claim (approvals.py:82-89) performs UPDATE approvals SET status=... WHERE id=? AND status='pending' under a process-wide threading.Lock on an autocommit (isolation_level=None) SQLite connection and returns rowcount==1. decide() raises ServiceError(409) when claim returns False (service.py:270-271). Concurrent or repeated POST /approvals/{aid} (api.py:221-233) and the web path (web.py:193-198) both funnel through the single atomic claim, so exactly one caller transitions PENDING->APPROVED/DENIED and executes; EXECUTED/DENIED/EXPIRED/FAILED are terminal (never re-match status='pending'). Replay of a finished flow is rejected. Invariant holds.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-approval",
+        "reviewed_paths": [
+          "agentbox/service.py",
+          "agentbox/sandbox.py"
+        ],
+        "invariant": "On approve, a filesystem rollback point covering the agent-writable area (/workspace) is created and recorded BEFORE the stored args run, and if the snapshot or its audit record cannot be written the tool does not execute (fail-closed AP-2).",
+        "method": "source",
+        "result": "decide() calls _snapshot(sid,tool,'before {aid}') UNCONDITIONALLY before _run_tool (service.py:285-295). _snapshot->sandboxes.snapshot does c.commit(pause=True) of the container writable layer (sandbox.py:336-349). /workspace lives in that writable layer: _run_container mounts only source_dir->/source read-only (sandbox.py:249) and no /workspace volume/tmpfs/bind exists anywhere (grep confirmed), matching the module docstring (sandbox.py:5). Therefore delete_file (the only delete tool reaching decide; policy rule delete-file-needs-approval) and any file-modifying approved exec are snapshot-recoverable. The snapshot+tool_execute-audit block is wrapped so any SandboxError/AuditWriteError/Exception -> approvals.finish(FAILED) + ServiceError(503) with NO execution (service.py:289-292); a later _run_tool SandboxError/HumanControl -> finish(FAILED, snapshot_id) (service.py:296-299). Invariant holds; rollback point is source-confirmed real, not defeated by a volume-mounted /workspace.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-approval",
+        "reviewed_paths": [
+          "agentbox/service.py",
+          "agentbox/approvals.py"
+        ],
+        "invariant": "A pending approval older than approval_timeout cannot be approved-and-executed (time-based control; no stale execution).",
+        "method": "source",
+        "result": "decide() calls expire_stale() as its first action (service.py:265). expire_stale (service.py:252-262) computes limit=now(utc)-timeout and atomically claims every PENDING row with created_at<=limit as EXPIRED; so a stale target is already non-PENDING when decide() then calls claim(aid,APPROVED), which fails -> 409, blocking execution. created_at (approvals._now, tz-aware UTC isoformat) and limit (datetime.now(timezone.utc)) are both tz-aware -> datetime.fromisoformat comparison has no naive/aware TypeError and no local-tz skew. Because the timeout is enforced inside decide() itself, every approve entry point (api.py, web.py, cli via HTTP) is covered regardless of whether a prior GET ran. Invariant holds.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-approval",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/web.py",
+          "agentbox/service.py",
+          "agentbox/cli.py"
+        ],
+        "invariant": "Only a human principal can drive box.decide to execute an approved tool; an agent token is rejected (403, audited) and no lower-trust path reaches execution.",
+        "method": "source",
+        "result": "The only two callers of box.decide are api.py:233 and web.py:198. api.py decide (api.py:221-233) rejects p.kind!='human' with 403 and audits event='approval_forbidden' before raising, and validates body.decision in {approve,deny}; it passes actor='human'. web.py decide depends on browser_human (human-authenticated session) and passes actor='human'. cli.py cmd_approve (cli.py:182-203) merely issues HTTP POST /approvals/{id} with the human token and holds no independent decide logic. GET /approvals/{aid} gives an agent only {id,status,result,decided_at} and no execution (api.py:201-212). _run_tool against a paused/deleted/non-running sandbox raises SandboxError -> finish(FAILED), and args pointing outside /workspace (e.g. delete_file /source/x) raise in _workspace_path -> FAILED, so no execution outside authority. Invariant holds.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%20%28source_dir%29::agentbox%2Fsandbox.py%23create%20source_dir%20bind%20%2B%20root%20cp%20-a::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "agentbox/api.py#POST /sandboxes (source_dir)",
+      "boundary": "agentbox/sandbox.py#create source_dir bind + root cp -a",
+      "subsystem": "agentbox/sandbox.py",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "agentbox/api.py#POST /sandboxes (source_dir)",
+    "boundary": "agentbox/sandbox.py#create source_dir bind + root cp -a",
+    "subsystem": "agentbox/sandbox.py",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "agentbox/sandbox.py",
+      "agentbox/service.py",
+      "agentbox/config.py"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-files",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/config.py",
+      "agentbox/desktop.py",
+      "agentbox/sandbox.py",
+      "agentbox/service.py",
+      "agentbox/web.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-files",
+        "reviewed_paths": [
+          "agentbox/sandbox.py",
+          "agentbox/service.py",
+          "agentbox/config.py"
+        ],
+        "invariant": "source_dir for sandbox creation must be constrained to an allowlisted/contained base so a create-capable principal cannot bind-and-copy arbitrary host directories into an agent-readable workspace.",
+        "method": "source",
+        "result": "create (sandbox.py:264-284) only does Path(source_dir).expanduser().resolve() and is_dir(); there is NO allowlist or containment check. The resolved host path is bind-mounted read-only at /source (_run_container, sandbox.py:249), then the setup command (sandbox.py:289-294) runs as root (user='0:0') `cp -a /source/. /workspace/ ... chown -R 1000:1000 /workspace`, making every copied file agent-readable. service.create_sandbox (service.py:305) passes source_dir through unchanged. config.py shows the agentbox home (default ./data) holds human_token (0600) and agentbox.db, so pointing source_dir at the home or any host dir (e.g. /etc, /root) copies those contents into /workspace.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-files",
+        "reviewed_paths": [
+          "agentbox/web.py",
+          "agentbox/api.py",
+          "agentbox/desktop.py"
+        ],
+        "invariant": "The create surface (which chooses a host directory) must not be reachable by a principal of lower trust than the host/control-plane operator.",
+        "method": "source",
+        "result": "POST /ui/sandboxes (web.py:149-162) depends on browser_human and reads source_dir from a Form field; any valid browser session cookie satisfies browser_human, and the response (_created.html, web.py:159) hands the new sandbox's agent_token to that same caller. desktop.redeem/new_session (desktop.py:97-116) mint an UNSCOPED 12h session for a ticket of scope sid OR '*', so a holder of a sandbox-scoped desktop-view ticket (intended: view one screen) obtains a session that reaches POST /ui/sandboxes. The agent token then lets the caller read the copied host files via read_file/list_dir (sandbox.py:399, safe_path permits /workspace). POST /sandboxes (api.py:133) is human_only; the UI path is the lower-trust reacher.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "agentbox/sandbox.py:create:source_dir-no-allowlist-arbitrary-host-copy"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ffiles::agentbox%2Fsandbox.py%23clean_name%20%2F%20upload%20mv%20-f%20%2F%20safe_path::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "agentbox/api.py#POST /sandboxes/{sid}/files",
+      "boundary": "agentbox/sandbox.py#clean_name / upload mv -f / safe_path",
+      "subsystem": "agentbox/sandbox.py",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "agentbox/api.py#POST /sandboxes/{sid}/files",
+    "boundary": "agentbox/sandbox.py#clean_name / upload mv -f / safe_path",
+    "subsystem": "agentbox/sandbox.py",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "agentbox/sandbox.py",
+      "agentbox/service.py",
+      "agentbox/api.py"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-files",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/sandbox.py",
+      "agentbox/service.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-files",
+        "reviewed_paths": [
+          "agentbox/sandbox.py",
+          "agentbox/service.py"
+        ],
+        "invariant": "A human-uploaded file name must resolve to a single direct child of /workspace with no traversal, option, or shell injection into the move sink.",
+        "method": "source",
+        "result": "clean_name (sandbox.py:49) rejects empty, '.'/'..', any byte in [\\x00-\\x1f\\x7f/\\\\] (so slash, backslash, newline, tab), and names >200 bytes; upload (sandbox.py:462) builds path = f'{WORKSPACE}/{name}' (single component, no separator) and runs mv via an argv list ['mv','-f','--',tmp,path] through docker exec_run (no shell) with '--' terminating options. No shell metachar or leading-dash injection reaches a sink. safe_path/_workspace_path (sandbox.py:102,411) additionally normalize and confine the write_file/delete_file siblings to /workspace.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-files",
+        "reviewed_paths": [
+          "agentbox/sandbox.py",
+          "agentbox/service.py"
+        ],
+        "invariant": "An attacker-pre-placed symlink at the upload destination must not let mv -f write outside /workspace or through to an out-of-tree target.",
+        "method": "source",
+        "result": "Local bash fixture on dummy files: `mv -f -- tmp ws/linkfile` where ws/linkfile is a symlink to outside/target.txt REPLACED the symlink with the uploaded regular file and left outside/target.txt byte-for-byte unchanged (rename() does not follow the final symlink component). For a symlink-to-directory, import_file's is_dir guard (sandbox.py:480 test -d, which follows symlinks) returns True and import_file (service.py:322) refuses with HTTP 409 before upload is called. All writes execute as uid1000 inside the container and /source is bind-mounted read-only, so even a redirected write cannot escape the container or reach the host.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-files",
+        "reviewed_paths": [
+          "agentbox/api.py"
+        ],
+        "invariant": "The file-import surface must be reachable only by human-kind principals, not by the sandbox agent token.",
+        "method": "source",
+        "result": "put_files (api.py:247) depends on screen_human; screen_principal (api.py:108) returns Principal('agent') for an agent bearer token and screen_human (api.py:119) then raises 403, so the agent cannot drive uploads. The browser-session path is Origin-checked (same_origin, api.py:101). No agent-reachable write-escalation via this endpoint.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D::agentbox%2Fapi.py%23principal%20%2F%20human_only%20%2F%20agent-sandbox%20binding::agentbox%2Fapi.py::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{tool}",
+      "boundary": "agentbox/api.py#principal / human_only / agent-sandbox binding",
+      "subsystem": "agentbox/api.py",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{tool}",
+    "boundary": "agentbox/api.py#principal / human_only / agent-sandbox binding",
+    "subsystem": "agentbox/api.py",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "agentbox/api.py",
+      "agentbox/sandbox.py",
+      "agentbox/service.py"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-webauth",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/config.py",
+      "agentbox/sandbox.py",
+      "agentbox/service.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-webauth",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/sandbox.py"
+        ],
+        "invariant": "Agent token is bound to exactly one sandbox; an agent principal cannot invoke a tool on a sandbox other than its own.",
+        "method": "source",
+        "result": "principal() (api.py:85-94) resolves an agent token only via sandbox_for_token(), which selects a row WHERE token_hash=? AND status!='deleted' (sandbox.py:216-221), so an agent Principal always carries a non-null sandbox_id tied to that token. call_tool (api.py:187-192) enforces `if p.kind=='agent' and p.sandbox_id != sid: 403` BEFORE box.call_tool runs. sid/tool are path params and actor is set from p.kind (not body), so the body cannot override the bound sandbox. The same binding check is applied identically on the sibling principal-gated paths (get_sandbox api.py:144, get_approval api.py:207-209, desktop_state api.py:297), so there is no weaker parallel path to the same resource. Enforced.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-webauth",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/sandbox.py",
+          "agentbox/config.py"
+        ],
+        "invariant": "Authentication fails closed: absent/malformed/empty/unknown bearer tokens are rejected and never resolve to a privileged principal.",
+        "method": "source",
+        "result": "principal() requires an 'authorization' header beginning (case-insensitively) with 'bearer '; otherwise 401 (api.py:86-87). The token is split+stripped; a human match requires secrets.compare_digest(token, human_token) where human_token is always non-empty ('hum_'+token_urlsafe, config.py:78-90), so an empty token can never match human. An empty/arbitrary token then falls to sandbox_for_token(), which hashes it (sha256) and does an indexed equality lookup — matching a stored agt_ hash requires a sha256 preimage, so no empty/guessed token resolves to an agent. Unknown token => 401 (api.py:94). Bounded reasoning: for token='' the human branch is False and the hash lookup cannot match any 'agt_'+token_urlsafe(24) record. Fails closed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-webauth",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/service.py"
+        ],
+        "invariant": "human_only endpoints and the agent-cannot-approve rule reject agent tokens on every state-changing management/approval path.",
+        "method": "source",
+        "result": "human_only() (api.py:96-99) rejects any non-human principal with 403; it gates create/list/pause/resume/snapshot/list_snapshots/restore/delete, /approvals list, /audit, /audit/verify, desktop_ticket, and /ui/ticket. The approval decision endpoint POST /approvals/{aid} (api.py:221-233) hard-rejects p.kind!='human' with 403 and audits the attempt (approval_forbidden) before any claim. An agent token presented to any of these resolves to kind 'agent' and is refused. Enforced.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-webauth",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/service.py"
+        ],
+        "invariant": "There is no alternate path to tool execution that bypasses the agent-sandbox binding or the human approval gate.",
+        "method": "source",
+        "result": "Tool side-effects run only through AgentBox._run_tool (service.py:82-107), reached from exactly two callers: box.call_tool (api.py:191, which applies the binding check) and box.decide (service.py:264-302, executing the STORED approval args). decide() is invoked only from POST /approvals/{aid} (human_only, api.py:233) and POST /ui/approvals/{aid}/{decision} (browser_human=human, web.py:198) — both human-gated. There is no batch/retry endpoint that re-enters _run_tool with a different (weaker) check. Approval execution uses the args captured at request time (no body override at decide time). Enforced.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws::agentbox%2Fdesktop.py%23may_connect%20lease%20%28view%20any%20%2F%20control%20hs_%20id%29::agentbox%2Fdesktop.py::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "agentbox/api.py#WebSocket /sandboxes/{sid}/desktop/ws",
+      "boundary": "agentbox/desktop.py#may_connect lease (view any / control hs_ id)",
+      "subsystem": "agentbox/desktop.py",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "agentbox/api.py#WebSocket /sandboxes/{sid}/desktop/ws",
+    "boundary": "agentbox/desktop.py#may_connect lease (view any / control hs_ id)",
+    "subsystem": "agentbox/desktop.py",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "agentbox/desktop.py",
+      "agentbox/api.py",
+      "agentbox/service.py",
+      "agentbox/sandbox.py"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Claimed principal versus channel identity",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#IPC peer-authentication gaps",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-desktop",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/desktop.py",
+      "agentbox/sandbox.py",
+      "agentbox/service.py",
+      "agentbox/web.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-desktop",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/desktop.py",
+          "agentbox/web.py"
+        ],
+        "invariant": "WS mode=view must not let a lower-trust principal (P0 unauth / P1 agent) open a desktop view it is not entitled to.",
+        "method": "source",
+        "result": "may_connect() returns True unconditionally for mode=view (desktop.py:202-206), but the WS entrypoint (api.py:313-319) first requires a valid session cookie resolved by DesktopControl.session() (desktop.py:124-134); it ignores the Authorization header entirely, so agent tokens (P1) cannot reach it. A session cookie is mintable only by redeeming a ticket (desktop.py:97-106) or /login, both of which require the human token (api.py:272 human_only on desktop_ticket; web.py:105-115 and web.py:128-131 gate ticket issue/login on secrets.compare_digest(human_token)); agents cannot mint tickets. Therefore only P5/P6 (human-equivalent, documented full UI admin) reach view. Cross-sandbox view by an unscoped session is within P5 authority per the stated model. Invariant holds as designed.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-desktop",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/desktop.py",
+          "agentbox/service.py",
+          "agentbox/sandbox.py"
+        ],
+        "invariant": "WS mode=control (input-enabled, non-viewonly x11vnc) must be grantable only to the current takeover lease holder, bound per sandbox and per session.",
+        "method": "source",
+        "result": "Control requires may_connect()==True: a lease on THAT sid whose lease.session equals the connecting session (desktop.py:202-206). lease.session is the hs_ public id bound at takeover to the taker's cookie-derived session (service.py:342-351; desktop.py:156-166); the connecting `session` is always derived server-side from the cookie hash (desktop.py:124-134), never attacker-supplied, so control is bound to the exact lease-holding cookie and is sid-scoped (a lease on sandbox A does not authorize control on B). vnc_command appends -viewonly iff mode=='view' (api.py:323; sandbox.py:583-596), so only the lease holder gets a non-viewonly x11vnc; view connections are input-blocked server-side by x11vnc -viewonly plus -nosel. The handback TOCTOU is closed: api.py:344-346 re-checks may_connect after add_conn and kills the proc if the lease changed, and release() force-closes all control conns for the sid (desktop.py:168-175). Invariant holds.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-desktop",
+        "reviewed_paths": [
+          "agentbox/desktop.py",
+          "agentbox/service.py",
+          "agentbox/api.py"
+        ],
+        "invariant": "The 32-bit hs_ public session id must not be usable by a lower-trust principal to obtain desktop control.",
+        "method": "source",
+        "result": "hs_ = 'hs_' + token_hex(4) is only 32 bits (desktop.py:110). It is leaked in cleartext by takeover()'s 409 ServiceError (service.py:347) and the HumanControl message (service.py:48), both of which reach a caller. However hs_ is only ever compared, never accepted as an input credential: every authorization path (may_connect/take/handback) uses the cookie-derived session, and the control WS requires a cookie that maps to lease.session, where cookies are 256-bit and 1:1 with public ids, and sessions can be minted only with the human token. So knowing a victim's hs_ yields no control. No lower-trust escalation; weak entropy + echo recorded as hardening.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Faudit.py%23append%20%2F%20verify%20%2F%20_mask::agentbox%2Faudit.py%23hash%20chain%20%2B%20secret%20masking::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+    "canonical_refs": {
+      "surface": "agentbox/audit.py#append / verify / _mask",
+      "boundary": "agentbox/audit.py#hash chain + secret masking",
+      "subsystem": "agentbox/audit.py",
+      "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+    },
+    "surface": "agentbox/audit.py#append / verify / _mask",
+    "boundary": "agentbox/audit.py#hash chain + secret masking",
+    "subsystem": "agentbox/audit.py",
+    "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "starting_paths": [
+      "agentbox/audit.py",
+      "agentbox/service.py"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-audit-res",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/audit.py",
+      "agentbox/config.py",
+      "agentbox/service.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-audit-res",
+        "reviewed_paths": [
+          "agentbox/audit.py"
+        ],
+        "invariant": "The hash chain must bind every stored field so any in-place edit or mid-chain deletion is detected by verify(), and the hashing performed at append() must be reproducible by verify().",
+        "method": "source",
+        "result": "CONSISTENT. append() masks the payload first (audit.py:118), then compute_hash() (audit.py:71-72) hashes prev_hash + _canonical(record) where _canonical uses sort_keys+compact separators. verify() (audit.py:173-198) re-reads the stored (already-masked) payload column, json.loads() it, rebuilds the same record dict, and re-hashes with the identical _canonical path, so the serialization is symmetric (json round-trip of JSON-representable payloads is stable). verify() independently checks the id sequence (detects deletes as an id gap, audit.py:182-183), the stored prev_hash linkage (184-185), and the recomputed content hash (194-195). No external principal can call append() directly (only service.py does), so an INSERT-only forgery path is not reachable. The chain is keyless SHA-256 (tamper-evident, not keyed/HMAC); UPDATE/DELETE are blocked by SQL triggers (audit.py:35-38) and whole-file rollback/end-truncation would require file-level access (P7, trusted). No cross-boundary integrity failure found.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-audit-res",
+        "reviewed_paths": [
+          "agentbox/audit.py",
+          "agentbox/config.py",
+          "agentbox/api.py",
+          "agentbox/service.py"
+        ],
+        "invariant": "Security-critical values must use a CSPRNG, secret comparisons must be constant-time, and registered/real credentials must be masked before they are written to the audit log.",
+        "method": "source",
+        "result": "HOLDS for the real credentials. All security values use the `secrets` CSPRNG (config.py:87 hum_ token, sandbox.py agt_ token/ids, desktop.py cookie=token_urlsafe(32)/tickets). human_token is re-registered on every build() (api.py:65) and agent tokens at creation (service.py:310); both also match the regex backstop _SECRET_PATTERNS[4] `(agt|hum)_[A-Za-z0-9_\\-]{16,}` (audit.py:47), so they are masked even if the in-memory _secrets set is empty after a restart. Token storage/compare is sound: token_matches and principal() use secrets.compare_digest. _mask (audit.py:90-105) is best-effort: it masks only string VALUES that equal a registered secret or match a regex, so a structured secret ({\"password\":\"x\"}) or a space-separated flag (`--password x`, `-u u:p`) is NOT masked — but this is contained because /audit is human_only (api.py:237-239) and logged payloads are agent-supplied, so no disclosure to a lower-trust principal. No secret is placed into a logged payload: cookie values are stored only as SHA-256 and never logged (desktop.py:44-45,56), hs_ is a public session id by design, tickets are returned in the HTTP response not logged. Recorded as hardening, not a finding.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fservice.py%23GUI%20tools%20%28screenshot%2Fclick%2Ftype%2Fkey%29::agentbox%2Fservice.py%23human-takeover%20423%20gate%20and%20exec%20allowlist::agentbox%2Fdesktop.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "agentbox/service.py#GUI tools (screenshot/click/type/key)",
+      "boundary": "agentbox/service.py#human-takeover 423 gate and exec allowlist",
+      "subsystem": "agentbox/desktop.py",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "agentbox/service.py#GUI tools (screenshot/click/type/key)",
+    "boundary": "agentbox/service.py#human-takeover 423 gate and exec allowlist",
+    "subsystem": "agentbox/desktop.py",
+    "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "agentbox/service.py",
+      "agentbox/sandbox.py",
+      "images/desktop/Dockerfile",
+      "images/desktop/agentbox-desktop-start",
+      "agentbox/default_policy.yaml"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-desktop",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/default_policy.yaml",
+      "agentbox/desktop.py",
+      "agentbox/policy.py",
+      "agentbox/sandbox.py",
+      "agentbox/service.py",
+      "images/desktop/Dockerfile",
+      "images/desktop/agentbox-desktop-start"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-desktop",
+        "reviewed_paths": [
+          "agentbox/service.py",
+          "agentbox/desktop.py",
+          "agentbox/api.py"
+        ],
+        "invariant": "While a human holds the takeover lease, every agent GUI tool (screenshot/click/type/key) must not execute and must return 423.",
+        "method": "source",
+        "result": "All four GUI tools execute only inside `with self.desktop.gui_lock(sid): self._check_control(sid); ...` (service.py:94-106); _check_control raises HumanControl whenever a lease exists (service.py:109-115), mapped to ToolOutcome(423) (service.py:228-236). takeover() acquires the SAME per-sid gui_lock before setting the lease (service.py:344-351; desktop.py:137-140,156-166), and the GUI check+xdotool run under that one lock, so takeover and GUI execution are fully serialized: the lease can neither be set mid-GUI-execution nor missed by a subsequent GUI call. The is_stale idle-reclaim (desktop.py:146-154, invoked at service.py:111-112) only releases the lease when no control conn exists and >idle(600s) have elapsed. On the approval re-execution path, _run_tool is likewise reached through the same gated branch (service.py:295). Invariant holds, race-free.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-desktop",
+        "reviewed_paths": [
+          "agentbox/sandbox.py",
+          "images/desktop/Dockerfile",
+          "images/desktop/agentbox-desktop-start"
+        ],
+        "invariant": "The agent exec channel (uid1000), which is NOT subject to the 423 gate, must be unable to drive or observe display :0 - otherwise it bypasses the GUI takeover protection.",
+        "method": "source",
+        "result": "GUI tools run as DESKTOP_USER uid1001 with XAUTHORITY=/home/desktop/.Xauthority (sandbox.py:519-521; DESKTOP_ENV sandbox.py:40). The X cookie is created with umask 077 (mode 0600) owned desktop:desktop inside /home/desktop chmod 700 (images/desktop/Dockerfile; agentbox-desktop-start xauth add). Xvfb is launched -nolisten tcp -auth <cookie> (agentbox-desktop-start), so :0 requires the MIT cookie. uid1000 (agent exec) cannot read the cookie (home 700, file 0600) and cannot escalate to uid1001: _run_container sets cap_drop ALL + security_opt no-new-privileges (sandbox.py:254-256) and uid1000 is a non-root process holding no effective capabilities (cap_add SETUID/SETGID apply only to a process that already has them). The only cookie-in-argv exposure (`xauth add :0 . $COOKIE`) is a short-lived process that exits before create() returns the agent token (create() blocks on _wait_display, sandbox.py:298-302), so the agent is never active during it and cannot read another container's /proc. Separation holds; invariant holds.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-desktop",
+        "reviewed_paths": [
+          "agentbox/service.py",
+          "agentbox/policy.py",
+          "agentbox/default_policy.yaml",
+          "images/desktop/Dockerfile"
+        ],
+        "invariant": "GUI type/key must not become an unapproved path to arbitrary command execution that the exec allowlist / approval / snapshot-before-delete pipeline is meant to gate.",
+        "method": "source",
+        "result": "Pure-function harness on Policy.decide with default_policy.yaml (imported agentbox.policy in python3 -I, in-memory args): type/key/click/screenshot all return action=allow,rule=None, while exec 'rm -rf x' returns require_approval(rm-curl-needs-approval) and 'find . -delete' returns require_approval(exec-needs-approval). GUI tools are default-allow (no policy rule) and route through sb.type_text/key -> xdotool as uid1001 (sandbox.py:564-581), never through sb.exec/policy command parsing, so the exec allowlist, approval, and snapshot-before-delete (service.py:160-169,220-225) controls do not apply. With xfce4-terminal installed (images/desktop/Dockerfile) the agent can in principle type a command + Return into a focused terminal and run it as uid1001 (group agent, /workspace group-writable) without approval or snapshot. This is within the acknowledged threat model: policy.py docstring (lines 7-8) explicitly states the allowlist is only the first line of defense and network=none + read-only /source are the final boundary; GUI control is a deliberately granted agent capability, uid1001 gains no network, no /source write, and no access over /workspace the agent does not already hold via uid1000. Loss is limited to approval/snapshot bookkeeping over the agent's own workspace. Recorded as hardening, not a boundary failure; requires a focused terminal to realize but the disposition does not depend on that runtime fact.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "agentbox/sandbox.py:gui-tools-uid1001-terminal-bypasses-exec-allowlist"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fservice.py%23exec%20tool%20call::agentbox%2Fdefault_policy.yaml%23exec-needs-approval%20gate::agentbox%2Fpolicy.py::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "agentbox/service.py#exec tool call",
+      "boundary": "agentbox/default_policy.yaml#exec-needs-approval gate",
+      "subsystem": "agentbox/policy.py",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "agentbox/service.py#exec tool call",
+    "boundary": "agentbox/default_policy.yaml#exec-needs-approval gate",
+    "subsystem": "agentbox/policy.py",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "agentbox/default_policy.yaml",
+      "agentbox/policy.py",
+      "agentbox/service.py",
+      "agentbox/sandbox.py"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-policy",
+    "reviewed_paths": [
+      "agentbox/config.py",
+      "agentbox/default_policy.yaml",
+      "agentbox/policy.py",
+      "agentbox/sandbox.py",
+      "agentbox/service.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-policy",
+        "reviewed_paths": [
+          "agentbox/policy.py",
+          "agentbox/default_policy.yaml",
+          "agentbox/service.py"
+        ],
+        "invariant": "The only exec outcome that reaches execution without human approval is the read-only-exec ALLOW; every other exec command resolves to the fail-closed exec-needs-approval default (require_approval). There is no weaker alternate path to exec and no request field that overrides the decision.",
+        "method": "source",
+        "result": "default_policy.yaml rule order is rm-curl-needs-approval (require_approval) -> read-only-exec (allow, only_commands) -> exec-needs-approval (require_approval catch-all); default is allow but every exec is matched by one of the three exec rules, so unmatched-default is unreachable for exec. policy.decide() evaluates only_commands only for tool=='exec' and returns ALLOW only on a non-empty subset (policy.py:148-155); any other result falls through to the catch-all require_approval. service.AgentBox.call_tool() (service.py:178-241) routes DENY->403, REQUIRE_APPROVAL->approval pipeline (202, stored args, no execution), and only ALLOW reaches _run_tool->sandbox.exec. decide() and _run_tool() both read args['command'] via str(args.get('command','')) (policy.py:152 / service.py:85), so there is no args-field divergence or override between the gate and the sink. Audit-before-execute is fail-closed (AuditWriteError -> 503, no exec).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-policy",
+        "reviewed_paths": [
+          "agentbox/policy.py",
+          "agentbox/default_policy.yaml",
+          "agentbox/sandbox.py",
+          "agentbox/config.py"
+        ],
+        "invariant": "No command auto-allowed by read-only-exec provides a delete, arbitrary-code-execution, network, or privilege-escalation primitive; auto-allowed writes are confined to the agent's own already-writable workspace, so the approval gate's intent (gate scripts/network/delete) is not defeated.",
+        "method": "source",
+        "result": "Allowlist (default_policy.yaml:25-27) contains no interpreter (sh/bash/python/perl absent), no network client (curl/wget absent; container is network=none, sandbox.py:248), no delete/move/chmod (rm/mv/cp/chmod/ln/dd/tee/sort absent), and no FD/content-write primitive (output redirection '>' forces None). The only writes are mkdir and touch, both confined to paths uid1000 can write (/workspace, already writable unapproved via the write_file tool; ephemeral container /tmp); exec has no safe_path restriction but /source is a read-only mount and / is root-owned, so mkdir/touch cannot alter source or escalate. Two residual parser imperfections have no reachable affected resource and are recorded as hardening: _DEVNULL (policy.py:77) strips '>/dev/nullSUFFIX' and '>/dev/null/..' letting a genuine '>' slip into ALLOW, but every /dev/null-prefixed target is unwritable by uid1000 (/dev root-owned; '/dev/null/..'->ENOTDIR); and basename matching (policy.py:108) auto-allows '/workspace/ls', but the agent cannot create an executable unapproved (write_file/upload yield mode 664 under umask 002 with mv preserving mode, sandbox.py:448-460/422-435; no allowlisted command can chmod +x; PATH-prefix blocked by the '=' check).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "agentbox/policy.py:_DEVNULL:redirect-digit-target-stripped-bypasses-write-gate"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fservice.py%23exec%20tool%20call::agentbox%2Fpolicy.py%23read-only-exec%20allowlist%20%28simple_programs%29::agentbox%2Fpolicy.py::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "agentbox/service.py#exec tool call",
+      "boundary": "agentbox/policy.py#read-only-exec allowlist (simple_programs)",
+      "subsystem": "agentbox/policy.py",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "agentbox/service.py#exec tool call",
+    "boundary": "agentbox/policy.py#read-only-exec allowlist (simple_programs)",
+    "subsystem": "agentbox/policy.py",
+    "attack_class": "ATTACK-CLASSES.md#Injection",
+    "starting_paths": [
+      "agentbox/policy.py",
+      "agentbox/default_policy.yaml",
+      "agentbox/sandbox.py",
+      "agentbox/service.py"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-policy",
+    "reviewed_paths": [
+      "agentbox/default_policy.yaml",
+      "agentbox/policy.py",
+      "agentbox/sandbox.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-policy",
+        "reviewed_paths": [
+          "agentbox/policy.py",
+          "agentbox/default_policy.yaml",
+          "agentbox/sandbox.py"
+        ],
+        "invariant": "read-only-exec ALLOW (default_policy.yaml) is granted only when simple_programs(command) returns a NON-EMPTY set that is a subset of only_commands (policy.py decide() lines 148-155). No exec string that bash (sandbox.exec: timeout ... bash -c 'umask 002\\n'+command, sandbox.py:379) would run with a non-allowlisted program, interpreter, network client, or file-delete can satisfy that subset test.",
+        "method": "source",
+        "result": "Pure-function harness (python3 -I, importing policy.py in isolation, no side effects) over ~40 adversarial command strings. simple_programs first returns None on any of $ ` > <( (blocks command/variable substitution, output redirection, process substitution) -> fails closed to require_approval. For every substitution/interpreter/wrapper/compound construct the program-position token is itself non-allowlisted, so the subset test fails: sh/bash/dash/zsh, python, find, cp, chmod, dd, tee, sort, env, timeout, nice, xargs, '(' subshell, if/then/fi reserved words, leading '!'/time, and env-prefix assignments (PATH=/LD_PRELOAD= -> the '=' check at policy.py:106 returns None). Every string that reached ALLOW ran only read-only programs in bash (ls/cat/echo/printf/cut/tr/... plus the intentionally-included mkdir/touch). Conclusion: no injected exec string yields simple_programs ⊆ allowlist while bash executes a non-allowlisted program.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-policy",
+        "reviewed_paths": [
+          "agentbox/policy.py",
+          "agentbox/sandbox.py"
+        ],
+        "invariant": "policy command parsing is consistent-or-stricter than bash execution: every program bash runs in command position is present in simple_programs' program set, so a dangerous program cannot hide from the allowlist check as a comment/argument/quoted token.",
+        "method": "source",
+        "result": "Three divergence vectors examined and shown safe. (1) Comments: shlex is configured commenters=\"\" (policy.py:89) so '#' is NEVER a comment; bash treats '# ...' as comment-to-EOL, so bash ignores a SUBSET of what policy tokenizes -> policy is stricter (it sees programs bash skips, forcing approval). Confirmed with bash fixture 'echo A #; echo B' printing only A while policy tokenizes rm after '#'. (2) Newlines: simple_programs does command.replace('\\n',' ; ') (policy.py:87) so every bash newline separator becomes a ';' separator in policy; a newline inside quotes stays quoted in both -> inert in both. Confirmed printf 'echo A #\\necho B' runs both lines (newline ends comment) and policy maps the newline to ';'. (3) '<' redirect skip (policy.py:99-104) skips exactly the one following token as the redirect filename; bash also consumes that token as the redirect target (fixture '< din echo RAN' runs echo), and a quoted '<' is an argument in bash so the following token is also an argument, not a new command (fixture \"echo ARG1 '<' ARG2\"). In all three, bash's executed program-position set is a subset of policy's parsed program set.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "agentbox/policy.py:simple_programs:quoted-comment-hides-program-from-allowlist"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fservice.py%23tool%20calls%20and%20container%20output::agentbox%2Fsandbox.py%23unbounded%20buffering%20%2F%20no-timeout%20%2F%20unbounded%20snapshots::agentbox%2Fsandbox.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Unbounded%20buffering%20and%20cardinality",
+    "canonical_refs": {
+      "surface": "agentbox/service.py#tool calls and container output",
+      "boundary": "agentbox/sandbox.py#unbounded buffering / no-timeout / unbounded snapshots",
+      "subsystem": "agentbox/sandbox.py",
+      "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality"
+    },
+    "surface": "agentbox/service.py#tool calls and container output",
+    "boundary": "agentbox/sandbox.py#unbounded buffering / no-timeout / unbounded snapshots",
+    "subsystem": "agentbox/sandbox.py",
+    "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+    "starting_paths": [
+      "agentbox/sandbox.py",
+      "agentbox/service.py",
+      "agentbox/api.py"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-audit-res",
+    "reviewed_paths": [
+      "agentbox/config.py",
+      "agentbox/default_policy.yaml",
+      "agentbox/sandbox.py",
+      "agentbox/service.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-audit-res",
+        "reviewed_paths": [
+          "agentbox/sandbox.py",
+          "agentbox/config.py"
+        ],
+        "invariant": "Untrusted container stdout/stderr returned to the shared control plane must be bounded in bytes BEFORE it is read into control-plane memory.",
+        "method": "source",
+        "result": "VIOLATED in source. sandbox.exec (sandbox.py:379-388) calls c.exec_run(..., demux=True) with the default stream=False. docker-py's exec_run -> _read_from_socket(stream=False) -> consume_socket_output concatenates ALL frames into memory (out[0] += frame[0]) before returning; the 64KB _OUT_LIMIT (sandbox.py:36) is applied by _truncate only AFTER the full buffer exists (sandbox.py:384-385,93-99). The `timeout -k 5 60` wrapper (config exec_timeout default 60, config.py:43) bounds elapsed TIME, not output VOLUME, and the container mem_limit (512m) bounds the container's own RAM, not the volume it writes to the stream. list_dir (ls -la) and outbox_list (find) share the same non-streaming full-buffer pattern. Reachability confirmed by pure-function policy harness: Policy.decide('exec',{'command':'cat /dev/zero'}) == allow via rule read-only-exec (cat is allowlisted), likewise 'head -c 999999999 /dev/zero' and 'tr ... < /dev/zero' -> allow with NO human approval. The final shared memory-exhaustion magnitude requires a live docker exec to observe -> see candidate (needs_validation).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-audit-res",
+        "reviewed_paths": [
+          "agentbox/service.py",
+          "agentbox/sandbox.py",
+          "agentbox/default_policy.yaml"
+        ],
+        "invariant": "Agent-reachable operations must not create unbounded persistent host-side state; per-operation snapshots need a cap and a garbage-collection path.",
+        "method": "source",
+        "result": "VIOLATED in source. write_file carries no policy rule so it resolves to default:allow (harness-confirmed: decide('write_file',...)==allow). On the ALLOW path _needs_snapshot returns True when the target path already exists (service.py:164-168), so each overwrite calls _snapshot -> SandboxManager.snapshot -> c.commit(pause=True) (sandbox.py:341) creating a fresh image tagged agentbox-snap:<sid>-snap_<rand> every call. A whole-repo grep shows NO images.remove / rmi / prune / snapshot-count cap anywhere; delete() (sandbox.py:312-318) removes only the container, so snapshot images persist beyond sandbox deletion. Thus one small agent API call = one permanent docker image on shared host storage, unbounded in cardinality. (delete_file also snapshots but is require_approval, so it is human-gated; write_file-overwrite is pure-agent.) Confirming the on-disk accumulation / disk exhaustion requires the Docker daemon -> see candidate (needs_validation).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "agentbox/sandbox.py:exec-output-buffered-unbounded-before-truncate",
+      "agentbox/sandbox.py:auto-snapshot-unbounded-no-gc"
+    ],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "agentbox%2Fweb.py%23%2Fui%2F%2A%20browser%20routes::agentbox%2Fapi.py%23screen_principal%20cookie%20%2B%20same_origin::agentbox%2Fweb.py::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "agentbox/web.py#/ui/* browser routes",
+      "boundary": "agentbox/api.py#screen_principal cookie + same_origin",
+      "subsystem": "agentbox/web.py",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "agentbox/web.py#/ui/* browser routes",
+    "boundary": "agentbox/api.py#screen_principal cookie + same_origin",
+    "subsystem": "agentbox/web.py",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "agentbox/api.py",
+      "agentbox/web.py",
+      "agentbox/desktop.py",
+      "agentbox/templates/base.html"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+      "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+      "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+      "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+      "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+      "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-webauth",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/desktop.py",
+      "agentbox/templates/_approvals.html",
+      "agentbox/templates/_audit.html",
+      "agentbox/templates/_verify.html",
+      "agentbox/templates/base.html",
+      "agentbox/templates/sandbox.html",
+      "agentbox/web.py"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-webauth",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/web.py"
+        ],
+        "invariant": "Every /ui/* browser route requires an authenticated principal; unauthenticated (P0) requests cannot read UI data or trigger state changes.",
+        "method": "source",
+        "result": "screen_principal (api.py:108-117): with no Authorization header it requires a valid session cookie (401 if box.desktop.session() is None), then checks same_origin (403). All /ui/* fragment and mutation routes depend on browser_human=screen_human (web.py:146,151,165,189,193,206,217,221,230,241,249,254), which wraps screen_principal and additionally requires kind=='human'. The shell GET routes `/`, `/ui`, `/ui/sandboxes/{sid}` use session_of() and redirect to /login when no session (web.py:95,141-142,173). No /ui/* route is reachable without a session or a human bearer token. Enforced.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-webauth",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/web.py",
+          "agentbox/desktop.py"
+        ],
+        "invariant": "CSRF: cookie-authenticated state-changing /ui/* POSTs cannot be driven cross-site; the ambient session cookie is not attached to, or is rejected on, a forged request.",
+        "method": "source",
+        "result": "The session cookie is always set SameSite=Strict + HttpOnly (desktop.py:48-50, used by both start_session web.py:88 and ticket redemption api.py:287), so no cross-site request (top-level or subresource, GET or POST) carries it — forged cross-site mutations arrive without the cookie and fail at the 401 session check. The server-side same_origin check (api.py:101-103) additionally rejects any request whose Origin netloc != Host, which blocks the residual same-site-but-cross-origin case (e.g. sibling subdomain, where SameSite still sends the cookie): a browser POST/fetch always emits Origin, so the attacker origin != host is caught. The two controls are mutually covering: same_origin's fail-open on absent Origin is backstopped by SameSite=Strict (no cookie cross-site), and SameSite non-enforcement is backstopped by the Origin check. All mutating routes are POST-only (405 on GET), so no GET-navigation CSRF. login/logout also call same_origin explicitly (web.py:107,119). No accepted cross-site request shape exists -> CSRF does not qualify as a confirmed finding; the absent-Origin fail-open is recorded as hardening.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-webauth",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/web.py"
+        ],
+        "invariant": "Lower-trust principals (agent P1, injected content P4) cannot act as a human on /ui/* or screen_human routes.",
+        "method": "source",
+        "result": "screen_human (api.py:119-122) requires kind=='human'. When an Authorization header is present, screen_principal returns principal(authorization) (api.py:110-111); an agent token yields kind=='agent' => 403 at screen_human. An agent/injected principal has no session cookie (agents cannot mint tickets: ui_ticket & desktop_ticket are human_only, web.py:129 / api.py:272) and cannot set a cross-origin cookie, so the cookie branch is unavailable to them too. Thus put_files, outbox, outbox_file, desktop_takeover/handback, approval_capture, and all /ui/* mutations are human-only. Enforced.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-webauth",
+        "reviewed_paths": [
+          "agentbox/web.py",
+          "agentbox/templates/_approvals.html",
+          "agentbox/templates/base.html",
+          "agentbox/templates/sandbox.html",
+          "agentbox/templates/_audit.html",
+          "agentbox/templates/_verify.html"
+        ],
+        "invariant": "Agent/injected-content-controlled values rendered in the human UI cannot inject script into the app origin (which would defeat the same-origin CSRF model).",
+        "method": "source",
+        "result": "web.py builds responses with Jinja2Templates (web.py:67) using the Starlette framework default autoescape=True; no template uses `| safe`, `{% autoescape false %}`, or `{% raw %}` (grep clean). Agent/P4-controlled fields — exec command and file paths (_approvals.html {{ a.args.command }}, {{ a.args | short }} inside <pre>/attributes), source_dir (_sandboxes.html), audit payload via describe() (_audit.html) — are rendered in HTML/attribute contexts and HTML-escaped. The only <script>-context interpolation, v.broken_at (_verify.html) and window.abBroken (_audit.html), is an integer audit id generated server-side, not attacker-controlled. No user-supplied bytes are served from the app origin as HTML (uploads go into the sandbox; downloads are octet-stream with X-Content-Type-Options:nosniff + attachment, api.py:266-268). No stored/reflected XSS vector that would yield same-origin script execution. Enforced (framework-default autoescape).",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-webauth",
+        "reviewed_paths": [
+          "agentbox/web.py",
+          "agentbox/desktop.py"
+        ],
+        "invariant": "Session lifecycle: no fixation on login/ticket redemption; logout and expiry invalidate server-side; cookie values are not recoverable at rest.",
+        "method": "source",
+        "result": "Login (POST /login) and ticket redemption both mint a brand-new server-side session via new_session() (web.py:88, desktop.py:106-116) rather than honoring a client-supplied id, so an attacker cannot fixate a session; the resulting cookie value is random (token_urlsafe(32)) and returned only to the victim's browser. Tickets are single-use and scope-checked at redeem (deleted first, then scope/expiry validated, desktop.py:97-106). Logout deletes the server-side session row and clears the cookie (web.py:117-126). session() enforces wall-clock expiry and purges expired rows (desktop.py:124-134); cookie and ticket values are stored only as sha256 hashes (desktop.py:44-45,94,114). No fixation/invalidation gap within this boundary.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "deploy%2F%2A%23compose%20%2B%20serve%20flags%20%2B%20runtime%20detection::agentbox%2Fsandbox.py%23runtime%20auto-fallback%20and%20proxy%2Fsocket%20trust::agentbox%2Fconfig.py::CLOUD-AND-DEPLOYMENT.md%23Security-control%20precedence%20drift",
+    "canonical_refs": {
+      "surface": "deploy/*#compose + serve flags + runtime detection",
+      "boundary": "agentbox/sandbox.py#runtime auto-fallback and proxy/socket trust",
+      "subsystem": "agentbox/config.py",
+      "attack_class": "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift"
+    },
+    "surface": "deploy/*#compose + serve flags + runtime detection",
+    "boundary": "agentbox/sandbox.py#runtime auto-fallback and proxy/socket trust",
+    "subsystem": "agentbox/config.py",
+    "attack_class": "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift",
+    "starting_paths": [
+      "agentbox/sandbox.py",
+      "agentbox/config.py",
+      "agentbox/cli.py",
+      "deploy/docker-compose.yml",
+      "deploy/Dockerfile",
+      "deploy/Caddyfile"
+    ],
+    "ordinary_attack_class_block": null,
+    "selected_companion_blocks": [
+      "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift",
+      "CLOUD-AND-DEPLOYMENT.md#Trusted-proxy and mesh identity bypass",
+      "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+      "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+      "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+    ],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-deploy-wild-llm",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/cli.py",
+      "agentbox/config.py",
+      "agentbox/desktop.py",
+      "agentbox/sandbox.py",
+      "agentbox/web.py",
+      "deploy/Caddyfile",
+      "deploy/Dockerfile",
+      "deploy/docker-compose.yml"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-deploy-wild-llm",
+        "reviewed_paths": [
+          "agentbox/sandbox.py",
+          "agentbox/config.py",
+          "agentbox/cli.py",
+          "agentbox/api.py",
+          "agentbox/desktop.py"
+        ],
+        "invariant": "A sandbox must run under the selected isolation runtime; an explicit AGENTBOX_RUNTIME that the daemon lacks must fail closed, and a weak-isolation fallback must not be silently hidden from the operator.",
+        "method": "source",
+        "result": "_detect_runtime (sandbox.py:170-180) raises SandboxError when an explicit non-auto runtime is unavailable (fail-closed). With the default AGENTBOX_RUNTIME=auto (config.py:31) and _RUNTIME_PREFERENCE (sandbox.py:78) it falls back to runc when no strong runtime is installed, but this is the documented caveat on the network=none/cap_drop isolation control and is surfaced in three places: CLI create warning (cli.py:109-110), /healthz dev_only=True to the operator (api.py:404-405), and the red 'runc: 개발 전용 (격리 약함)' badge on the desktop page (desktop.py:313). Whether a strong runtime exists on the deployment host daemon is a deployment fact, not a silent source-level control drop. No invariant failure in source.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-deploy-wild-llm",
+        "reviewed_paths": [
+          "agentbox/cli.py",
+          "agentbox/api.py",
+          "agentbox/web.py"
+        ],
+        "invariant": "Forwarded identity headers (X-Forwarded-Proto/For) trusted from any peer must not grant authentication or flip a security decision, and the backend must not fail open when the proxy is absent.",
+        "method": "source",
+        "result": "cmd_serve sets proxy_headers=True with forwarded_allow_ips defaulting to '*' (cli.py:99), so uvicorn trusts X-Forwarded-* from any peer. Tracing every consumer: request.url.scheme feeds only secure_cookie() (api.py:106, web.py:89), and cmd_serve force-sets settings.secure_cookie=True whenever behind=True (cli.py:86), so a forged X-Forwarded-Proto cannot strip the Secure flag in the shipped behind-proxy deployment. request.client / X-Forwarded-For is not used for any authorization, rate-limit, or trust decision anywhere (no rate limiting exists). Authentication is token/cookie based and unaffected. No security decision depends on forwarded headers; pinning AGENTBOX_TRUSTED_PROXIES is defense-in-depth only.",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-deploy-wild-llm",
+        "reviewed_paths": [
+          "agentbox/cli.py",
+          "agentbox/config.py",
+          "deploy/docker-compose.yml",
+          "deploy/Dockerfile",
+          "deploy/Caddyfile"
+        ],
+        "invariant": "A non-loopback plaintext bind must be refused unless TLS, a TLS proxy, or an explicit --insecure override is present, and the shipped compose must not expose the plaintext control-plane port to a lower-trust network.",
+        "method": "source",
+        "result": "bind_problem (cli.py:62-84) returns an error for a non-loopback host without tls/behind-proxy and exits unless --insecure is passed (then warns). The Dockerfile CMD runs with --behind-tls-proxy (so bind_problem passes), and docker-compose.yml uses 'expose: 8765' (not 'ports'), keeping plaintext 8765 on the compose network reachable only by the Caddy service (sandboxes are network_mode=none). Caddy terminates TLS and reverse_proxies (Caddyfile). secure_cookie is forced True behind the proxy. Deployment matrix is consistent; no plaintext exposure of tokens/cookies to a lower-trust network in the shipped config.",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "whole-repo%23undocumented%2Fedge%20surfaces::whole-repo%23cross-cutting%20invariants::agentbox::ATTACK-CLASSES.md%23Wildcard",
+    "canonical_refs": {
+      "surface": "whole-repo#undocumented/edge surfaces",
+      "boundary": "whole-repo#cross-cutting invariants",
+      "subsystem": "agentbox",
+      "attack_class": "ATTACK-CLASSES.md#Wildcard"
+    },
+    "surface": "whole-repo#undocumented/edge surfaces",
+    "boundary": "whole-repo#cross-cutting invariants",
+    "subsystem": "agentbox",
+    "attack_class": "ATTACK-CLASSES.md#Wildcard",
+    "starting_paths": [
+      "agentbox/api.py",
+      "agentbox/web.py",
+      "agentbox/cli.py",
+      "agentbox/sandbox.py",
+      "agentbox/config.py",
+      "demo/run_demo.sh"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "candidate",
+    "agent_id": "hunter-deploy-wild-llm",
+    "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/cli.py",
+      "agentbox/mcp_server.py",
+      "agentbox/service.py",
+      "agentbox/templates/_approvals.html",
+      "agentbox/web.py",
+      "pyproject.toml"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-deploy-wild-llm",
+        "reviewed_paths": [
+          "agentbox/cli.py",
+          "agentbox/service.py",
+          "agentbox/templates/_approvals.html",
+          "agentbox/mcp_server.py"
+        ],
+        "invariant": "The human approval UI must faithfully display the exact command and computed impact so the approve/deny decision binds to the real action; an agent/injected-content-controlled string must not be able to misrepresent what will execute.",
+        "method": "source",
+        "result": "The web approval view (_approvals.html) renders a.args.command inside <pre> via Jinja2 autoescaping (control bytes shown literally, safe). The terminal approver cmd_approve->_show_approval prints the agent-controlled exec command verbatim between ANSI color codes with no control-character stripping (cli.py:165) and likewise prints affected item['path'] raw (cli.py:174). The agent fully controls the exec 'command' string; service.call_tool stores args verbatim into the approval (service.py:202). A command embedding CR/ANSI escape sequences can overwrite or hide lines in a VT100-class terminal so the P6 approver sees a benign action while a different command is stored and (on approve) executed after an AP-2 snapshot. Cross-principal: P4 injected content / P1 agent misrepresents the action to the P6 approver -> approval-binding/display integrity failure for the terminal path. Confirming that a terminal interprets the embedded sequences is a renderer-behavior fact not observable with the allowed bash-tokenizer harness, so recorded as needs_validation. (README 'known limits' acknowledges this for agentbox approve.)",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-deploy-wild-llm",
+        "reviewed_paths": [
+          "agentbox/api.py",
+          "agentbox/web.py",
+          "pyproject.toml"
+        ],
+        "invariant": "Undocumented/edge HTTP surfaces reachable by unauth P0 must not disclose data or grant capability, and static/dynamic file routes must not allow path traversal.",
+        "method": "source",
+        "result": "FastAPI is built with default docs_url/openapi_url/redoc (api.py:82), so /docs,/redoc,/openapi.json are unauthenticated and disclose the in-schema JSON API structure (paths, pydantic models) to P0 — structure only, no data/secret/credential, and endpoints still require a token. /healthz (api.py:402-405) discloses runtime/image/templates/dev_only (non-secret). /static/novnc/{path} is unauth but resolves and enforces is_relative_to(root) and is_file (api.py:389-397), blocking traversal; it only serves noVNC assets. policy loads via yaml.safe_load. No unauth mutating or data-reaching surface found; dependencies are unpinned (>=) with no lockfile (supply-chain hardening, no reachable CVE established).",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [
+      "agentbox/cli.py:approval-terminal-escape-spoof"
+    ],
+    "unresolved": []
+  }
+]

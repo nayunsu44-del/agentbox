@@ -193,6 +193,71 @@ def test_gui_tools_work(desk):
 
 
 @needs_desktop
+def test_gui_input_snapshots_per_burst(desk):
+    """보안 검수 N-1: GUI 입력은 정책 밖에서 /workspace를 바꿀 수 있으니 구간마다 복구 지점을 남긴다."""
+    e = desk
+
+    def snaps():
+        return len(e.box.sandboxes.list_snapshots(e.sid))
+
+    assert tool(e, "screenshot").status_code == 200 and snaps() == 0      # 화면 보기는 스냅샷 없음
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200 and snaps() == 1   # 구간 시작
+    assert tool(e, "click", x=10, y=10).status_code == 200 and snaps() == 1        # 같은 구간
+    e.box._gui_input_at[e.sid] -= 61                                              # 60초 쉬었다가
+    assert tool(e, "click", x=10, y=10).status_code == 200 and snaps() == 2
+    e.box._gui_snap_at[e.sid] -= 601                                              # 쉬지 않아도 10분마다
+    assert tool(e, "type", text="a").status_code == 200 and snaps() == 3
+
+    # 스냅샷 상한에서는 구간 시작 입력이 승인을 거치고, 승인하면 그 구간은 다시 바로 돈다
+    e.box.sandboxes.settings.snapshot_quota = snaps()
+    e.box._gui_input_at[e.sid] -= 61
+    r = tool(e, "click", x=10, y=10)
+    assert r.status_code == 202, r.text
+    res = e.c.post(f"/approvals/{r.json()['approval_id']}", json={"decision": "approve"}, headers=e.H).json()
+    assert res["status"] == "executed" and res["snapshot_id"] and snaps() == 4
+    assert tool(e, "click", x=10, y=10).status_code == 200 and snaps() == 4
+
+
+@needs_desktop
+def test_gui_burst_changes_logged(desk):
+    """보안 검수 N-1(방안 G): GUI 구간 동안 정책 밖에서 바뀐 파일을 기록하고, 시작 스냅샷으로 되돌릴 수 있다."""
+    e = desk
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200       # 구간 시작 (스냅샷 + 파일 목록)
+    snap = e.box.sandboxes.list_snapshots(e.sid)[0]["id"]
+    # GUI 앱(터미널·파일 관리자)이 화면 계정으로 바꾼 것처럼
+    c = e.box.sandboxes._container(e.sid)
+    # new-report.md는 같은 길이로 바꾸고 mtime을 되돌린다 (크기·mtime만 보면 놓친다)
+    assert c.exec_run(["sh", "-c", "rm /workspace/old-report.md; echo x > /workspace/gui-new.txt; "
+                       "cp -p /workspace/new-report.md /tmp/ref; "
+                       "sed -i 's/12/99/' /workspace/new-report.md; touch -r /tmp/ref /workspace/new-report.md"],
+                      user="desktop").exit_code == 0
+    assert not [x for x in events(e) if x["event"] == "gui_changes"]   # 아직 구간 안
+    e.box._gui_input_at[e.sid] -= 61                                   # 입력이 끊기면 구간이 닫힌다
+    ch = [x for x in events(e) if x["event"] == "gui_changes"]
+    assert len(ch) == 1 and ch[0]["actor"] == "system"
+    p = ch[0]["payload"]
+    assert p["snapshot_id"] == snap and p["reason"] == "idle"
+    assert (p["added"], p["modified"], p["deleted"]) == (["gui-new.txt"], ["new-report.md"], ["old-report.md"])
+    page = e.c.get(f"/ui/audit?sandbox_id={e.sid}", headers=e.H).text
+    assert "삭제됨: old-report.md" in page
+    assert e.c.post(f"/sandboxes/{e.sid}/restore", json={"snapshot_id": snap}, headers=e.H).status_code == 200
+    assert "old-report.md" in ls(e) and "gui-new.txt" not in ls(e)
+
+
+@needs_desktop
+def test_gui_burst_logged_before_restore(desk):
+    """구간이 열린 채 사람이 되돌려도, 그때까지 바뀐 파일은 남긴다."""
+    e = desk
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200
+    snap = e.box.sandboxes.list_snapshots(e.sid)[0]["id"]
+    c = e.box.sandboxes._container(e.sid)
+    assert c.exec_run(["rm", "/workspace/old-report.md"], user="desktop").exit_code == 0
+    assert e.c.post(f"/sandboxes/{e.sid}/restore", json={"snapshot_id": snap}, headers=e.H).status_code == 200
+    ch = [x["payload"] for x in events(e) if x["event"] == "gui_changes"]
+    assert len(ch) == 1 and ch[0]["reason"] == "sandbox_restored" and ch[0]["deleted"] == ["old-report.md"]
+
+
+@needs_desktop
 def test_agent_cannot_reach_display_directly(desk):
     """에이전트 exec는 X 쿠키를 못 읽으니 xdotool로 화면을 직접 조작할 수 없다 (GUI 도구를 거쳐야 한다)."""
     from agentbox.policy import Policy
