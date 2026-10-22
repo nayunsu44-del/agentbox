@@ -317,6 +317,11 @@ class SandboxManager:
             src = Path(source_dir).expanduser().resolve()
             if not src.is_dir():
                 raise SandboxError(f"원본 폴더가 없음: {src}")
+            # 원본은 컨테이너 root가 권한 검사 없이(DAC_OVERRIDE) 복사해 에이전트 소유로 바꾼다.
+            # 데이터 폴더와 겹치면 사람 토큰·DB·다른 샌드박스 원본이 에이전트에게 넘어간다.
+            for d in {self.settings.home.resolve(), self.settings.db_path.resolve().parent}:
+                if src == d or d in src.parents or src in d.parents:
+                    raise SandboxError(f"원본 폴더가 agentbox 데이터 폴더({d})와 겹침. 데이터 폴더 밖의 폴더를 고를 것")
         else:
             src = (self.settings.home / "sources" / sid).resolve()
             src.mkdir(parents=True)

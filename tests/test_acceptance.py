@@ -305,3 +305,17 @@ def test_tool_concurrency_limit_per_sandbox(env):
     assert exec_(e, "echo hi").status_code == 429
     held.join()
     assert exec_(e, "echo hi").status_code == 200
+
+
+# 보안 검수 N-4: 데이터 폴더와 겹치는 원본 폴더는 거부한다 (사람 토큰이 에이전트 작업 폴더로 복사되지 않게)
+def test_source_dir_overlapping_data_dir_refused(env):
+    e = env
+    home = e.box.sandboxes.settings.home
+    assert (home / "human_token").exists()
+    for src in (home, home.parent, home / "sources"):
+        src.mkdir(exist_ok=True)
+        r = e.c.post("/sandboxes", json={"source_dir": str(src)}, headers=e.H)
+        assert r.status_code == 400 and "데이터 폴더" in r.json()["detail"], (src, r.text)
+    r = e.c.post("/sandboxes", json={"source_dir": str(e.src)}, headers=e.H)
+    assert r.status_code == 201
+    e.c.delete(f"/sandboxes/{r.json()['id']}", headers=e.H)
