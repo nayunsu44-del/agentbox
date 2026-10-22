@@ -1,0 +1,41 @@
+1.login_old_token.status: 303
+1.cookie_issued: True
+1.set-cookie attrs: HttpOnly; Max-Age=43200; Path=/; SameSite=strict
+1.ui_approvals_with_cookie.status: 200
+2.old_token_header.status: 401
+2.old_token_form_login.cookie_issued: False
+2.OLD_COOKIE_ui_approvals.status: 200
+2.OLD_COOKIE_ui_sandboxes.status: 200
+2.OLD_COOKIE_post_ui_decide.status (auth passed; dummy id): 200
+2.OLD_COOKIE_ui_index.status: 200
+2.ui_sessions rows (public, scope, seconds_left): [('hs_7aab6c2e', '*', 43200)]
+2.any API to revoke all sessions: []
+3.sandbox_ticket_at_/login.cookie_issued: False
+3.redeem_sandbox_ticket.status: 303
+3.scope_of_new: sb_dummy01
+3.previous_star_session_still_valid_after_cookie_replaced: ('hs_7aab6c2e', '*')
+3.scoped_cookie GET /ui/approvals: 403
+3.scoped_cookie GET /ui/sandboxes: 403
+3.scoped_cookie GET /sandboxes/sb_dummy01/outbox: 403
+3.scoped_cookie GET /approvals/apr_x/capture.png: 403
+3.scoped_cookie GET /ui (redirect=no session): /login
+3.scoped_cookie state other sid: 403
+3.scoped_cookie takeover other sid: 403
+3.scoped_cookie handback other sid: 403
+3.scoped session() for own sid: True
+3.scoped session() for other sid: None
+3.cross-origin state with star cookie: 403
+4.take_by_other_session_error_contains_owner_public_id: True
+4.may_connect control (other session): False
+4.may_connect control (owner): True
+4.session() with public id as cookie: None
+5.logout.status: 303
+5.lease_after_owner_logout: None
+5.other session still valid: True
+6.ws cross-origin star cookie view: closed code=4401
+6.ws same-origin no cookie: closed code=4401
+6.ws scoped cookie other sid: closed code=4401
+6.ws star cookie control without lease: closed code=4403
+6.ws bad mode: closed code=4401
+6.ws same-origin star cookie view (passes gate; dummy sandbox missing -> 1011): closed code=1011
+6.ws no Origin header star cookie view (passes gate -> 1011): closed code=1011

@@ -281,13 +281,92 @@
   "prior_status": "prior_rejected_claim_changed",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-session",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "README.md",
+   "agentbox/api.py",
+   "agentbox/config.py",
+   "agentbox/desktop.py",
+   "agentbox/service.py",
+   "agentbox/web.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-session",
+    "reviewed_paths": [
+     "agentbox/desktop.py",
+     "agentbox/api.py",
+     "agentbox/web.py",
+     "agentbox/config.py",
+     "README.md"
+    ],
+    "invariant": "Browser sessions minted under a human token are invalidated when the token is rotated, and the owner can revoke all sessions.",
+    "method": "local",
+    "result": "Fails. ui_sessions has no binding to the human token (desktop.py:35-37); session_scope checks only hash + expiry (133-145); restart deletes only expired rows (91-93). Harness: login with hum_OLD -> '*' cookie; rebuild with AGENTBOX_HUMAN_TOKEN=hum_NEW on the same DB: old token 401 / no cookie, but old cookie -> 200 on /ui, /ui/approvals, /ui/sandboxes and POST /ui/approvals/{aid}/deny passed auth; row had 43200 s left. No revoke-all; logout ends only the presented cookie (desktop.py:127-131, web.py:129-137).",
+    "artifact": "agents/h-session/artifacts/h_session.out"
+   },
+   {
+    "agent_id": "h-session",
+    "reviewed_paths": [
+     "agentbox/desktop.py",
+     "agentbox/api.py",
+     "agentbox/web.py"
+    ],
+    "invariant": "Prior rejected claim re-check: a sandbox-scoped ticket/session cannot act as a '*' session on any cookie route.",
+    "method": "local",
+    "result": "Holds. redeem deletes the ticket first and requires scope == sid (desktop.py:105-114); /login redeems only '*' tickets (web.py:110-115). Harness: scoped cookie -> 403 on /ui/approvals, /ui/sandboxes, outbox, capture.png, other sid's state/takeover/handback; /ui redirects to /login.",
+    "artifact": "agents/h-session/artifacts/h_session.out"
+   },
+   {
+    "agent_id": "h-session",
+    "reviewed_paths": [
+     "agentbox/desktop.py",
+     "agentbox/service.py",
+     "agentbox/api.py"
+    ],
+    "invariant": "Lease ownership keyed on public hs_ id (32 bits) cannot be assumed by a principal who learns another session's public id.",
+    "method": "local",
+    "result": "Holds: ids are disclosed in 409 details/audit but no route accepts a public id as input; lease comparisons use the cookie-derived id. Collision needs ~2^16 human-minted sessions (hardening).",
+    "artifact": "agents/h-session/artifacts/h_session.out"
+   },
+   {
+    "agent_id": "h-session",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/service.py",
+     "agentbox/web.py"
+    ],
+    "invariant": "Takeover/handback/state and ticket issue/redeem reachable only by intended principals; header handback force-release human only; GET redemption not drivable by lower trust.",
+    "method": "source",
+    "result": "Holds. desktop_human rejects agents; takeover requires a cookie session; header handback (session=None) only after the human token matched; agents on state limited to own sid; tickets human_only, 60 s, hashed, one-time, sid-bound; cookies minted server-side so fixation is impossible.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-session",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/desktop.py",
+     "agentbox/web.py"
+    ],
+    "invariant": "Logout and expiry end the session's screen connections and hand back its lease.",
+    "method": "local",
+    "result": "Holds for the presented session (end_ui_session, service.py:517-527); WS re-checks every 30 s (api.py:391-404). Cross-session gaps folded into the candidate.",
+    "artifact": "agents/h-session/artifacts/h_session.out"
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/desktop.py:ui_sessions:human-token-rotation-does-not-revoke-browser-sessions"
+  ],
   "unresolved": [],
-  "x_planned_hunter": "h-session"
+  "x_planned_hunter": "h-session",
+  "x_hardening": [
+   "Public session ids are hs_ + token_hex(4) with no UNIQUE constraint; colliding sessions would share a lease; use token_hex(16) + UNIQUE.",
+   "Owner public id echoed in 409 details; never treat hs_ ids as secrets.",
+   "Plain-http loopback mode: cookie has no Secure flag and cookies are not port-scoped; another loopback service the user visits receives it.",
+   "No cap on concurrent desktop WebSocket/x11vnc processes per session (api.py:350); human-only.",
+   "GET /sandboxes/{sid}/desktop?ticket= redeems without same_origin; tickets human-only/one-time/60 s; consider POST redemption."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fapprovals%2F%7Baid%7D%20%2B%20agentbox%2Fcli.py%23cmd_approve::agentbox%2Fservice.py%23decide%20executes%20the%20agent%27s%20original%20args%20after%20human%20approval::agentbox%2Fservice.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
@@ -901,13 +980,50 @@
   "prior_status": "prior_covered_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-session",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-session",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/desktop.py"
+    ],
+    "invariant": "WS upgrade rejects cross-origin handshakes, other-sandbox cookies, unknown modes and control without own lease.",
+    "method": "local",
+    "result": "Holds. TestClient harness: cross-origin '*' cookie 4401; no cookie 4401; other-sid scoped cookie 4401; bad mode 4401; control without lease 4403; same-origin/no-Origin pass the gate. Cookie host-only, HttpOnly, SameSite=Strict.",
+    "artifact": "agents/h-session/artifacts/h_session.out"
+   },
+   {
+    "agent_id": "h-session",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/desktop.py",
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "View connections cannot inject input; control connections die when the lease or session ends.",
+    "method": "source",
+    "result": "Holds by source: view-only enforced by x11vnc -viewonly per connection (sandbox.py:766-769); control re-checked after add_conn; release/close_all/logout/session_watch close conns. Runtime x11vnc behaviour is the documented design control.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
-  "x_planned_hunter": "h-session"
+  "x_planned_hunter": "h-session",
+  "x_hardening": [
+   "Public session ids are hs_ + token_hex(4) with no UNIQUE constraint; colliding sessions would share a lease; use token_hex(16) + UNIQUE.",
+   "Owner public id echoed in 409 details; never treat hs_ ids as secrets.",
+   "Plain-http loopback mode: cookie has no Secure flag and cookies are not port-scoped; another loopback service the user visits receives it.",
+   "No cap on concurrent desktop WebSocket/x11vnc processes per session (api.py:350); human-only.",
+   "GET /sandboxes/{sid}/desktop?ticket= redeems without same_origin; tickets human-only/one-time/60 s; consider POST redemption."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23all%20JSON%20and%20browser%20routes::agentbox%2Fapi.py%23principal%20%2B%20human_only%20%2B%20screen_human%20%2B%20desktop_human::agentbox%2Fapi.py::ATTACK-CLASSES.md%23Access%20control",
