@@ -439,13 +439,34 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "blocked",
   "agent_id": "h-gui",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-gui",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Any GUI input that can change /workspace outside policy happens inside an open burst that has a restore point, a gui_changes record and a stray-process stop at close.",
+    "method": "source",
+    "result": "Partial source review. Bursts open only via _snapshot when _gui_needs_snapshot is true and close on idle/next_burst/human_takeover/end_desktop. _open_gui_burst, _stop_gui_strays and _close_gui_burst swallow exceptions and return with no audit record, so a failed open/close leaves no trace. Not settled whether container-controlled conditions can trigger those failures.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
-  "unresolved": [],
-  "x_planned_hunter": "h-gui"
+  "unresolved": [
+   "Hunter stopped early. Unsettled: whether container-controlled state can make workspace_manifest or desktop_processes fail at burst open (no burst, so no gui_changes and no stray stop) or at close (no record), after which the next burst treats earlier processes as baseline.",
+   "Unsettled: whether images/desktop tooling and autostart/session paths under /home/desktop let changes reach /workspace with no open burst, including after snapshot restore. Needs a parent-led images/desktop review and a live desktop-image check."
+  ],
+  "x_planned_hunter": "h-gui",
+  "x_hardening": [
+   "service.py _open_gui_burst/_stop_gui_strays/_close_gui_burst catch broad exceptions and return without an audit record. Logging a gui_burst_error event, or refusing further GUI input while no burst is open, would make silent loss of the N-1 mitigation visible to the human."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D::agentbox%2Fapi.py%23tool_pool%20%2B%20agentbox%2Fservice.py%23call_tool%20tool_concurrency::agentbox%2Fapi.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
@@ -1261,13 +1282,31 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "blocked",
   "agent_id": "h-gui",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/sandbox.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-gui",
+    "reviewed_paths": [
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Container output (ps, getwindowpid, find -printf manifest) cannot cause wrong stray classification, wrong kill targets or hidden workspace changes.",
+    "method": "source",
+    "result": "Partial source review. gui_strays window ownership comes from the client-supplied _NET_WM_PID via xdotool getwindowpid (not peer-authenticated). Process lists come from root ps output split on whitespace. kill_processes SIGKILLs, as the desktop user, pids taken from an earlier listing. The manifest covers /workspace only (-xdev) and is truncated at 8 MiB. Not locally checked.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
-  "unresolved": [],
-  "x_planned_hunter": "h-gui"
+  "unresolved": [
+   "Hunter stopped early. Unsettled: whether _NET_WM_PID can be pointed at another process to protect it; whether pid reuse between listing and kill hits an unintended process (uid 1001 kill limits the effect); whether manifest truncation or changes outside /workspace hide changes from gui_changes. Needs harness or parent-led live desktop-image checks."
+  ],
+  "x_planned_hunter": "h-gui",
+  "x_hardening": [
+   "service.py _open_gui_burst/_stop_gui_strays/_close_gui_burst catch broad exceptions and return without an audit record. Logging a gui_burst_error event, or refusing further GUI input while no burst is open, would make silent loss of the N-1 mitigation visible to the human."
+  ]
  },
  {
   "coverage_id": "container-controlled%20strings%20rendered%20to%20humans%20%28outbox%20names%2C%20gui_changes%20paths%2C%20ps%20args%2C%20exec%20output%2C%20errors%29::agentbox%2Fweb.py%23describe%20%2B%20Jinja%20autoescape%20%2B%20agentbox%2Fcli.py%23_safe::agentbox%2Fweb.py::AI-AND-LLM.md%23Insecure%20output%20rendering",
