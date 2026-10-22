@@ -75,14 +75,22 @@
   "result_fingerprints": [
    "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore"
   ],
-  "unresolved": [],
+  "unresolved": [
+   "validation_not_run: Phase 3 verifier (v18/v19) stopped at the owner usage limit; prompt is committed"
+  ],
   "x_source": "critic-2 missing_units",
   "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 3. Desktop session start on restore honours ~/.config/autostart written by uid 1001; never in gui_changes; needs live-image validation.",
   "x_hardening": [
    "images/desktop/agentbox-desktop-start:30 — startxfce4 re-runs ~/.config/autostart on every container start with no allowlist; consider setting GLib/XDG so the session ignores the per-user autostart dir, or chowning /home/desktop/.config/autostart to root and making it read-only to uid 1001.",
    "agentbox/sandbox.py:499 — workspace_manifest/gui_changes only observes /workspace; the desktop user's writable HOME (/home/desktop) that is re-executed at session start is outside all burst monitoring. A manifest/snapshot-diff that also covers /home/desktop (at least .config/autostart, .bashrc, .config/xfce4, .config/sessions) would surface persistence writes.",
    "agentbox/sandbox.py:216 — gui_strays unconditionally exempts baseline pids; a process whose executable/entry was introduced by a prior burst (e.g., an autostart file committed into the snapshot) is indistinguishable from a legitimate boot process after restore, so baseline membership is not a safe trust signal across restore boundaries."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "unvalidated"
+  },
+  "x_phase5": {
+   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "not run"
+  }
  },
  {
   "coverage_id": "agent%20tool%20calls%20that%20require%20approval%20%28POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%20-%3E%20REQUIRE_APPROVAL%29%20on%20desktop%20templates::agentbox%2Fservice.py%23_call_tool%20approval%20creation%3A%20no%20per-sandbox%20pending-approval%20cap%2C%20plus%20a%20per-approval%20PNG%20written%20to%20settings.home%2Fcaptures%20that%20is%20never%20removed%20on%20decision%2C%20expiry%20or%20sandbox%20delete::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
@@ -164,13 +172,21 @@
   "result_fingerprints": [
    "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed"
   ],
-  "unresolved": [],
+  "unresolved": [
+   "validation_not_run: Phase 3 verifier (v18/v19) stopped at the owner usage limit; prompt is committed"
+  ],
   "x_source": "critic-2 missing_units",
   "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 2. Every gated call creates an approval, preview and captures/{aid}.png with no pending cap; no code removes captures; host disk grows without a quota and the queue renders every card.",
   "x_hardening": [
    "Approval rows themselves (approvals.py) are also never deleted — expire_stale/decide only transition status — so the SQLite approvals table grows unboundedly alongside the captures; a retention/prune policy for terminal approvals would bound both. (Audit-table row growth is peer-owned and excluded.)",
    "sandbox.py screenshot() reads the whole scrot PNG with no size cap (unlike exec output _Head/64KB), so each retained capture can be large on a busy desktop; capping/downscaling the stored capture would reduce per-item cost."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "unvalidated"
+  },
+  "x_phase5": {
+   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "not run"
+  }
  },
  {
   "coverage_id": "agent-controlled%20audit%20content%20%28tool%20args%2C%20file%20names%2C%20process%20args%29::agentbox%2Faudit.py%23hash%20chain%20%2B%20append-only%20triggers%20%2B%20event%20provenance::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Business%20logic",
@@ -1451,9 +1467,7 @@
   "result_fingerprints": [
    "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion"
   ],
-  "unresolved": [
-   "validation_budget_exhausted: parent-live observation after Phase 3 (l9); no independent candidate verifier ran because the owner-approved budget (63) was spent. Not a finding."
-  ],
+  "unresolved": [],
   "x_planned_hunter": "h-policy",
   "x_hardening": [
    "policy.py reduces program names to basename (./ls, /workspace/cat count as allowlisted); latent bypass if the agent ever gets an executable in /workspace or an interpreter is allowlisted. Match resolved program or reject operands with '/'.",
@@ -1462,10 +1476,10 @@
    "Approval preview.affected is computed at creation and can go stale before execution (globs re-expand); recompute at decision time or flag dynamic globs."
   ],
   "x_decisions": {
-   "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion": "unvalidated"
+   "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion": "rejected"
   },
   "x_phase5": {
-   "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion": "not run (no Phase 3 validation)"
+   "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion": "rejected in Phase 3 (v16); Phase 5 verifies confirmed and needs_validation records only"
   }
  },
  {
@@ -2351,14 +2365,22 @@
   "result_fingerprints": [
    "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row"
   ],
-  "unresolved": [],
+  "unresolved": [
+   "phase5_not_run: v17 Phase 3 confirmed (low); Phase 5 record verifier not run before the owner usage limit"
+  ],
   "x_source": "critic-2 missing_units",
   "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 1. The approval-binding unit did not read sandbox.py preview or templates: impact list built by newline-splitting container output (agent-chosen names with newlines add/displace rows), only rm/curl recognised, 'could not compute' note only when both lists are empty, 200-row truncation; captures of an agent-controlled screen presented as system-taken.",
   "x_hardening": [
    "agentbox/service.py:81-90 and templates/_approvals.html:17 (cli has no screenshot): _capture takes the request-time desktop screenshot via sandboxes.screenshot (uid 1001 X session) and the card labels it '요청 시점 화면 (시스템이 찍음)'. The content is agent-influenced (the agent drives GUI apps) and is captured at request time, so for GUI approvals (click/type/key) it may not reflect the screen at the later approval/execution moment (TOCTOU). Inherent to a desktop sandbox and advisory-only; recorded as hardening, not a separate finding.",
    "agentbox/sandbox.py:805,812 and preview rows: _expand/_walk parse container output with str.splitlines(); an agent-created filename containing a newline injects a fabricated extra 'affected' row or can push a real target past the 200-row truncation (sandbox.py:869). Same impact-list-integrity root cause as the confirmed finding; a dedicated fix should also quote/escape or use NUL-delimited enumeration.",
    "agentbox/service.py:decide and _snapshot: approval execution takes an unconditional pre-execution snapshot for every tool including exec, so the UI/CLI claim '승인하면 실행 직전에 스냅샷을 만든다' is honored and a manual restore point exists even for the deceptive-preview case (noted to bound impact)."
-  ]
+  ],
+  "x_decisions": {
+   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "phase3 confirmed (low), awaiting Phase 5"
+  },
+  "x_phase5": {
+   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "not run: owner usage limit; Phase 3 candidate not yet in findings.json"
+  }
  },
  {
   "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs::agentbox%2Fsandbox.py::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",

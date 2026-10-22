@@ -2,29 +2,26 @@
 
 ## 1. 실행 조건과 범위
 
-**이번 감사는 미완료 상태(부분 패스)다.** 지금 남아 있는 공식 후보는 모두 3단계 검증과 5단계 재검증을 거쳤다. 미완료인 이유는 다음 세 가지다.
+**이번 감사는 미완료 상태(부분 패스)다.** `findings.json`에 있는 확정·검증 필요 레코드는 모두 3단계 검증과 5단계 재검증을 거쳤다. 보고서를 처음 쓴 뒤 소유자가 예산을 80으로 올려 4차 헌팅을 돌렸지만, 소유자의 사용량 한도 때문에 도중에 멈췄다(`owner_usage_limit`).
 
-1. **검증하지 못한 후보 1건 (`validation_budget_exhausted`).** `agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion`는 3단계가 끝난 뒤 부모가 실측하다 발견한 것이다(`agents/parent-live/artifacts/l9_agent_pressure.out`, `l9_probe.out`).
-   - 내용: 허용 목록에 있는 exec(`tail -f /dev/null & ` ×1100)가 pid 한도를 채운다. 그러면 bash가 fork에 실패해 일찍 끝나고, `timeout`이 프로세스 그룹을 종료하지 못한다. 결과적으로 백그라운드 프로세스 약 1000개가 남아 샌드박스가 pid 한도에 걸린 채로 있다.
-   - 장부에서는 `agentbox/api.py#POST /sandboxes/{sid}/tools/exec` 단위에 `candidate`로 남아 있다.
-   - 독립 검증에는 에이전트가 2개(3단계 + 5단계) 필요한데, 승인된 예산 63 중 1개만 남았다. **그래서 발견 사항이 아니며 `findings.json`에도 없다.**
-2. **보류된 커버리지 단위 3개.** 2차 비평(critic-2)이 제안한 단위 3개가 예산 때문에 `deferred`로 남았다(`budget_cannot_reserve_critics_and_validation`).
-   - 승인 카드의 영향 표와 요청 시점 화면 캡처
-   - 승인이 필요한 도구 호출이 쌓는 대기열과 캡처 파일
-   - GUI 구간이 `/workspace` 밖(`/home/desktop`의 autostart, 세션 파일)에 쓴 내용이 복원 때 다시 실행되는 문제
-3. **최종 비평 미실행.** 마지막에 따로 도는 최종 비평(final-clean critic)을 돌리지 않았다. 그래서 **커버리지가 깨끗하다고 주장하지 않는다.**
+1. **4차 헌팅.** 보류됐던 단위 3개를 모두 헌팅했고, 세 단위 모두 후보를 하나씩 냈다. 이 3건은 **아직 발견 사항이 아니며 `findings.json`에 없다.**
+   - `agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row`: 승인 카드의 영향 표가 `rm`/`curl`이 아닌 구간을 빼고, 명령에 `rm`이 하나라도 있으면 "계산 못 함" 경고도 보이지 않는다. 3단계(v17)는 확정 **low**로 통과했지만 5단계는 돌지 않았다.
+   - `agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed`: 승인 대기마다 캡처 PNG가 남고 지워지지 않으며, 대기 수에도 상한이 없다. 3단계 검증자(v18)는 결과를 내기 전에 멈췄다.
+   - `agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore`: `/home/desktop` autostart에 쓴 파일이 `gui_changes`에 남지 않고 스냅샷에 들어갔다가 복원 때 uid 1001로 다시 실행된다. 부모가 에이전트 GUI 도구만으로 체인 전체를 재현했다(`agents/parent-live/artifacts/l12_autostart.out`). 3단계 검증자(v19)는 결과를 내기 전에 멈췄다.
+2. **부모가 실측한 후보(v16)는 3단계에서 기각했다.** exec가 끝난 뒤 남는 백그라운드 프로세스가 pid 한도를 채운다는 후보였다. 동작 자체는 재현됐다. 하지만 영향이 에이전트 자기 샌드박스 안에 그치고, 사람이 복원으로 완전히 복구할 수 있다(l11). 이 기각 레코드는 `findings.json`에 넣었다.
+3. **비평.** 4차 헌팅 뒤 비평(critic-3)은 도중에 멈췄고, 최종 비평(final-clean critic)은 돌지 않았다. **그래서 커버리지가 깨끗하다고 주장하지 않는다.**
 
 | 항목 | 값 |
 |---|---|
 | 대상 | `nayunsu44-del/agentbox` @ `0e4b958` (`main`의 `8e4db9e`와 `agentbox/`, `images/`, `deploy/`, `tests/`가 같음) |
 | 프로필 | `standard`, 범위 = 저장소 전체 |
 | 실행 정책 | **sandboxed-source-and-local-only** |
-| 예산 | 처음에 부모가 제안한 40개. 소유자가 50, 60, 63으로 올렸다. **62개 사용**(내역은 아래) |
+| 예산 | 처음에 부모가 제안한 40개. 소유자가 50, 60, 63, 80으로 올렸다. **70개 사용**(내역은 아래). 이 중 3개는 결과를 내기 전에 멈췄다 |
 | 이전 감사 사용 | run-1(`7fc501f`) 장부와 run-2 실측 결과. 이전 확정 9건은 모두 수정돼 소스가 바뀌었으므로 다시 검증하는 단위로 넣었다(`prior_confirmed_changed_source` 8, `prior_covered_changed_source` 6). 소스가 같아 그대로 넘어온 확정은 없다. run-1에서 기각한 주장 1건(desktop 티켓의 범위)은 소스가 바뀌어 다시 확인했다 |
-| `findings.json` | 14건: 확정 8 (high 1 · medium 5 · low 2), 검증 필요 5, 기각 1. `validate-findings.cjs` **PASS** |
-| 커버리지 장부 | 26개 단위: covered 8 · candidate 15 · deferred 3 · blocked 0. `validate-coverage-ledger.cjs` **PASS** |
+| `findings.json` | 15건: 확정 8 (high 1 · medium 5 · low 2), 검증 필요 5, 기각 2. `validate-findings.cjs` **PASS** |
+| 커버리지 장부 | 26개 단위: covered 8 · candidate 18 · deferred 0 · blocked 0. `validate-coverage-ledger.cjs` **PASS** |
 
-**에이전트 사용 내역(62개).**
+**에이전트 사용 내역(70개).**
 
 | 단계 | 개수 | 내역 |
 |---|---|---|
@@ -34,6 +31,7 @@
 | 3단계 검증 | 26 | 이전 세션 결과 소실 1, 완료 4, 사용량 한도로 중단 8, 재개 세션 11, 형식 오류로 다시 돌림 2 |
 | 5단계 레코드 검증 | 13 | Sonnet |
 | 5단계 재확인 | 4 | Opus. 판정이 올라가거나 근거가 크게 바뀐 교체안 대상 |
+| 4차 헌팅 이후 | 8 | 헌터 3, 3단계 검증 4(v16 기각 · v17 · 멈춤 2), 4차 뒤 비평 1(멈춤). 모두 Opus |
 
 **실행 경계.**
 - **대상 코드를 직접 돌린 경우:** 대상 코드는 부모의 `sbx` 래퍼 안에서만 돌렸다. 네트워크 없음, 루트 파일 시스템 읽기 전용, 대상과 `/usr`는 읽기 전용, 쓰기는 `agents/<id>/scratch`에만 허용했다. uid 65534, 모든 권한 제거, 512 MiB, CPU 1개, pid 64개, 120초 제한이다. 5단계에서는 이후 수정이 섞이지 않도록 감사 대상 소스(`8e4db9e`)를 붙인 `sbx5`를 썼다.
@@ -216,22 +214,23 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
   - 일시정지된 샌드박스도 스냅샷을 만든다.
   - `restore`와 `delete`가 `gui_lock`/`_snap_locks`를 잡지 않는다.
 
-**참고(기각 1건):** `agentbox/cli.py:runtime_problem:runc-alias-io.containerd.runc.v2-bypasses-exposed-runc-guard`는 동작 자체는 재현됐다. 하지만 runtime을 고르는 사람은 운영자뿐이라 신뢰 경계를 넘지 않는다. 다음 감사가 같은 주장을 반복하지 않도록 기록으로 남긴다.
+**참고(기각 2건):** v16(`agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion`)은 위 1절에 적었다. 나머지 1건은 다음과 같다. `agentbox/cli.py:runtime_problem:runc-alias-io.containerd.runc.v2-bypasses-exposed-runc-guard`는 동작 자체는 재현됐다. 하지만 runtime을 고르는 사람은 운영자뿐이라 신뢰 경계를 넘지 않는다. 다음 감사가 같은 주장을 반복하지 않도록 기록으로 남긴다.
 
 ## 6. 커버리지 요약
 
-- **장부 26개 단위:** covered 8, candidate 15, deferred 3, blocked 0, out_of_scope 0.
-  - candidate 15개 중 14개는 위 확정·검증 필요·기각 레코드와 연결된다.
-  - 나머지 1개(exec 단위)는 검증하지 못한 후보 1건이다(1절).
+- **장부 26개 단위:** covered 8, candidate 18, deferred 0, blocked 0, out_of_scope 0.
+  - candidate 18개 중 15개는 `findings.json` 레코드와 연결된다.
+  - 나머지 3개는 4차 헌팅의 미검증 후보다(1절).
 - **동반 지침:** RESOURCE-EXHAUSTION, AI-AND-LLM, WEB-PROTOCOL-AND-AUTH, CLIENT-SIDE, DESKTOP-MOBILE-AND-LOCAL-IPC, CLOUD-AND-DEPLOYMENT, DATA-ISOLATION-AND-LIFECYCLE.
 - **이유를 적고 뺀 지침:**
   - MEMORY-SAFETY: 네이티브 코드가 없음
   - SUPPLY-CHAIN: 배포·서명 경로가 없고 CI는 테스트만 돌림
   - PROTOCOLS: HTTP/WS/MCP stdio 외의 broker나 RPC가 없음
 - **비평:**
-  - 1차 뒤 비평(critic-1)과 2차 뒤 비평(critic-2)이 돌았다. critic-2가 제안한 단위 3개는 예산 때문에 보류했다(1절).
-  - 마지막에 따로 도는 최종 비평은 돌지 않았다. **그래서 깨끗한 커버리지를 주장하지 않는다.**
+  - 1차 뒤 비평(critic-1)과 2차 뒤 비평(critic-2)이 돌았다. critic-2가 제안한 단위 3개는 4차 헌팅에서 맡았다.
+  - 4차 뒤 비평(critic-3)은 도중에 멈췄고, 최종 비평은 돌지 않았다. **그래서 깨끗한 커버리지를 주장하지 않는다.**
 - **다음 감사에서 할 일:**
-  - 보류된 3개 단위
-  - 미검증 후보 1건
-  - 검증 필요 5건의 로컬 계획. 대부분 실제 Docker와 데스크톱 이미지가 필요하다.
+  - v17의 5단계 검증
+  - v18과 v19의 3단계·5단계 검증
+  - critic-3과 최종 비평
+  - 검증 필요 5건의 로컬 계획

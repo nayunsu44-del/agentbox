@@ -1,0 +1,7 @@
+exec {"command": "rm /workspace/harmless.txt; dd if=/dev/zero of=/workspace/important.db bs=1M count=10"} -> {"action": "require_approval", "rule_id": "rm-curl-needs-approval", "reason": "파일 삭제(rm) 또는 외부 전송(curl)이 들어간 명령", "matched": ["rm"]}
+exec {"command": "rm /workspace/harmless.txt && printf x > /workspace/important.db"} -> {"action": "require_approval", "rule_id": "rm-curl-needs-approval", "reason": "파일 삭제(rm) 또는 외부 전송(curl)이 들어간 명령", "matched": ["rm"]}
+exec {"command": "rm /workspace/a.txt; mv /workspace/secret.key /workspace/public.txt"} -> {"action": "require_approval", "rule_id": "rm-curl-needs-approval", "reason": "파일 삭제(rm) 또는 외부 전송(curl)이 들어간 명령", "matched": ["rm"]}
+exec {"command": "rm /workspace/harmless.txt; find /workspace/keep -delete"} -> {"action": "require_approval", "rule_id": "rm-curl-needs-approval", "reason": "파일 삭제(rm) 또는 외부 전송(curl)이 들어간 명령", "matched": ["rm"]}
+exec {"command": "mv /workspace/important.db /tmp/gone"} -> {"action": "require_approval", "rule_id": "exec-needs-approval", "reason": "읽기 전용 허용 목록 밖의 명령 (쓰기, 스크립트 실행 등)", "matched": []}
+write_file {"path": "important.db", "content": "x"} -> {"action": "allow", "rule_id": null, "reason": null, "matched": []}
+delete_file {"path": "important.db"} -> {"action": "require_approval", "rule_id": "delete-file-needs-approval", "reason": "파일 삭제", "matched": []}

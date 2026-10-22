@@ -81,7 +81,7 @@ pytest                                                 # 160 passed
 
 ## 3차 감사(run-3) 진행 상태 — 다음 세션이 여기서 이어받는다
 
-작업 브랜치: `ccr-e2c70e17-r0gmhn` (`ccr-0da6ba34-sc9pu1`의 `d2537f0`에서 이어받음. 그 전은 `ccr-df7eb88d-1nmb5q`, PR #7). draft PR #8. **1~6단계를 마쳤다. 다만 검증하지 못한 후보 1건 때문에 `run_status: incomplete`(`validation_budget_exhausted`)다.** 보고서는 `run-3/REPORT.md`, `FINDINGS-DETAIL.md`, `NEEDS-VALIDATION.md`에 있다.
+작업 브랜치: `ccr-e2c70e17-r0gmhn` (`ccr-0da6ba34-sc9pu1`의 `d2537f0`에서 이어받음. 그 전은 `ccr-df7eb88d-1nmb5q`, PR #7). draft PR #8. **1~6단계를 마쳤고, 이어서 4차 헌팅을 하다 소유자의 사용량 한도로 멈췄다. `run_status: incomplete`(`owner_usage_limit`)다.** 보고서는 `run-3/REPORT.md`, `FINDINGS-DETAIL.md`, `NEEDS-VALIDATION.md`에 있다.
 
 ### 최종 결과 (`run-3/findings.json` 14건, 두 검증기 통과)
 | 판정 | 심각도 | ID | 내용 | 수정 |
@@ -114,23 +114,26 @@ pytest                                                 # 160 passed
   - 큰 변경이라 재확인 뒤 반영 4건: v06(확정 low로 승격), v09, v10, v15
 - **예산:** 소유자가 63까지 승인했고 62개를 썼다.
 
-### 남은 것
-1. **미검증 후보** `agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion`.
-   - 근거: l9 실측. exec 뒤 백그라운드 프로세스 약 1000개가 남아 pid 한도가 계속 막힌다.
-   - 장부의 exec 단위에 `candidate`(`unresolved: validation_budget_exhausted`)로 올려 두었다.
-   - 3단계와 5단계 검증에 에이전트 2개가 필요하다. 예산을 늘리면 `tools/gen5.py` 형식으로 지시문을 만들어 돌린다.
-2. **보류된 커버리지 3개 단위.** critic-2가 제안했다. 승인 카드의 영향 표·캡처, 승인 대기열·캡처 파일, `/home/desktop` autostart 재실행. 최종 비평도 돌지 않았다.
-3. **남은 수정:**
-   - v11·v10: GUI와 수집 exec에 컨테이너 쪽 `timeout -k`, 구간 닫기를 호출자 스레드에서 분리, takeover는 `gui_lock.acquire(timeout)`
-   - v12: 복원·일시정지·재개 때 타이머 초기화, 구간에 `container_id` 기록
-   - v13: 웹 템플릿에 `_safe`와 같은 필터
-   - v03: `cmd_agent.log`에 줄 단위 `_safe`
-   - v09: exit code 확인, 실패하면 `gui_burst_error` 기록
-   - v14: X-Frame-Options SAMEORIGIN + frame-ancestors 'self'
-   - v06 남은 틈: `cp -ax` 또는 하위 경로 검사
+### 남은 것 (소유자의 사용량 한도로 멈춘 지점)
+예산을 80으로 올린 뒤 4차 헌팅을 했다. 70개를 썼다.
+- 결과: 헌터 `h-preview`, `h-queue`, `h-autostart`가 각자 후보를 하나씩 냈다. v16(부모가 실측한 pid 한도 후보)은 3단계에서 기각했고 `findings.json`에 넣었다. v17(영향 표 누락)은 3단계에서 확정 low로 통과했다.
+- 멈춘 것: critic-3, v18, v19는 사용량 한도 때문에 멈췄다.
 
-   수정마다 회귀 테스트를 붙이고 PR로 낸다.
-4. **검증 필요 5건의 로컬 계획.** `NEEDS-VALIDATION.md`에 있다. 실제 Docker와 데스크톱 이미지가 필요하다.
+이어서 할 순서는 다음과 같다. 지시문은 모두 커밋돼 있다. `AUDIT_SCRATCHPAD`와 스크래치패드 경로만 새 세션 값으로 바꾸고, `tools/gen3.py`와 `tools/gen_critic.py`로 다시 만들 수 있다.
+1. `agents/v18/prompt.md`, `agents/v19/prompt.md`로 3단계 검증자를 돌린다. 결과는 `tools/ingest.py`로 수거한다. v19에는 l12가 근거로 들어 있다.
+2. `agents/critic-3/prompt.md`로 4차 뒤 비평을 돌린다. 새 작업이 없으면 최종 비평(`gen_critic.py critic-4 final-clean ...`)을 돌린다.
+3. v17, v18, v19 레코드를 `findings.json`에 넣고 5단계 검증을 돌린다(`gen5.py`의 FP 표에 추가). 이어서 `apply5.py` 방식으로 반영하고 `gen6.py`로 보고서를 다시 만든다.
+4. 확정 건 수정과 회귀 테스트(아래 목록), 그리고 PR.
+
+남은 수정 목록:
+- v11·v10: GUI와 수집 exec에 컨테이너 쪽 `timeout -k`, 구간 닫기를 호출자 스레드에서 분리, takeover는 `gui_lock.acquire(timeout)`
+- v12: 복원·일시정지·재개 때 타이머 초기화, 구간에 `container_id` 기록
+- v13: 웹 템플릿에 `_safe`와 같은 필터
+- v03: `cmd_agent.log`에 줄 단위 `_safe`
+- v09: exit code 확인, 실패하면 `gui_burst_error` 기록
+- v14: X-Frame-Options SAMEORIGIN + frame-ancestors 'self'
+- v06 남은 틈: `cp -ax` 또는 하위 경로 검사
+- v17: preview가 모델링하지 못한 구간마다 경고를 단다
 
 ### 이어서 하는 법 (환경)
 1. `nohup dockerd >/tmp/dockerd.log 2>&1 &`

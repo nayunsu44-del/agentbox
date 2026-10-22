@@ -37,7 +37,7 @@
   }
  ],
  "shared_file_owner": "parent",
- "run_status": "in_progress",
+ "run_status": "incomplete",
  "agents_spent_so_far": {
   "recon": 4,
   "hunt_wave1": 11,
@@ -50,11 +50,16 @@
   "phase3_verifiers_resume_session": 11,
   "phase3_reruns_after_format_discard": 2,
   "phase5_record_verifiers_sonnet": 13,
-  "phase5_reverifiers_opus": 4
+  "phase5_reverifiers_opus": 4,
+  "wave3_hunters_opus": 3,
+  "phase3_v16_opus": 1,
+  "post_wave3_critic_stopped": 1,
+  "phase3_v17_opus": 1,
+  "phase3_v18_v19_stopped": 2
  },
- "run_status_note": "Resumed after the first set of reports: wave 3 (h-preview, h-queue, h-autostart), v16 for the parent-observed lead, then critics, Phase 3-6 for new work.",
- "agents_spent_total": 62,
- "incomplete_reason": "validation_budget_exhausted: every Phase 2 candidate went through Phase 3 and every retained record passed Phase 5, but the parent-live lead agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion (exec ledger unit, observed in l9 after Phase 3) had no independent candidate verifier: it needs two more agents (Phase 3 + Phase 5) and one remained of the owner-approved 63. It is not in findings.json. Also: three units proposed by critic-2 stayed deferred (budget_cannot_reserve_critics_and_validation) and no distinct final-clean critic ran, so the run makes no clean-coverage claim.",
+ "run_status_note": "Wave 3 ran after the first reports. Stopped at the owner's usage limit; see HANDOFF '이어서 할 것'.",
+ "agents_spent_total": 70,
+ "incomplete_reason": "owner_usage_limit: wave 3 hunted the 3 deferred units (all candidate). Of the 4 new candidates, v16 was rejected in Phase 3 (added to findings.json); v17 passed Phase 3 as confirmed low but had no Phase 5 verifier; v18 and v19 were stopped before returning, and the post-wave-3 critic (critic-3) was stopped, so no final-clean critic ran. None of the 3 open candidates is in findings.json. Prompts for v18, v19 and critic-3 are committed and can be re-run.",
  "phase3_format_discards": [
   "v12 (first attempt: two sink entries)",
   "v03 (extra field execution.affected)",
@@ -68,7 +73,7 @@
     "agents/parent-live/artifacts/l9_agent_pressure.out",
     "agents/parent-live/artifacts/l9_probe.out"
    ],
-   "status": "ledger candidate on the exec unit (unresolved: validation_budget_exhausted); not validated"
+   "status": "rejected in Phase 3 (agents/v16/result.json)"
   }
  ],
  "phase5": {
