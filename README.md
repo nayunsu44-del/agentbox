@@ -197,7 +197,7 @@ agentbox desktop sb_xxx                                     # 1회용 링크 (60
 | `write_file` | 모두 | 허용 | `/workspace` 아래만, 최대 1MB. 있는 파일을 덮어쓰면 직전에 스냅샷. 로그에는 내용 대신 크기·sha256 |
 | `delete_file` | 모두 | 승인 필요 | 파일 하나만 (폴더 불가). 승인 후 스냅샷 뜨고 삭제 |
 | `exec` | 모두 | 읽기 전용 명령만 허용, 나머지는 승인 필요 | 허용 목록: `ls` `cat` `head` `tail` `wc` `grep` `stat` `du` `echo` `mkdir` 등 (`default_policy.yaml`의 `read-only-exec`). 파일 쓰기 리다이렉션(`>`), 변수·명령 치환, `sh`·`python`·`find` 같은 명령은 승인 대상. 파일을 쓸 때는 `write_file`을 쓴다 |
-| `screenshot`, `click`, `type`, `key` | desktop | 허용 | 화면 인수 중에는 423. 로그에는 이미지 대신 크기·sha256 |
+| `screenshot`, `click`, `type`, `key` | desktop | 허용 | 화면 인수 중에는 423. 로그에는 이미지 대신 크기·sha256. `click`·`type`·`key`는 GUI 구간이 시작될 때(60초 쉬었다 다시 입력)와 구간 중 10분마다 직전에 스냅샷 |
 
 승인 요청은 `AGENTBOX_APPROVAL_TIMEOUT`초(기본 300) 안에 결정이 없으면 `expired`로 거부된다 (AP-1).
 
@@ -255,6 +255,7 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 | `AGENTBOX_DISK` | (없음) | 디스크 상한 (xfs+pquota일 때만) |
 | `AGENTBOX_EXEC_TIMEOUT` | `60` | exec 한 번의 제한 시간(초) |
 | `AGENTBOX_TOOL_CONCURRENCY` | `4` | 샌드박스 하나가 동시에 돌릴 수 있는 도구 호출 수. 넘으면 429 (`0`이면 끔) |
+| `AGENTBOX_GUI_SNAPSHOT_IDLE` · `_INTERVAL` | `60` · `600` | GUI 입력이 이만큼(초) 쉬었다 다시 시작될 때, 또는 마지막 GUI 스냅샷이 interval(초)보다 오래됐을 때 스냅샷 (`_INTERVAL=0`이면 끔) |
 | `AGENTBOX_SNAPSHOT_QUOTA` | `50` | 샌드박스 하나의 스냅샷이 이만큼 쌓이면 에이전트의 덮어쓰기·삭제는 모두 승인을 거침 (`0`이면 끔). 샌드박스를 지우면 스냅샷 이미지도 지워짐 |
 | `AGENTBOX_MAX_UPLOAD` | 50MB | 파일 넣기 하나의 상한 |
 | `AGENTBOX_APPROVAL_TIMEOUT` | `300` | 승인 대기 상한(초) |
@@ -361,7 +362,7 @@ pytest           # Docker가 있어야 수용 테스트까지 돈다
 - 검수(2026-10-22)에서 나온 것 중 아직 고치지 않은 것:
   - 감사 로그의 비밀값 가림이 `DB_PASSWORD=`, `GITHUB_TOKEN=`, 따옴표로 감싼 값 같은 형식을 놓친다.
   - 에이전트가 만든 FIFO 파일을 `read_file`로 읽히면 그 요청이 멈춘다.
-  - 데스크톱 템플릿의 GUI 도구(`click`·`type`·`key`)는 컨트롤 플레인이 막지 않는 실행 경로다. 에이전트가 터미널을 열어(예: Ctrl+Alt+T) uid 1001로 명령을 실행할 수 있고, exec 허용 목록·승인·삭제 전 스냅샷이 적용되지 않는다. 감사 로그에는 입력한 문자열이 남는다.
+  - 데스크톱 템플릿의 GUI 도구(`click`·`type`·`key`)는 컨트롤 플레인이 막지 않는 실행 경로다. 에이전트가 터미널을 열어(예: Ctrl+Alt+T) uid 1001로 명령을 실행하거나 파일 관리자·편집기로 `/workspace`를 바꿀 수 있고, exec 허용 목록과 승인은 적용되지 않는다. 대신 GUI 구간마다 스냅샷을 떠서 되돌릴 수 있다. 되돌리면 그 구간의 정상 작업도 같이 사라진다. GUI로 띄운 백그라운드 프로세스는 구간이 끝난 뒤에도 돌며 파일을 바꿀 수 있고, 이때는 마지막 스냅샷까지만 되돌릴 수 있다. 감사 로그에는 입력한 문자열이 남는다.
   - 화면 링크로 받은 세션도 전체 웹 UI를 쓸 수 있다. 로그아웃해도 이미 열린 화면 연결은 끊기지 않는다.
   - gVisor가 없으면 경고만 하고 runc로 돈다 (`AGENTBOX_RUNTIME=runsc`로 고정하면 없을 때 실패한다).
   - `source_dir`는 데이터 폴더와 겹치는 경로만 거부한다. 그 밖의 경로(예: 홈 폴더)는 그대로 복사되고, 컨테이너 root가 권한 검사 없이 복사하므로 0600 파일도 에이전트가 읽게 된다. 에이전트에게 보여도 되는 폴더만 고를 것.

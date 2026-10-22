@@ -34,4 +34,9 @@ print("gui-id.txt:", j.get("result", {}).get("content", j))
 print("approvals:", len(c.get("/approvals", headers=H).json()), " snapshots:", len(box.sandboxes.list_snapshots(sid)))
 ev = [e["event"] + ("/" + e["tool"] if e["tool"] else "") for e in c.get("/audit", headers=H).json() if e["sandbox_id"] == sid]
 print("audit trail tools:", sorted(set(ev)))
+snaps = box.sandboxes.list_snapshots(sid)
+if snaps:  # GUI 구간 스냅샷(수정 후)으로 되돌리면 지운 파일이 돌아오는지
+    c.post(f"/sandboxes/{sid}/restore", json={"snapshot_id": snaps[0]["id"]}, headers=H)
+    st, j = tool("list_dir", path="/workspace")
+    print(f"after restore to {snaps[0]['id']} ({snaps[0]['reason']}):\n" + j["result"]["listing"])
 c.delete(f"/sandboxes/{sid}", headers=H)

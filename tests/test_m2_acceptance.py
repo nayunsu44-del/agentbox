@@ -193,6 +193,32 @@ def test_gui_tools_work(desk):
 
 
 @needs_desktop
+def test_gui_input_snapshots_per_burst(desk):
+    """보안 검수 N-1: GUI 입력은 정책 밖에서 /workspace를 바꿀 수 있으니 구간마다 복구 지점을 남긴다."""
+    e = desk
+
+    def snaps():
+        return len(e.box.sandboxes.list_snapshots(e.sid))
+
+    assert tool(e, "screenshot").status_code == 200 and snaps() == 0      # 화면 보기는 스냅샷 없음
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200 and snaps() == 1   # 구간 시작
+    assert tool(e, "click", x=10, y=10).status_code == 200 and snaps() == 1        # 같은 구간
+    e.box._gui_input_at[e.sid] -= 61                                              # 60초 쉬었다가
+    assert tool(e, "click", x=10, y=10).status_code == 200 and snaps() == 2
+    e.box._gui_snap_at[e.sid] -= 601                                              # 쉬지 않아도 10분마다
+    assert tool(e, "type", text="a").status_code == 200 and snaps() == 3
+
+    # 스냅샷 상한에서는 구간 시작 입력이 승인을 거치고, 승인하면 그 구간은 다시 바로 돈다
+    e.box.sandboxes.settings.snapshot_quota = snaps()
+    e.box._gui_input_at[e.sid] -= 61
+    r = tool(e, "click", x=10, y=10)
+    assert r.status_code == 202, r.text
+    res = e.c.post(f"/approvals/{r.json()['approval_id']}", json={"decision": "approve"}, headers=e.H).json()
+    assert res["status"] == "executed" and res["snapshot_id"] and snaps() == 4
+    assert tool(e, "click", x=10, y=10).status_code == 200 and snaps() == 4
+
+
+@needs_desktop
 def test_agent_cannot_reach_display_directly(desk):
     """에이전트 exec는 X 쿠키를 못 읽으니 xdotool로 화면을 직접 조작할 수 없다 (GUI 도구를 거쳐야 한다)."""
     from agentbox.policy import Policy

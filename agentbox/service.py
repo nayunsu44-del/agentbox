@@ -28,6 +28,7 @@ from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, safe_p
 
 FILE_TOOLS = {"list_dir", "read_file", "exec", "write_file", "delete_file"}
 GUI_TOOLS = {"screenshot", "click", "type", "key"}
+GUI_INPUT = GUI_TOOLS - {"screenshot"}
 TOOLS = FILE_TOOLS | GUI_TOOLS
 
 
@@ -62,6 +63,9 @@ class AgentBox:
         self.approval_timeout = approval_timeout
         self.captures = captures
         self._busy: dict[str, int] = {}
+        # GUI 구간 스냅샷용 (time.monotonic). 서버를 다시 켜면 비어서 첫 GUI 입력 때 스냅샷을 뜬다.
+        self._gui_input_at: dict[str, float] = {}
+        self._gui_snap_at: dict[str, float] = {}
         self._busy_lock = threading.Lock()
 
     def capture_path(self, aid: str) -> Path | None:
@@ -97,6 +101,8 @@ class AgentBox:
         if tool in GUI_TOOLS:
             with self.desktop.gui_lock(sid):
                 self._check_control(sid)
+                if tool in GUI_INPUT:
+                    self._gui_input_at[sid] = time.monotonic()
                 if tool == "screenshot":
                     shot = sb.screenshot(sid)
                     png = shot.pop("png")
@@ -169,7 +175,22 @@ class AgentBox:
                 return self.sandboxes.exists(sid, str(args.get("path", "")))
             except SandboxError:
                 return False
+        if tool in GUI_INPUT:
+            return self._gui_needs_snapshot(sid)
         return False
+
+    def _gui_needs_snapshot(self, sid: str) -> bool:
+        """GUI 입력은 터미널·파일 관리자 등으로 정책 밖에서 /workspace를 바꿀 수 있다. 막을 수는 없으니
+        AP-2의 복구 지점만이라도 남긴다: GUI 구간이 시작될 때와, 구간이 길면 interval마다."""
+        s = self.sandboxes.settings
+        if s.gui_snapshot_interval <= 0:
+            return False
+        if self.desktop.lease(sid) and not self.desktop.is_stale(sid):
+            return False  # 사람이 조작 중이라 어차피 423
+        now = time.monotonic()
+        last_input, last_snap = self._gui_input_at.get(sid), self._gui_snap_at.get(sid)
+        return (last_input is None or now - last_input > s.gui_snapshot_idle
+                or last_snap is None or now - last_snap > s.gui_snapshot_interval)
 
     def _over_snapshot_quota(self, sid: str, tool: str, args: dict[str, Any]) -> bool:
         """허용 규칙이 매번 docker commit을 일으켜 호스트 디스크를 채우지 못하게, 상한부터는 승인으로 돌린다."""
@@ -180,6 +201,8 @@ class AgentBox:
 
     def _snapshot(self, sid: str, tool: str, reason: str, ref: dict[str, Any]) -> dict[str, Any]:
         snap = self.sandboxes.snapshot(sid, reason=reason)
+        if tool in GUI_INPUT:
+            self._gui_snap_at[sid] = time.monotonic()
         self.audit.append(actor="system", event="snapshot", sandbox_id=sid, tool=tool,
                           payload={**ref, "snapshot_id": snap["id"], "image": snap["image"]})
         return snap
@@ -399,6 +422,7 @@ class AgentBox:
             # 기록 없이 에이전트에게 화면을 넘기지 않는다.
             raise ServiceError(503, f"{e}. 기록할 수 없어서 돌려주지 않음.") from e
         self.desktop.release(sid)
+        self._gui_input_at.pop(sid, None)  # 사람이 바꾼 상태까지 담도록 에이전트의 다음 GUI 입력 때 스냅샷
 
     def close(self) -> None:
         """DB 연결과 Docker 클라이언트를 닫는다 (서버 종료, 테스트)."""
