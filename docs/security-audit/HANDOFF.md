@@ -9,13 +9,13 @@
   - run-2: run-1이 남긴 needs_validation 5건을 실제 Docker에서 검증했다.
 - **브랜치:** `ccr-e10bee8e-6wt669` (origin에 푸시됨). draft PR #1이 이 브랜치에서 `main`으로 열려 있다. 예전 핸드오프 브랜치 `ccr-53433386-ji3dh4`는 이 브랜치에 그대로 포함돼 있다.
 - **현재 상태:** 확정 9건 중 **8건 수정 완료**, **N-1(High)은 사용자가 고른 방안 C·A·G로 부분 완화**(복구·경고·기록, 승인 우회는 남음). 기각은 1건이다.
-- **테스트:** 전체 `pytest` 152개 통과(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
+- **테스트:** 전체 `pytest` 160개 통과(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
 
 ## 전체 목록
 
 | 출처 | 내용 | 심각도 | 상태 | 커밋 |
 |---|---|---|---|---|
-| run-1 | 따옴표 `#` 주석으로 exec 허용 목록 우회 | High | 수정 | `6432d20` |
+| run-1 | 따옴표 `#` 주석으로 exec 허용 목록 우회 (이스케이프한 따옴표 변형 포함) | High | 수정 | `6432d20`, `860fe03` |
 | run-1 | 결과함 파일 이름(탭·줄바꿈)이 목록 파싱을 깨뜨림 | Medium | 수정 | `6432d20` |
 | run-1 | `_DEVNULL`이 `>&<숫자>파일` 리다이렉트를 벗겨 승인 우회 | Low | 수정 | `7f84f61` |
 | run-2 N-1 | GUI 도구로 터미널을 열어 uid 1001 임의 실행 (승인·스냅샷 우회) | High | 부분 완화 (GUI 구간 스냅샷·경고·바뀐 파일 기록) | `3028b68`, `d677348` |
@@ -25,6 +25,8 @@
 | run-2 N-3 | 덮어쓰기마다 스냅샷, 상한·정리 없음 → 디스크 고갈 | Medium | 수정 | `4826cb5` |
 | run-2 N-5 | 터미널 승인 화면이 제어 문자로 다른 명령처럼 보임 | Medium | 수정 | `1a9bb0f` |
 | run-1 | 데스크톱 티켓 → 전체 관리자 세션 | — | 기각 (재보고 금지) | — |
+
+PR #1에 Codex 리뷰 4건(P1 1·P2 3)이 달렸고 모두 재현한 뒤 `860fe03`에서 고쳤다. 따옴표 밖 `\"`로 `#` 주석 검사를 피하는 변형, 스냅샷 상한 경쟁, 복원·삭제 때 GUI 기록 누락, mtime 되돌리기로 GUI 기록 위조. CI(`.github/workflows/ci.yml`)가 PR마다 단위·Docker 수용 테스트를 돌린다.
 
 새 설정은 README 환경 변수 표에 있다: `AGENTBOX_SNAPSHOT_QUOTA`(기본 50), `AGENTBOX_TOOL_CONCURRENCY`(기본 4), `AGENTBOX_GUI_SNAPSHOT_IDLE`·`_INTERVAL`(기본 60·600).
 
@@ -44,7 +46,7 @@ nohup dockerd >/tmp/dockerd.log 2>&1 &          # root로. 몇 초 뒤 docker in
 pip install -e '.[test]'
 docker pull buildpack-deps:noble-curl
 docker build -t agentbox-desktop:0.1 images/desktop   # 약 3분 (apt 239MB)
-pytest                                                 # 152 passed
+pytest                                                 # 160 passed
 ```
 
 - 재현 스크립트는 `docs/security-audit/run-2/repro/`에 있다. 레포 루트에서 `python3 docs/security-audit/run-2/repro/<이름>.py`로 돌린다. `n5_spoof.py`는 `pip install pyte`가 필요하다.
