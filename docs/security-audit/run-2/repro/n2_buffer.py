@@ -28,7 +28,8 @@ th = threading.Thread(target=sample, daemon=True); th.start()
 t0 = time.time()
 try:
     r = c.post(f"/sandboxes/{sid}/tools/exec", json={"args": {"command": CMD}}, headers=A)
-    res = f"HTTP {r.status_code} status={r.json().get('status')} stdout_tail={r.json().get("result", {}).get("stdout", "")[-40:]!r}"
+    tail = r.json().get("result", {}).get("stdout", "")[-40:]
+    res = f"HTTP {r.status_code} status={r.json().get('status')} stdout_tail={tail!r}"
 except MemoryError:
     res = "MemoryError in control plane"
 stop = True; th.join()

@@ -303,6 +303,8 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 pytest           # Docker가 있어야 수용 테스트까지 돈다
 ```
 
+Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테스트는 건너뛴다. GitHub Actions(`.github/workflows/ci.yml`)는 PR과 `main` 푸시마다 단위 테스트(Python 3.11·3.13)와, 데스크톱 이미지를 빌드한 실제 Docker 위의 전체 테스트를 돌린다. 전체 테스트에서 하나라도 건너뛰면 실패로 본다.
+
 문서의 수용 테스트와의 대응:
 
 | 수용 테스트 | 테스트 |
