@@ -666,6 +666,63 @@
   ]
  },
  {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Ftakeover%20%2B%20handback%20%2B%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%20%2B%20DELETE%20%2Fsandboxes%2F%7Bsid%7D%20%28end_desktop%29::agentbox%2Fservice.py%23desktop.gui_lock%20held%20across%20untimed%20_x%20GUI%20execs%20%2B%20desktop%20lifecycle%20serialization%20%28takeover%2Fhandback%2Fend_desktop%2Frestore%29::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/desktop/takeover + handback + POST /sandboxes/{sid}/restore + DELETE /sandboxes/{sid} (end_desktop)",
+   "boundary": "agentbox/service.py#desktop.gui_lock held across untimed _x GUI execs + desktop lifecycle serialization (takeover/handback/end_desktop/restore)",
+   "subsystem": "agentbox/service.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/desktop/takeover + handback + POST /sandboxes/{sid}/restore + DELETE /sandboxes/{sid} (end_desktop)",
+  "boundary": "agentbox/service.py#desktop.gui_lock held across untimed _x GUI execs + desktop lifecycle serialization (takeover/handback/end_desktop/restore)",
+  "subsystem": "agentbox/service.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/sandbox.py",
+   "agentbox/desktop.py",
+   "agentbox/api.py",
+   "images/desktop/agentbox-desktop-start"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker/RPC; HTTP/WS covered by web and client-side companions."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 2,
+  "status": "in_progress",
+  "agent_id": "h-gui2",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-gui2",
+  "x_source": "critic-1 missing_units"
+ },
+ {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%2Cscreenshot%7D::agentbox%2Fservice.py%23GUI%20burst%20snapshot%20%2B%20gui_changes%20%2B%20stray%20kill%20%28N-1%20partial%20mitigation%29::agentbox%2Fservice.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
   "canonical_refs": {
    "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{click,type,key,screenshot}",
@@ -729,33 +786,44 @@
    }
   ],
   "prior_status": "prior_confirmed_changed_source",
-  "attempts": [],
-  "wave": 1,
-  "status": "blocked",
-  "agent_id": "h-gui",
-  "reviewed_paths": [
-   "agentbox/sandbox.py",
-   "agentbox/service.py"
-  ],
-  "local_checks": [
+  "attempts": [
    {
+    "wave": 1,
+    "status": "blocked",
     "agent_id": "h-gui",
     "reviewed_paths": [
-     "agentbox/service.py",
-     "agentbox/sandbox.py"
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
     ],
-    "invariant": "Any GUI input that can change /workspace outside policy happens inside an open burst that has a restore point, a gui_changes record and a stray-process stop at close.",
-    "method": "source",
-    "result": "Partial source review. Bursts open only via _snapshot when _gui_needs_snapshot is true and close on idle/next_burst/human_takeover/end_desktop. _open_gui_burst, _stop_gui_strays and _close_gui_burst swallow exceptions and return with no audit record, so a failed open/close leaves no trace. Not settled whether container-controlled conditions can trigger those failures.",
-    "artifact": null
+    "local_checks": [
+     {
+      "agent_id": "h-gui",
+      "reviewed_paths": [
+       "agentbox/service.py",
+       "agentbox/sandbox.py"
+      ],
+      "invariant": "Any GUI input that can change /workspace outside policy happens inside an open burst that has a restore point, a gui_changes record and a stray-process stop at close.",
+      "method": "source",
+      "result": "Partial source review. Bursts open only via _snapshot when _gui_needs_snapshot is true and close on idle/next_burst/human_takeover/end_desktop. _open_gui_burst, _stop_gui_strays and _close_gui_burst swallow exceptions and return with no audit record, so a failed open/close leaves no trace. Not settled whether container-controlled conditions can trigger those failures.",
+      "artifact": null
+     }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [
+     "Hunter stopped early. Unsettled: whether container-controlled state can make workspace_manifest or desktop_processes fail at burst open (no burst, so no gui_changes and no stray stop) or at close (no record), after which the next burst treats earlier processes as baseline.",
+     "Unsettled: whether images/desktop tooling and autostart/session paths under /home/desktop let changes reach /workspace with no open burst, including after snapshot restore. Needs a parent-led images/desktop review and a live desktop-image check."
+    ],
+    "reassignment_reason": "Blocked (h-gui stopped early, one partial source check). Sole owner of the prior confirmed changed-source N-1 record. _open_gui_burst/_stop_gui_strays/_close_gui_burst (service.py:206-248) swallow exceptions with no audit record; _gui_needs_snapshot (186-197) heuristic; images/desktop autostart/session paths under /home/desktop unreviewed; needs parent-led images/desktop facts."
    }
   ],
+  "wave": 2,
+  "status": "in_progress",
+  "agent_id": "h-gui2",
+  "reviewed_paths": [],
+  "local_checks": [],
   "result_fingerprints": [],
-  "unresolved": [
-   "Hunter stopped early. Unsettled: whether container-controlled state can make workspace_manifest or desktop_processes fail at burst open (no burst, so no gui_changes and no stray stop) or at close (no record), after which the next burst treats earlier processes as baseline.",
-   "Unsettled: whether images/desktop tooling and autostart/session paths under /home/desktop let changes reach /workspace with no open burst, including after snapshot restore. Needs a parent-led images/desktop review and a live desktop-image check."
-  ],
-  "x_planned_hunter": "h-gui",
+  "unresolved": [],
+  "x_planned_hunter": "h-gui2",
   "x_hardening": [
    "service.py _open_gui_burst/_stop_gui_strays/_close_gui_burst catch broad exceptions and return without an audit record. Logging a gui_burst_error event, or refusing further GUI input while no burst is open, would make silent loss of the N-1 mitigation visible to the human."
   ]
@@ -1610,6 +1678,61 @@
   ]
  },
  {
+  "coverage_id": "agentbox%2Fweb.py%23%2Fui%20%28approval%20approve%2Fdeny%20buttons%2C%20restore%2Fdelete%2Fsnapshot%20forms%29%20%2B%20agentbox%2Fdesktop.py%23page%20%28takeover%2Fhandback%20controls%29%20rendered%20in%20a%20frame::absence%20of%20frame-ancestors%2FX-Frame-Options%20on%20cookie-authenticated%20pages%20%2B%20SameSite%3DStrict%20%2B%20same_origin::agentbox%2Fweb.py::CLIENT-SIDE.md%23Clickjacking",
+  "canonical_refs": {
+   "surface": "agentbox/web.py#/ui (approval approve/deny buttons, restore/delete/snapshot forms) + agentbox/desktop.py#page (takeover/handback controls) rendered in a frame",
+   "boundary": "absence of frame-ancestors/X-Frame-Options on cookie-authenticated pages + SameSite=Strict + same_origin",
+   "subsystem": "agentbox/web.py",
+   "attack_class": "CLIENT-SIDE.md#Clickjacking"
+  },
+  "surface": "agentbox/web.py#/ui (approval approve/deny buttons, restore/delete/snapshot forms) + agentbox/desktop.py#page (takeover/handback controls) rendered in a frame",
+  "boundary": "absence of frame-ancestors/X-Frame-Options on cookie-authenticated pages + SameSite=Strict + same_origin",
+  "subsystem": "agentbox/web.py",
+  "attack_class": "CLIENT-SIDE.md#Clickjacking",
+  "starting_paths": [
+   "agentbox/web.py",
+   "agentbox/api.py",
+   "agentbox/desktop.py",
+   "agentbox/templates",
+   "agentbox/static",
+   "deploy/Caddyfile"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "CLIENT-SIDE.md#Core discipline",
+   "CLIENT-SIDE.md#Clickjacking",
+   "CLIENT-SIDE.md#Client-side navigation confusion",
+   "CLIENT-SIDE.md#Universal moves",
+   "CLIENT-SIDE.md#Validation rules",
+   "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker/RPC."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 2,
+  "status": "in_progress",
+  "agent_id": "h-ui2",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_planned_hunter": "h-ui2",
+  "x_source": "critic-1 missing_units"
+ },
+ {
   "coverage_id": "agentbox%2Fweb.py%23%2Fui%2F%2A%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fapi.py%23same_origin%20%2B%20SameSite%3DStrict%20HttpOnly%20cookie::agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
   "canonical_refs": {
    "surface": "agentbox/web.py#/ui/* + /login + /logout",
@@ -2047,30 +2170,41 @@
    }
   ],
   "prior_status": "new",
-  "attempts": [],
-  "wave": 1,
-  "status": "blocked",
-  "agent_id": "h-gui",
-  "reviewed_paths": [
-   "agentbox/sandbox.py"
-  ],
-  "local_checks": [
+  "attempts": [
    {
+    "wave": 1,
+    "status": "blocked",
     "agent_id": "h-gui",
     "reviewed_paths": [
      "agentbox/sandbox.py"
     ],
-    "invariant": "Container output (ps, getwindowpid, find -printf manifest) cannot cause wrong stray classification, wrong kill targets or hidden workspace changes.",
-    "method": "source",
-    "result": "Partial source review. gui_strays window ownership comes from the client-supplied _NET_WM_PID via xdotool getwindowpid (not peer-authenticated). Process lists come from root ps output split on whitespace. kill_processes SIGKILLs, as the desktop user, pids taken from an earlier listing. The manifest covers /workspace only (-xdev) and is truncated at 8 MiB. Not locally checked.",
-    "artifact": null
+    "local_checks": [
+     {
+      "agent_id": "h-gui",
+      "reviewed_paths": [
+       "agentbox/sandbox.py"
+      ],
+      "invariant": "Container output (ps, getwindowpid, find -printf manifest) cannot cause wrong stray classification, wrong kill targets or hidden workspace changes.",
+      "method": "source",
+      "result": "Partial source review. gui_strays window ownership comes from the client-supplied _NET_WM_PID via xdotool getwindowpid (not peer-authenticated). Process lists come from root ps output split on whitespace. kill_processes SIGKILLs, as the desktop user, pids taken from an earlier listing. The manifest covers /workspace only (-xdev) and is truncated at 8 MiB. Not locally checked.",
+      "artifact": null
+     }
+    ],
+    "result_fingerprints": [],
+    "unresolved": [
+     "Hunter stopped early. Unsettled: whether _NET_WM_PID can be pointed at another process to protect it; whether pid reuse between listing and kill hits an unintended process (uid 1001 kill limits the effect); whether manifest truncation or changes outside /workspace hide changes from gui_changes. Needs harness or parent-led live desktop-image checks."
+    ],
+    "reassignment_reason": "Blocked (h-gui stopped early, no harness though parsers are pure). Open: gui_strays trusts client-set _NET_WM_PID and exempts ppid==0 ancestry; _parse_ps whitespace split; kill by stale pids; _parse_manifest NUL grouping and 8 MiB cap; extend to _parse_outbox (prior changed-source record, no run-3 check) and approval preview parsers _expand/_walk (sandbox.py:800-812) that split agent-controlled names on newlines into the approval card's impact table."
    }
   ],
+  "wave": 2,
+  "status": "in_progress",
+  "agent_id": "h-gui2",
+  "reviewed_paths": [],
+  "local_checks": [],
   "result_fingerprints": [],
-  "unresolved": [
-   "Hunter stopped early. Unsettled: whether _NET_WM_PID can be pointed at another process to protect it; whether pid reuse between listing and kill hits an unintended process (uid 1001 kill limits the effect); whether manifest truncation or changes outside /workspace hide changes from gui_changes. Needs harness or parent-led live desktop-image checks."
-  ],
-  "x_planned_hunter": "h-gui",
+  "unresolved": [],
+  "x_planned_hunter": "h-gui2",
   "x_hardening": [
    "service.py _open_gui_burst/_stop_gui_strays/_close_gui_burst catch broad exceptions and return without an audit record. Logging a gui_burst_error event, or refusing further GUI input while no burst is open, would make silent loss of the N-1 mitigation visible to the human."
   ]
