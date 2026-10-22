@@ -1,0 +1,96 @@
+{
+ "x_proposed_by": "wave-3 hunter h-autostart",
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore",
+ "title": "GUI-burst write to /home/desktop/.config/autostart escapes gui_changes/stray-kill, persists into snapshots, and re-executes as uid 1001 on restore/restart",
+ "description": "A prompt-injected agent can drive the desktop GUI tools (the run-2 N-1 path that opens an xfce4-terminal as uid 1001 desktop) to write a Desktop Entry file at /home/desktop/.config/autostart/evil.desktop. This write lands outside /workspace, so it is never recorded by the GUI burst's gui_changes diff (which only scans /workspace), and the autostart file is inert on disk so the burst-close stray-kill (which only stops processes) does not remove it. When the control plane later docker-commits the container (AP-2 pre-snapshot before a destructive action, an interval GUI snapshot, or a manual/human snapshot), the autostart file is captured into the snapshot image. On a subsequent restore (human reverting to a 'clean' restore point) or restart, the desktop template re-runs its start script, which execs startxfce4 as uid 1001; XFCE session startup honours ~/.config/autostart, re-executing the attacker's Exec= command as the desktop user with a live X session, outside any GUI burst and with no gui_changes record. Because the re-executed process launches at container boot it is always inside the next burst-open baseline, so gui_strays exempts it from stray-kill. The result is attacker-controlled code that persists across snapshot/restore and silently re-arms itself, defeating the restore-point and GUI-burst monitoring the human relies on.",
+ "claimed_root_cause": "GUI-burst change tracking (workspace_manifest/gui_changes) and the snapshot restore lifecycle scope file-mutation visibility to /workspace, but the desktop session's HOME (/home/desktop) is both writable by the burst principal (uid 1001) and re-executed at session start via ~/.config/autostart. No control captures, re-authorizes, or sanitizes /home/desktop between the burst, the docker commit, and the restore re-exec; and gui_strays structurally exempts any process present at burst open, which an autostart payload always is after a restart.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/service.py",
+   "line": 206,
+   "scope": "SandboxService._open_gui_burst / GUI tool call",
+   "description": "Agent GUI tool (click/type/key) opens a burst and drives an xfce4-terminal as uid 1001 desktop (run-2 N-1); inside it the agent writes /home/desktop/.config/autostart/evil.desktop."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 499,
+   "scope": "SandboxManager.workspace_manifest",
+   "description": "The burst manifest find is scoped to /workspace (-xdev), so a write under /home/desktop is outside scope and never enters the gui_changes diff computed in service.py:237-248."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 216,
+   "scope": "gui_strays",
+   "description": "The written .desktop file is not a process (stray-kill cannot touch it); after restore the autostart-launched process is present at burst open, so p['pid'] in baseline exempts it from the stray list."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 478,
+   "scope": "SandboxManager.snapshot",
+   "description": "docker commit captures the entire container filesystem including /home/desktop/.config/autostart, persisting the payload into the snapshot image."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox.py",
+   "line": 517,
+   "scope": "SandboxManager.restore -> _run_container(tpl.command)",
+   "description": "Restore rebuilds from the committed image and re-runs tpl.command = /usr/local/bin/agentbox-desktop-start (config.py:74), which execs startxfce4 (agentbox-desktop-start:30); XFCE autostart re-executes the payload as uid 1001 with a live X session, outside any burst and unlogged."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 499,
+   "description": "workspace_manifest: find {WORKSPACE} -xdev ! -type d — manifest/gui_changes only ever covers /workspace, never /home/desktop."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 240,
+   "description": "_close_gui_burst computes diff_manifest(burst['manifest'], manifest) over the /workspace-only manifest, so writes outside /workspace produce no gui_changes record."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 216,
+   "description": "gui_strays: processes whose pid is in baseline are skipped; an autostart process launched at container boot is always in the burst-open baseline after restore/restart."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 478,
+   "description": "snapshot: c.commit(...) of the whole container captures /home/desktop including any autostart entry."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 517,
+   "description": "restore: _run_container(tpl, snaps[snap_id]['image'], ...) rebuilds from the committed image and re-runs the template command."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 74,
+   "description": "desktop Template command = ['/usr/local/bin/agentbox-desktop-start'], so restore/restart re-executes the XFCE start script."
+  },
+  {
+   "file": "images/desktop/agentbox-desktop-start",
+   "line": 30,
+   "description": "Start script execs 'dbus-launch --exit-with-session startxfce4' as uid 1001 desktop with HOME=/home/desktop on every container start."
+  },
+  {
+   "file": "images/desktop/Dockerfile",
+   "line": 28,
+   "description": "desktop user uid 1001 owns /home/desktop mode 700, so the burst principal can create ~/.config/autostart/*.desktop; it is in the agent group sharing /workspace."
+  }
+ ],
+ "blockers": [
+  "Live desktop image fact: whether xfce4-session in agentbox-desktop:0.1 reads ~/.config/autostart (XDG_CONFIG_HOME default) and executes the Exec= line of a .desktop entry at session start. Standard XDG autostart behaviour, but image-specific and not source-visible; requires running the image.",
+  "Live control-plane fact: whether the agent's GUI tools can actually create /home/desktop/.config/autostart/evil.desktop via an xfce4-terminal as uid 1001 within a burst (run-2 N-1 is only partially mitigated). Requires the Docker-backed control plane.",
+  "Live Docker fact: whether docker commit + restore (sandbox.py:478,517) re-runs the start script from the committed image and thereby re-executes the autostart payload. Requires the Docker daemon; sbx5 has no Docker and no network."
+ ],
+ "validation_plan": {
+  "local": "Already performed in sbx5 (python3.13, no net/Docker, uid 65534, importing agentbox.sandbox from /target): harness agents/h-autostart/artifacts/h.out shows (1) workspace_manifest's find is scoped to {WORKSPACE} with no /home component, and (2) gui_strays returns [] for a uid-1001 payload present in the burst-open baseline (the restore/restart case) while returning [200] for the same payload launched during the burst — proving the baseline exemption and the /workspace-only change scope. The autostart re-execution step cannot be exercised locally because it needs the real desktop image.",
+  "deployment": "Owner-observed on this host with Docker: (1) docker run --network none agentbox-desktop:0.1; as uid 1001 desktop write /home/desktop/.config/autostart/t.desktop with [Desktop Entry]/Type=Application/Exec=/bin/sh -c 'touch /home/desktop/PROOF_$(date +%s)'/X-GNOME-Autostart-enabled=true/Hidden=false. (2) docker commit the container to an image. (3) docker run that image with the same CMD (/usr/local/bin/agentbox-desktop-start) and, after startxfce4 comes up, check for /home/desktop/PROOF_* — its presence confirms autostart re-execution as uid 1001 on restore/restart. (4) Through the control plane: as an agent token, drive GUI tools to open xfce4-terminal and create the same autostart file, run a GUI burst to idle-close, and confirm no gui_changes event names /home/desktop; then take a snapshot and POST /sandboxes/{sid}/restore and confirm the payload ran and no gui_processes_stopped entry lists it. Use only dummy /home/desktop/PROOF_* markers; stop at first proof, do not extend to broader persistence."
+ }
+}

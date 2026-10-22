@@ -1,0 +1,135 @@
+{
+ "x_proposed_by": "wave-3 hunter h-preview",
+ "proposed_verdict": "confirmed",
+ "fingerprint": "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row",
+ "title": "Approval impact table omits destructive command segments and suppresses its 'could-not-compute' warning whenever any rm/curl segment is present",
+ "description": "The approval card's 'system-computed impact' table (SandboxManager.preview) only understands two verbs, rm and curl. For a compound exec command that contains one rm (or curl) segment alongside any other destructive segment (dd, a '>' write-redirection, mv, tee, truncate, python -c, find -delete, etc.), the preview builds an 'affected' list containing only the rm/curl effects and leaves the other segments out entirely. The only safety net, a catch-all note '시스템이 영향 파일을 계산하지 못함 (could not compute, check the raw command)', is added only when BOTH the affected list and the notes list are empty (sandbox.py:872). Because the rm/curl segment populates 'affected', that catch-all is suppressed for the whole command, and the substitution warning at sandbox.py:818 only checks for $, backtick, <( and eval, not for redirection or unrecognized verbs. A prompt-injected agent (the lowest-trust network principal, whose compound exec is routed to human approval by default_policy.yaml) can therefore submit e.g. 'rm /workspace/harmless.txt; dd if=/dev/zero of=/workspace/important.db' and the human approver is shown an authoritative impact table listing only 'delete harmless.txt' with no warning, while approval executes the full stored command and overwrites important.db. This breaks the action-confirmation/approval-binding invariant: the human approves a described action (a benign deletion) but a materially different, more destructive action also runs under the human's approval authority, without their intentional consent. Both renderers (templates/_approvals.html and cli.py:_show_approval) present the same partial list.",
+ "root_cause": "SandboxManager.preview (agentbox/sandbox.py:814-874) special-cases only the verbs 'rm' (line 824) and 'curl' (line 846) when building the human-facing 'affected' impact list, and gates its only catch-all safety note on `if not affected and not notes` (line 872). Any other destructive verb inside a multi-segment command produces no affected rows, and the presence of a single rm/curl row makes `affected` non-empty, which suppresses the catch-all warning for the entire command. The substitution-warning heuristic at line 818 does not cover redirection or unrecognized verbs. The result is an authoritative-looking but incomplete impact summary presented with zero warnings.",
+ "intended_behavior": "The impact table the human relies on to approve a gated exec must either enumerate the real effects of the complete stored command, or, whenever any segment's effect cannot be computed, warn the approver that the displayed impact is incomplete and the raw command must be read. A warning must fire per unrecognized destructive segment, not only when the whole affected list is empty.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/service.py",
+   "line": 315,
+   "scope": "AgentService._call_tool",
+   "description": "When policy returns REQUIRE_APPROVAL for an agent exec, _preview is called to build the impact shown to the human."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 158,
+   "scope": "AgentService._preview",
+   "description": "For tool=='exec', delegates to sandboxes.preview(sid, command) with the agent's raw command string."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 820,
+   "scope": "SandboxManager.preview",
+   "description": "Iterates _split_segments(command); only the name=='rm' (824) and name=='curl' (846) branches append rows to 'affected'. Any other segment (dd, mv, redirection target, etc.) is skipped with no row and no note."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 872,
+   "scope": "SandboxManager.preview",
+   "description": "The catch-all 'could not compute' note is added only when `not affected and not notes`; a single rm/curl row makes affected non-empty and suppresses the warning for the whole compound command."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/templates/_approvals.html",
+   "line": 13,
+   "scope": "_approvals.html pending card",
+   "description": "Renders preview.affected under the authoritative label '시스템이 계산한 영향' and preview.notes as warnings; the partial list and empty notes display as a complete, benign impact with no warning (cli.py:204-212 is the identical CLI sink). On approval, decide() executes the full stored args (service.py ~424)."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 824,
+   "description": "Only `if name == 'rm'` and `elif name == 'curl'` (line 846) branches contribute to the 'affected' impact list; every other verb in the command is ignored."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 872,
+   "description": "`if not affected and not notes:` — the sole catch-all 'could not compute' warning fires only when affected is empty, so any rm/curl row suppresses it."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 818,
+   "description": "Substitution warning checks only for '$', backtick, '<(' and 'eval '; it does not warn on redirection or unrecognized destructive verbs."
+  },
+  {
+   "file": "agentbox/default_policy.yaml",
+   "line": 12,
+   "description": "rm/curl commands and all other non-read-only exec route to require_approval (no DENY rule), so a compound 'rm x; dd ...' reaches the preview/approval card."
+  },
+  {
+   "file": "agentbox/templates/_approvals.html",
+   "line": 13,
+   "description": "The web card presents preview.affected as '시스템이 계산한 영향' (system-computed impact), the authoritative decision aid, with notes (line 16) as the only warning channel."
+  },
+  {
+   "file": "agentbox/cli.py",
+   "line": 205,
+   "description": "The terminal approver prints the same 'system-computed impact' affected list (line 204-208) and notes (211-212), inheriting the identical omission."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "Attacker holds an agent token (agt_...) for its own sandbox, the lowest-trust network principal; the threat model assumes it is prompt-injected."
+  },
+  {
+   "kind": "user_interaction",
+   "description": "A human approver reads the approval card and clicks approve, relying on the system-computed impact table as intended."
+  },
+  {
+   "kind": "system_configuration",
+   "description": "Default policy (default_policy.yaml) in force, which routes compound/non-allowlisted exec to human approval rather than denial."
+  },
+  {
+   "kind": "data_state",
+   "description": "The rm/curl operand resolves to at least one existing path (or an 'does not exist' row), so 'affected' is non-empty and the catch-all note is suppressed."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "A prompt-injected agent crafts a single compound exec whose first segment is a benign rm (or curl) and whose later segment performs the real destructive/exfil-shaped action, so the approval card shows only the benign deletion.",
+  "payloads": [
+   "rm /workspace/harmless.txt; dd if=/dev/zero of=/workspace/important.db bs=1M count=10",
+   "rm /workspace/harmless.txt && printf x > /workspace/important.db",
+   "rm /workspace/a.txt; mv /workspace/secret.key /workspace/public.txt"
+  ],
+  "instructions": [
+   "In the sbx5 sandbox, import agentbox.sandbox and call SandboxManager.preview as an unbound method on a dummy object providing _container/_expand/_walk that model the given /workspace files (the rm/curl-only and catch-all logic under test is pure source; _expand/_walk only shell out to resolve globs).",
+   "Invoke preview with each payload and a file set where the rm operand and the destructive target both exist.",
+   "Inspect the returned dict's 'affected' and 'notes' fields.",
+   "Compare against the lone 'dd if=/dev/zero of=/workspace/important.db' (no rm) baseline."
+  ],
+  "observed_result": "For all three compound payloads preview returned affected=[{path: the rm target, effect:'삭제'}] and notes=[] — the dd/redirection/mv effect on important.db / secret.key is entirely absent and no warning note is present. The lone-dd baseline (no rm) returned affected=[] and notes=['시스템이 영향 파일을 계산하지 못함. 명령 원문을 확인할 것.'], proving the catch-all is the intended safety net and is suppressed precisely by the rm row. Captured in agents/h-preview/artifacts/h.out."
+ },
+ "remediation": {
+  "strategy": "Make the impact preview fail-closed per segment rather than globally. For every _split_segments segment whose verb is not in the small set the preview can fully model (rm, curl), append an explicit note identifying the unhandled segment (e.g. '세그먼트 \"dd …\"의 영향을 계산하지 못함; 명령 원문을 확인할 것'). Decouple the catch-all so it also fires when any segment was unrecognized, not only when the whole affected list is empty. Optionally extend the substitution-warning heuristic (line 818) to also flag '>' / '>>' write-redirection. Keep showing the raw command, but never present the affected table as complete when any segment was dropped.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/sandbox.py",
+    "fixed_code": "# in preview(): track unhandled segments\n        unhandled = 0\n        for seg in _split_segments(command):\n            if not seg:\n                continue\n            name = seg[0].rsplit('/', 1)[-1]\n            if name == 'rm':\n                ...  # existing rm handling\n            elif name == 'curl':\n                ...  # existing curl handling\n            else:\n                unhandled += 1\n                notes.append(f\"세그먼트 '{' '.join(seg)[:80]}'의 영향을 자동 계산하지 못함. 명령 원문을 확인할 것.\")\n        if len(affected) > limit:\n            notes.append(f\"영향 항목 {len(affected)}개 중 앞의 {limit}개만 표시.\")\n            affected = affected[:limit]\n        if not affected and not notes:\n            notes.append('시스템이 영향 파일을 계산하지 못함. 명령 원문을 확인할 것.')\n        return {'command': command, 'cwd': WORKSPACE, 'affected': affected, 'notes': notes}"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "high",
+   "reason": "The agent fully controls the exec command string and the default policy routes compound exec to approval; crafting 'rm benign; <destructive>' is trivial and needs no special conditions."
+  },
+  "impact": {
+   "score": "medium",
+   "reason": "A human approver is deceived into authorizing file overwrite/rename/destruction they were not shown, under their own approval authority, breaking informed consent for the gated action. Bounded to /workspace within a network=none sandbox, and decide() does take an unconditional pre-execution AP-2 snapshot that enables manual recovery, but the deception means the human does not know to restore and the audit record carries the same misleading preview."
+  },
+  "overall_severity": "medium"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "The preview-building boundary failure is established by source and demonstrated by a bounded local harness that exercises the real preview() function logic; the only live-Docker dependency (_expand/_walk container output) was faithfully stubbed and its newline-split / rm-curl-only behavior is pure, directly-readable source. Both renderer sinks and the policy routing were confirmed in source."
+ }
+}

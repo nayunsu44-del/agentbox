@@ -1,0 +1,134 @@
+{
+ "x_proposed_by": "wave-3 hunter h-queue",
+ "proposed_verdict": "confirmed",
+ "fingerprint": "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed",
+ "title": "Prompt-injected agent fills control-plane host disk with per-approval screenshot PNGs that are never reclaimed (no pending-approval cap)",
+ "description": "On a desktop-template sandbox, every agent tool call whose policy decision is REQUIRE_APPROVAL causes the control plane to (a) create a pending approval row with no per-sandbox cap and (b) take a full-screen screenshot and write it to settings.home/captures/{aid}.png. No code path removes these PNG files on approval decision, expiry, or sandbox deletion, and nothing caps the number of concurrently pending approvals. A lowest-trust agent (the assumed prompt-injected principal) can therefore issue an unbounded series of cheap gated calls (e.g. delete_file, or any non-allowlisted exec), each costing one host-disk screenshot that is retained forever, growing settings.home without bound and surviving even sandbox deletion.",
+ "root_cause": "AgentBox._call_tool writes captures/{aid}.png at service.py:325 for every REQUIRE_APPROVAL on a desktop template, but neither decide() (service.py:384-422), expire_stale() (service.py:371-382), nor SandboxManager.delete() (sandbox.py:443-455) ever deletes the capture file; ApprovalStore.create (approvals.py:49-59) also enforces no per-sandbox or aggregate pending count. The only cost gate is tool_concurrency (serial 202 responses evade it) and the snapshot_quota gate (only reached on ALLOW decisions, not on REQUIRE_APPROVAL).",
+ "intended_behavior": "Agent-driven approval work must be bounded: a per-sandbox pending-approval cap should reject further gated calls past a limit, and the request-time capture PNG must be reclaimed when the approval reaches a terminal state (decided/expired) and when the sandbox is deleted, so one low-trust principal cannot persistently grow shared host disk.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/service.py",
+   "line": 292,
+   "scope": "AgentBox._call_tool(sid, tool, args, actor='agent')",
+   "description": "Agent tool call (POST /sandboxes/{sid}/tools/{tool}) enters tool handling; tool is attacker-chosen."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 313,
+   "scope": "_call_tool REQUIRE_APPROVAL branch",
+   "description": "policy.decide returns REQUIRE_APPROVAL for cheap gated tools (delete_file, non-allowlisted exec per default_policy.yaml)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 318,
+   "scope": "cap = self._capture(sid)",
+   "description": "On a desktop template (_capture: template_of(sid).desktop) a full-screen screenshot PNG is taken; screenshot bytes are read uncapped (sandbox.py:714-722)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/approvals.py",
+   "line": 49,
+   "scope": "ApprovalStore.create",
+   "description": "Inserts a pending approval with no per-sandbox / aggregate count check — unbounded pending approvals."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/service.py",
+   "line": 325,
+   "scope": "(self.captures / f\"{apr['id']}.png\").write_bytes(cap[0])",
+   "description": "Per-approval PNG written to settings.home/captures; no code removes it on deny/expire (service.py decide/expire_stale) or sandbox delete (sandbox.py:443-455)."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/service.py",
+   "line": 325,
+   "description": "The sole writer of captures/{aid}.png; executed once per REQUIRE_APPROVAL on a desktop template."
+  },
+  {
+   "file": "agentbox/approvals.py",
+   "line": 49,
+   "description": "create() has no per-sandbox or aggregate pending-approval cap."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 378,
+   "description": "expire_stale marks approvals EXPIRED but never deletes the approval row or its capture PNG."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 400,
+   "description": "decide (deny/execute branches) finalize the approval status but never delete the capture PNG."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 443,
+   "description": "SandboxManager.delete removes container + snapshot images only; never touches settings.home/captures."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 714,
+   "description": "(sandbox.py) screenshot reads the full desktop PNG with no size cap, so each retained capture can be large."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authorization_role",
+   "description": "Attacker holds an agent token (agt_) for one desktop-template sandbox — the lowest-trust, prompt-injection-assumed principal."
+  },
+  {
+   "kind": "system_configuration",
+   "description": "Sandbox uses a desktop template (template_of(sid).desktop True) and captures is configured (settings.home/captures, the default in api.py:75)."
+  },
+  {
+   "kind": "data_state",
+   "description": "Sustained but cheap: one gated tool call per retained PNG; files persist across approval decisions, expiry, and sandbox deletion."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "An agent token confined to its own desktop-template sandbox wants to degrade the shared control plane by exhausting host disk under settings.home.",
+  "payloads": [
+   "POST /sandboxes/{sid}/tools/delete_file  {\"path\": \"/workspace/f0\"}",
+   "POST /sandboxes/{sid}/tools/exec  {\"command\": \"python -c 1\"}"
+  ],
+  "instructions": [
+   "Repeatedly issue a gated tool call that maps to REQUIRE_APPROVAL in default_policy.yaml (delete_file, or any exec outside the read-only allowlist). Each returns 202 pending.",
+   "Each call creates a pending approval (no cap) and writes settings.home/captures/{approval_id}.png (full-screen screenshot).",
+   "Let the approvals be denied or simply expire after approval_timeout; delete the sandbox. Observe captures/*.png files remain.",
+   "Local reproduction: /tmp/.../sbx5 h-queue /usr/bin/python3.13 /scratch/h.py drives the real AgentBox._call_tool / decide / expire_stale with a real ApprovalStore and a stubbed desktop screenshot."
+  ],
+  "observed_result": "pending_approvals_created: 30 (no per-sandbox cap); png_files_on_disk: 30; after denying 1 and expiring 29, png_files_after_deny_and_expire: 30 — every capture PNG persisted. captures_dir_bytes grew linearly with request count and is never reclaimed; SandboxManager.delete (source) does not touch captures."
+ },
+ "remediation": {
+  "strategy": "Bound and reclaim approval artifacts: (1) enforce a per-sandbox pending-approval cap in _call_tool/ApprovalStore before creating a new approval (return 429 past the limit); (2) delete captures/{aid}.png whenever an approval reaches a terminal state (finish()/claim() to EXPIRED/DENIED/EXECUTED/FAILED) and when the sandbox is deleted; (3) optionally cap total captures bytes and prune oldest.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/service.py",
+    "fixed_code": "# In _call_tool, before creating the approval:\nif self.sandboxes.settings.pending_approval_cap > 0 and \\\n   len(self.approvals.list(status=A.PENDING, sandbox_id=sid)) >= self.sandboxes.settings.pending_approval_cap:\n    raise ServiceError(429, 'too many pending approvals for this sandbox')\n# add a helper and call it from expire_stale(), decide() terminal branches, and end_desktop():\ndef _drop_capture(self, aid: str) -> None:\n    try:\n        p = self.capture_path(aid)\n        if p:\n            p.unlink()\n    except OSError:\n        pass"
+   },
+   {
+    "file_name": "agentbox/sandbox.py",
+    "fixed_code": "# In SandboxManager.delete(sid), after status->deleted, have the service also remove\n# all captures for approvals belonging to sid (iterate approvals.list(sandbox_id=sid) and unlink captures/{aid}.png)."
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "medium",
+   "reason": "Reachable by the lowest-trust, prompt-injection-assumed agent principal on any desktop-template sandbox using cheap gated calls; only self-limited by serial request rate, not by any code bound."
+  },
+  "impact": {
+   "score": "medium",
+   "reason": "Persistent unbounded growth of shared host disk under settings.home that is never reclaimed even on sandbox deletion; disk exhaustion degrades the control plane (which also holds docker.sock) and can fail audit writes, which halts further tool calls (AU-2)."
+  },
+  "overall_severity": "medium"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "The write site, the absence of any removal (grep-confirmed), and the missing pending cap are all source-visible, and a bounded local harness exercising the real service code shows retained PNGs after deny+expire with no cap."
+ }
+}

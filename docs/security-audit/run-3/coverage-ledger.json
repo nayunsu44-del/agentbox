@@ -2303,14 +2303,62 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 3,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-preview",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/cli.py",
+   "agentbox/default_policy.yaml",
+   "agentbox/policy.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/templates/_approvals.html"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-preview",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "The system-computed 'affected' impact list shown on the approval card must reflect every destructive effect of the stored exec command, or warn the human when it cannot.",
+    "method": "local",
+    "result": "Harness calling SandboxManager.preview (with a faithful _expand/_walk stub; the function's rm/curl-only and catch-all logic is pure source) on compound commands 'rm harmless; dd of=important', 'rm harmless && printf x > important', and 'rm a; mv secret public' returned affected=[only the rm deletion] and notes=[] in all three cases. A lone 'dd of=important' (no rm) correctly produced the catch-all 'could not compute, check raw command' note. This shows unrecognized destructive segments are silently dropped and the safety note is suppressed whenever any rm/curl row is present.",
+    "artifact": "agents/h-preview/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-preview",
+    "reviewed_paths": [
+     "agentbox/policy.py",
+     "agentbox/default_policy.yaml"
+    ],
+    "invariant": "Arbitrary non-allowlisted compound exec commands route to REQUIRE_APPROVAL (not DENY), so they reach the preview/approval card.",
+    "method": "source",
+    "result": "default_policy.yaml rule 'rm-curl-needs-approval' sends any command containing rm/curl to require_approval; catch-all 'exec-needs-approval' sends every other non-read-only exec to require_approval; no DENY rule exists. A command like 'rm x; dd ...' thus reaches _preview and an approval card.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-preview",
+    "reviewed_paths": [
+     "agentbox/templates/_approvals.html",
+     "agentbox/cli.py"
+    ],
+    "invariant": "Both approval renderers must not present a partial affected list as authoritative without a discrepancy warning.",
+    "method": "source",
+    "result": "templates/_approvals.html:13-16 renders a.preview.affected under the label '시스템이 계산한 영향' (system-computed impact) and iterates a.preview.notes for warnings; cli.py:204-212 prints the same affected list and notes. Neither adds any warning of its own; both faithfully display whatever preview produced, so the partial list and empty notes from the harness render as a trustworthy, complete-looking benign impact summary. decide() (service.py ~424) then runs the full stored args.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row"
+  ],
   "unresolved": [],
   "x_source": "critic-2 missing_units",
-  "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 1. The approval-binding unit did not read sandbox.py preview or templates: impact list built by newline-splitting container output (agent-chosen names with newlines add/displace rows), only rm/curl recognised, 'could not compute' note only when both lists are empty, 200-row truncation; captures of an agent-controlled screen presented as system-taken."
+  "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 1. The approval-binding unit did not read sandbox.py preview or templates: impact list built by newline-splitting container output (agent-chosen names with newlines add/displace rows), only rm/curl recognised, 'could not compute' note only when both lists are empty, 200-row truncation; captures of an agent-controlled screen presented as system-taken.",
+  "x_hardening": [
+   "agentbox/service.py:81-90 and templates/_approvals.html:17 (cli has no screenshot): _capture takes the request-time desktop screenshot via sandboxes.screenshot (uid 1001 X session) and the card labels it '요청 시점 화면 (시스템이 찍음)'. The content is agent-influenced (the agent drives GUI apps) and is captured at request time, so for GUI approvals (click/type/key) it may not reflect the screen at the later approval/execution moment (TOCTOU). Inherent to a desktop sandbox and advisory-only; recorded as hardening, not a separate finding.",
+   "agentbox/sandbox.py:805,812 and preview rows: _expand/_walk parse container output with str.splitlines(); an agent-created filename containing a newline injects a fabricated extra 'affected' row or can push a real target past the 200-row truncation (sandbox.py:869). Same impact-list-integrity root cause as the confirmed finding; a dedicated fix should also quote/escape or use NUL-delimited enumeration.",
+   "agentbox/service.py:decide and _snapshot: approval execution takes an unconditional pre-execution snapshot for every tool including exec, so the UI/CLI claim '승인하면 실행 직전에 스냅샷을 만든다' is honored and a manual restore point exists even for the deceptive-preview case (noted to bound impact)."
+  ]
  },
  {
   "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs::agentbox%2Fsandbox.py::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",
