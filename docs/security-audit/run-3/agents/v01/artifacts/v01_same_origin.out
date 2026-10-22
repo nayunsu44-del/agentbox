@@ -1,0 +1,10 @@
+https same-origin                          -> accepted=True
+cross-scheme http->https same host         -> accepted=True
+cross-scheme explicit port                 -> accepted=True
+example.com http->https                    -> accepted=True
+sibling same-site                          -> accepted=False
+other port                                 -> accepted=False
+null origin                                -> accepted=False
+no origin                                  -> accepted=True
+--- grep HSTS in agentbox/ and deploy/ ---
+no HSTS in agentbox/ or deploy/
