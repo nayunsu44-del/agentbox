@@ -190,14 +190,14 @@ def test_overlap_sees_bind_mount_alias(tmp_path):
     import os
     import subprocess
     from agentbox.sandbox import overlaps
-    if os.geteuid() != 0:
-        pytest.skip("바인드 마운트는 root가 필요")
+    # 바인드 마운트는 root가 필요하다. CI 러너처럼 root가 아니면 비밀번호 없는 sudo로 만든다.
+    sudo = [] if os.geteuid() == 0 else ["sudo", "-n"]
     proj, alias = tmp_path / "proj", tmp_path / "alias"
     (proj / "data").mkdir(parents=True)
     alias.mkdir()
-    if subprocess.run(["mount", "--bind", str(proj), str(alias)]).returncode != 0:
+    if subprocess.run([*sudo, "mount", "--bind", str(proj), str(alias)], capture_output=True).returncode != 0:
         pytest.skip("바인드 마운트를 만들 수 없음")
     try:
         assert overlaps(alias, proj / "data")
     finally:
-        subprocess.run(["umount", str(alias)])
+        subprocess.run([*sudo, "umount", str(alias)])
