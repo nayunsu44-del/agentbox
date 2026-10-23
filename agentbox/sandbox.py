@@ -11,17 +11,12 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import os
 import posixpath
 import re
 import secrets
-import shlex
 import sqlite3
-import struct
-import tarfile
 import threading
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -31,26 +26,16 @@ from docker.errors import APIError, ImageNotFound, NotFound
 from docker.types import Mount
 
 from .config import Settings, Template
+from .gui_state import _MANIFEST_CAP, _parse_manifest
+from .preview import preview_command
+from .sandbox_common import _OUT_LIMIT, SOURCE, WORKSPACE, SandboxError, _timed, _truncate
+from .sandbox_desktop import DesktopTools
 
 AGENT_UID = "1000:1000"
-WORKSPACE = "/workspace"
-SOURCE = "/source"
-_OUT_LIMIT = 64 * 1024
 # 파일 읽기 한 번의 제한 시간(초). 일반 파일만 읽지만, 확인과 읽기 사이에 FIFO로 바뀌면 head가 끝없이 기다린다.
 _READ_TIMEOUT = 30
-# 화면(X)과 구간 기록용 exec의 제한 시간(초). X 서버가 멈추면 xdotool·scrot은 끝없이 기다리고, 그동안 gui_lock과
-# 부른 스레드가 묶인다. 컨테이너 안에서 끊어야 exec가 돌아온다 (클라이언트 쪽 시간 제한으로는 풀리지 않았다).
-_X_TIMEOUT = 15
+# GUI 구간 기록용 파일 목록 exec의 제한 시간(초). 화면(X) 쪽 제한은 sandbox_desktop._X_TIMEOUT.
 _MANIFEST_TIMEOUT = 30
-_TIMED_OUT = (124, 137)   # timeout(1)이 끊었을 때의 종료 코드 (TERM, 안 끝나서 KILL)
-
-# 데스크톱 템플릿 (images/desktop/Dockerfile과 맞춘다)
-DESKTOP_USER = "desktop"
-DESKTOP_UID = 1001
-DESKTOP_ENV = {"DISPLAY": ":0", "XAUTHORITY": "/home/desktop/.Xauthority", "HOME": "/home/desktop"}
-_SHOT = "/home/desktop/.cache/agentbox-shot.png"
-_BUTTONS = {"left": "1", "middle": "2", "right": "3"}
-_KEY_RE = re.compile(r"^[A-Za-z0-9_+]{1,40}$")
 _WRITE_CHUNK = 64 * 1024     # 인자 하나의 커널 상한(128KB)보다 작게, base64 뒤 기준
 OUTBOX = WORKSPACE + "/outbox"
 _BAD_NAME = re.compile(r"[\x00-\x1f\x7f/\\]")
@@ -88,32 +73,12 @@ CREATE TABLE IF NOT EXISTS snapshots (
 _RUNTIME_PREFERENCE = ["kata-fc", "kata-qemu-firecracker", "runsc", "runc"]
 
 
-class SandboxError(RuntimeError):
-    pass
-
-
-def _timed(seconds: int, *argv: str, kill_after: int = 2) -> list[str]:
-    """컨테이너 안에서 제한 시간을 거는 argv. 시간이 지나면 TERM, kill_after초 뒤에도 안 끝나면 KILL."""
-    return ["timeout", "-k", str(kill_after), str(seconds), *argv]
-
-
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def hash_token(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
-
-
-def _truncate(b: bytes | None, total: int | None = None) -> str:
-    """total은 잘라 낸 뒤 b만 들고 있을 때의 원래 길이."""
-    if not b:
-        return ""
-    total = len(b) if total is None else total
-    s = b[:_OUT_LIMIT].decode("utf-8", errors="replace")
-    if total > _OUT_LIMIT:
-        s += f"\n…({total - _OUT_LIMIT} bytes 생략)"
-    return s
 
 
 class _Head:
@@ -159,84 +124,6 @@ def _parse_outbox(raw: bytes) -> list[dict[str, Any]]:
     return sorted(out, key=lambda x: x["name"])
 
 
-_MANIFEST_CAP = 8 * 1024 * 1024
-
-
-def _parse_manifest(raw: bytes) -> tuple[dict[str, tuple[int, str, str]], bool]:
-    """`find -printf '%P\\0%s\\0%T@\\0%C@\\0'` 출력(앞 _MANIFEST_CAP 바이트)을 {경로: (크기, mtime, ctime)}으로.
-    상한에서 잘렸으면 끝의 불완전한 레코드는 버리고 truncated를 돌려준다."""
-    truncated = len(raw) >= _MANIFEST_CAP
-    fields = raw.decode("utf-8", errors="replace").split("\0")[:-1]  # 끝의 NUL 없는 조각은 잘린 것
-    out: dict[str, tuple[int, str, str]] = {}
-    for i in range(0, len(fields) - 3, 4):
-        path, size, mtime, ctime = fields[i:i + 4]
-        try:
-            out[path] = (int(size), mtime, ctime)
-        except ValueError:
-            continue
-    return out, truncated
-
-
-def diff_manifest(old: dict[str, tuple], new: dict[str, tuple]) -> dict[str, list[str]]:
-    return {"added": sorted(new.keys() - old.keys()),
-            "modified": sorted(k for k in new.keys() & old.keys() if new[k] != old[k]),
-            "deleted": sorted(old.keys() - new.keys())}
-
-
-def _parse_ps(raw: bytes) -> list[dict[str, Any]]:
-    """`ps -eo pid=,ppid=,sid=,uid=,args=` 출력."""
-    out = []
-    for line in raw.decode("utf-8", errors="replace").splitlines():
-        parts = line.split(None, 4)
-        if len(parts) < 4:
-            continue
-        try:
-            pid, ppid, sid, uid = (int(x) for x in parts[:4])
-        except ValueError:
-            continue
-        out.append({"pid": pid, "ppid": ppid, "sid": sid, "uid": uid, "args": parts[4] if len(parts) > 4 else ""})
-    return out
-
-
-def gui_strays(procs: list[dict[str, Any]], window_pids: set[int], baseline: set[int]) -> list[int]:
-    """GUI 구간이 끝날 때 멈출 화면 계정 프로세스. baseline은 구간이 시작될 때 있던 pid.
-
-    구간 동안 새로 생긴 화면 계정 프로세스 가운데
-    - 구간 시작 때 없던 세션에 있는 것 (터미널 안의 셸과 거기서 띄운 일, nohup·setsid로 떼어 낸 일)
-    - 같은 세션이라도 자신도, 새로 생긴 조상도 창이 없는 것 (파일 관리자 등에서 실행한 스크립트)
-    은 멈춘다. 창이 있는 앱(편집기, 터미널 창)과 그 도우미, 구간 전부터 있던 것(데스크톱 세션, 사람이 연 것),
-    컨트롤 플레인이 docker exec로 띄운 것(화면 보기 연결, GUI 도구)은 그대로 둔다.
-    """
-    by = {p["pid"]: p for p in procs}
-    base_sids = {by[pid]["sid"] for pid in baseline if pid in by and by[pid]["uid"] == DESKTOP_UID}
-
-    def ancestors(p: dict[str, Any]):
-        seen = set()
-        while p["ppid"] in by and p["ppid"] not in seen:
-            seen.add(p["ppid"])
-            p = by[p["ppid"]]
-            yield p
-
-    def exec_root(p: dict[str, Any]) -> bool:   # docker exec로 뜬 것은 부모 pid가 0이다 (PID 1도 0이라 뺀다)
-        return p["ppid"] == 0 and p["pid"] != 1
-
-    def from_exec(p: dict[str, Any]) -> bool:
-        return exec_root(p) or any(exec_root(a) for a in ancestors(p))
-
-    out = []
-    for p in procs:
-        if p["uid"] != DESKTOP_UID or p["pid"] in baseline or p["pid"] == 1 or from_exec(p):
-            continue
-        if p["sid"] not in base_sids:
-            out.append(p["pid"])
-            continue
-        windowed = p["pid"] in window_pids or any(
-            a["pid"] in window_pids and a["pid"] not in baseline for a in ancestors(p))
-        if not windowed:
-            out.append(p["pid"])
-    return sorted(out)
-
-
 def _source_mount(source_dir: str) -> Mount:
     """원본 폴더 안쪽에 다른 폴더(데이터 폴더 등)가 바인드 마운트돼 있으면 docker 기본값(rbind)은 그것까지 붙이고,
     cp -a가 작업 폴더로 복사한다. 같은 디스크의 바인드 마운트는 장치 번호가 같아 cp -x로도 못 거른다 (보안 검수 run-3 v06)."""
@@ -269,58 +156,7 @@ def safe_path(path: str) -> str:
     raise SandboxError(f"허용되지 않은 경로: {path} (/workspace 또는 /source 아래만 가능)")
 
 
-# ---------------------------------------------------------------------------
-# 영향 미리보기: 승인 화면에 보여줄 '시스템이 계산한' 영향 범위
-# ---------------------------------------------------------------------------
-
-_WRAPPERS = ("xargs", "sudo", "env", "nohup", "timeout", "nice")
-
-
-def _short_seg(seg: list[str]) -> str:
-    text = " ".join(seg)
-    return text if len(text) <= 80 else text[:79] + "…"
-
-
-def _split_segments(command: str, depth: int = 0) -> list[list[str]]:
-    """명령을 ; && || | 단위 argv 조각으로 나눈다. sh -c / bash -c 안쪽은 펼친다."""
-    if depth > 3:
-        return []
-    try:
-        lex = shlex.shlex(command, posix=True, punctuation_chars=";&|()<>")
-        lex.whitespace_split = True
-        lex.commenters = ""
-        tokens = list(lex)
-    except ValueError:
-        return [command.split()]
-    segs: list[list[str]] = [[]]
-    for t in tokens:
-        if t and all(c in ";&|()<>" for c in t):
-            segs.append([])
-        else:
-            segs[-1].append(t)
-    out: list[list[str]] = []
-    for s in segs:
-        if not s:
-            continue
-        name = s[0].rsplit("/", 1)[-1]
-        if name in ("sh", "bash", "dash", "zsh") and "-c" in s:
-            i = s.index("-c")
-            if i + 1 < len(s):
-                out.extend(_split_segments(s[i + 1], depth + 1))
-                continue
-        if name in _WRAPPERS and len(s) > 1:
-            out.append(s)  # 원래 조각도 남기고
-            rest = s[1:]
-            while rest and (rest[0].startswith("-") or re.match(r"^\w+=", rest[0]) or rest[0].isdigit()):
-                rest = rest[1:]
-            if rest:
-                out.append(rest)
-            continue
-        out.append(s)
-    return out
-
-
-class SandboxManager:
+class SandboxManager(DesktopTools):
     def __init__(self, settings: Settings, db_path: Path | str):
         self.settings = settings
         self.client = docker.from_env()
@@ -717,139 +553,6 @@ class SandboxManager:
             raise SandboxError(f"결과 파일이 너무 큼 (최대 {limit} bytes)")
         return data
 
-    # ---- TL-2 GUI 도구 (데스크톱 템플릿) --------------------------------
-    def _desktop(self, sid: str):
-        if not self.template_of(sid).desktop:
-            raise SandboxError("데스크톱이 없는 샌드박스 (template=desktop으로 만들 것)")
-        return self._require_running(sid)
-
-    @staticmethod
-    def _x(c, argv: list[str], timeout: int = _X_TIMEOUT):
-        res = c.exec_run(_timed(timeout, *argv),
-                         user=DESKTOP_USER, environment=DESKTOP_ENV, demux=True)
-        if res.exit_code in _TIMED_OUT:  # 반쯤 받은 결과(창 목록 등)로 판단하지 않게 실패로 돌린다
-            raise SandboxError(f"화면(X 서버)이 {timeout}초 안에 응답하지 않음")
-        return res
-
-    def desktop_processes(self, sid: str) -> tuple[list[dict[str, Any]], set[int]]:
-        """컨테이너의 프로세스 목록과, 보이는 창을 가진 pid (_NET_WM_PID)."""
-        c = self._desktop(sid)
-        res = c.exec_run(_timed(_X_TIMEOUT, "ps", "-eo", "pid=,ppid=,sid=,uid=,args="))
-        if res.exit_code != 0:  # 빈 목록을 기준으로 삼으면 구간이 끝날 때 데스크톱 세션 전체를 낯선 프로세스로 본다
-            raise SandboxError(f"프로세스 목록 실패 (exit {res.exit_code})")
-        procs = _parse_ps(res.output or b"")
-        res = self._x(c, ["sh", "-c", "for w in $(xdotool search --onlyvisible --name . 2>/dev/null); do "
-                                      "xdotool getwindowpid $w 2>/dev/null; done"])
-        wins = {int(x) for x in (res.output[0] or b"").split() if x.isdigit()}
-        return procs, wins
-
-    def kill_processes(self, sid: str, pids: list[int]) -> None:
-        if pids:
-            self._desktop(sid).exec_run(_timed(_X_TIMEOUT, "kill", "-KILL", "--", *map(str, pids)),
-                                        user=DESKTOP_USER)
-
-    def _wait_display(self, c, timeout: float = 45) -> None:
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            if self._x(c, ["xdotool", "getdisplaygeometry"]).exit_code == 0:
-                return
-            time.sleep(0.3)
-        raise SandboxError("데스크톱(X 서버)이 시작되지 않음")
-
-    def geometry(self, sid: str) -> tuple[int, int]:
-        res = self._x(self._desktop(sid), ["xdotool", "getdisplaygeometry"])
-        if res.exit_code != 0:
-            raise SandboxError("화면 크기를 알 수 없음 (데스크톱이 떠 있지 않음)")
-        w, h = (res.output[0] or b"0 0").split()[:2]
-        return int(w), int(h)
-
-    def screenshot(self, sid: str) -> dict[str, Any]:
-        c = self._desktop(sid)
-        res = self._x(c, ["sh", "-c", f'mkdir -p "$(dirname {_SHOT})" && scrot -o -z {_SHOT} && cat {_SHOT}; '
-                                      f'r=$?; rm -f {_SHOT}; exit $r'])
-        png = res.output[0] or b""
-        if res.exit_code != 0 or png[:8] != b"\x89PNG\r\n\x1a\n":
-            raise SandboxError(_truncate(res.output[1]) or "스크린샷 실패")
-        width, height = struct.unpack(">II", png[16:24])
-        return {"png": png, "width": width, "height": height, "sha256": hashlib.sha256(png).hexdigest()}
-
-    def click(self, sid: str, x: int, y: int, button: str = "left", double: bool = False) -> dict[str, Any]:
-        c = self._desktop(sid)
-        w, h = self.geometry(sid)
-        x, y = int(x), int(y)
-        if not (0 <= x < w and 0 <= y < h):
-            raise SandboxError(f"화면 밖 좌표: ({x}, {y}), 화면 {w}x{h}")
-        if button not in _BUTTONS:
-            raise SandboxError("button은 left, middle, right 중 하나")
-        argv = ["xdotool", "mousemove", str(x), str(y), "click"]
-        if double:
-            argv += ["--repeat", "2", "--delay", "80"]
-        res = self._x(c, argv + [_BUTTONS[button]])
-        if res.exit_code != 0:
-            raise SandboxError(_truncate(res.output[1]) or "클릭 실패")
-        return {"x": x, "y": y, "button": button, "double": bool(double)}
-
-    def type_text(self, sid: str, text: str) -> dict[str, Any]:
-        c = self._desktop(sid)
-        if len(text) > 2000:
-            raise SandboxError("한 번에 2000자까지 입력할 수 있음")
-        # 글자마다 12ms를 쉬니 긴 글은 그만큼 더 기다린다 (2000자면 115초)
-        res = self._x(c, ["xdotool", "type", "--clearmodifiers", "--delay", "12", "--", text],
-                      timeout=_X_TIMEOUT + len(text) // 20)
-        if res.exit_code != 0:
-            raise SandboxError(_truncate(res.output[1]) or "입력 실패")
-        return {"chars": len(text)}
-
-    def key(self, sid: str, keys: str) -> dict[str, Any]:
-        c = self._desktop(sid)
-        names = keys.split()
-        if not names or len(names) > 20 or not all(_KEY_RE.match(k) for k in names):
-            raise SandboxError("keys는 xdotool 키 이름을 공백으로 나눈 것 (예: 'ctrl+s', 'Return', 'alt+F4')")
-        res = self._x(c, ["xdotool", "key", "--clearmodifiers", "--"] + names)
-        if res.exit_code != 0:
-            raise SandboxError(_truncate(res.output[1]) or "키 입력 실패")
-        return {"keys": names}
-
-    def vnc_command(self, sid: str, view_only: bool) -> list[str]:
-        """화면 연결 하나에 쓸 명령. 포트를 열지 않고 x11vnc가 표준 입출력으로 RFB를 말한다."""
-        c = self._desktop(sid)
-        argv = [self.settings.docker_cli, "exec", "-i", "-u", DESKTOP_USER]
-        for k, v in DESKTOP_ENV.items():
-            argv += ["-e", f"{k}={v}"]
-        # 디스플레이는 DISPLAY 환경 변수로 넘긴다. socat 주소에서 ':'는 구분자라 '-display :0'을 못 쓴다.
-        vnc = ["x11vnc", "-inetd", "-q", "-auth", DESKTOP_ENV["XAUTHORITY"],
-               "-nopw", "-shared", "-norc", "-noshm", "-nosel", "-noxdamage"]
-        if view_only:
-            vnc.append("-viewonly")
-        # x11vnc -inetd는 fd 0에 쓰기도 한다. docker exec의 표준 입력은 파이프라 쓰기가 실패하므로
-        # socat EXEC(기본이 socketpair)로 감싼다. 인자에 공백·':'·','가 없어야 한다.
-        return argv + [c.id, "socat", "-", "EXEC:" + " ".join(vnc)]
-
-    def extract_novnc(self, dest: Path) -> bool:
-        """noVNC 정적 파일을 데스크톱 이미지에서 꺼낸다. 인터넷 없이 설치하기 위해 따로 받지 않는다."""
-        if (dest / "core" / "rfb.js").exists():
-            return True
-        # 컨테이너 로그로 tar를 받으면 바이너리가 잘린다. 실행하지 않은 컨테이너에서 복사 API로 꺼낸다.
-        try:
-            c = self.client.containers.create(self.settings.desktop_image, ["true"], network_mode="none")
-        except (ImageNotFound, APIError):
-            return False
-        try:
-            stream, _ = c.get_archive("/usr/share/novnc")
-            out = b"".join(stream)
-        except (NotFound, APIError):
-            return False
-        finally:
-            c.remove(force=True)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(fileobj=io.BytesIO(out)) as tf:
-            # 링크는 건너뛴다 (vnc_auto.html 같은 별칭뿐이고, 밖을 가리키는 링크를 풀지 않기 위해)
-            members = [m for m in tf.getmembers() if m.isfile() or m.isdir()]
-            tf.extractall(dest.parent, members=members, filter="data")
-        if dest.name != "novnc":
-            (dest.parent / "novnc").rename(dest)
-        return (dest / "core" / "rfb.js").exists()
-
     # ---- 승인 화면용 영향 미리보기 -------------------------------------
     def _expand(self, c, pattern: str) -> list[str]:
         """컨테이너 안에서 glob만 펼친다. 명령 치환은 일어나지 않는다."""
@@ -867,66 +570,5 @@ class SandboxManager:
 
     def preview(self, sid: str, command: str, limit: int = 200) -> dict[str, Any]:
         c = self._container(sid)
-        affected: list[dict[str, str]] = []
-        notes: list[str] = []
-        if any(s in command for s in ("$", "`", "<(", "eval ")):
-            notes.append("변수·명령 치환이 있어 실제로 무엇이 실행될지 자동 계산이 정확하지 않을 수 있음. 명령 원문을 확인할 것.")
-        for seg in _split_segments(command):
-            if not seg:
-                continue
-            name = seg[0].rsplit("/", 1)[-1]
-            if name == "rm":
-                recursive = any(a.startswith("-") and not a.startswith("--") and ("r" in a or "R" in a)
-                                for a in seg[1:]) or "--recursive" in seg
-                operands, opts_done = [], False
-                for a in seg[1:]:
-                    if not opts_done and a == "--":
-                        opts_done = True
-                        continue
-                    if not opts_done and a.startswith("-") and a != "-":
-                        continue
-                    operands.append(a)
-                for op in operands:
-                    matches = self._expand(c, op)
-                    if not matches:
-                        affected.append({"path": op, "effect": "삭제 시도 (현재 존재하지 않음)"})
-                    for m in matches:
-                        if m == SOURCE or m.startswith(SOURCE + "/"):
-                            affected.append({"path": m, "effect": "삭제 시도 → 실패 예정 (원본은 읽기 전용)"})
-                            continue
-                        items = self._walk(c, m, limit) if recursive else [m]
-                        for it in items:
-                            affected.append({"path": it, "effect": "삭제"})
-            elif name == "curl":
-                urls = [a for a in seg[1:] if re.match(r"^[a-z][a-z0-9+.-]*://", a, re.I)]
-                uploads = []
-                for i, a in enumerate(seg[1:], start=1):
-                    v = None
-                    if a.startswith("@"):
-                        v = a[1:]
-                    elif a.startswith("--data") or a in ("-d", "-F", "-T", "--upload-file", "--form"):
-                        nxt = seg[i + 1] if i + 1 < len(seg) else ""
-                        if "=@" in nxt:
-                            v = nxt.split("=@", 1)[1]
-                        elif nxt.startswith("@"):
-                            v = nxt[1:]
-                        elif a in ("-T", "--upload-file"):
-                            v = nxt
-                    if v:
-                        uploads.extend(self._expand(c, v) or [v])
-                for u in urls:
-                    affected.append({"path": u, "effect": "외부 접속 시도 (샌드박스는 network=none이라 실패 예정)"})
-                for u in uploads:
-                    affected.append({"path": u, "effect": "외부로 보낼 파일"})
-                if not urls:
-                    notes.append("curl 대상 주소를 명령에서 찾지 못함.")
-            elif name not in _WRAPPERS:  # 감싸는 명령은 안쪽 조각을 따로 본다
-                # rm·curl 말고는 영향을 계산하지 않는다. 계산한 줄이 있어도 이 조각의 영향은 표에 없다는 것을
-                # 조각마다 알린다 (보안 검수 run-3 v17: 'rm a; mv b /tmp'가 'a 삭제' 한 줄로만 보였다)
-                notes.append(f"'{_short_seg(seg)}' 부분의 영향은 자동 계산하지 못함. 명령 원문을 확인할 것.")
-        if len(affected) > limit:
-            notes.append(f"영향 항목 {len(affected)}개 중 앞의 {limit}개만 표시.")
-            affected = affected[:limit]
-        if not affected and not notes:
-            notes.append("시스템이 영향 파일을 계산하지 못함. 명령 원문을 확인할 것.")
-        return {"command": command, "cwd": WORKSPACE, "affected": affected, "notes": notes}
+        return preview_command(command, limit, lambda pattern: self._expand(c, pattern),
+                               lambda path, n: self._walk(c, path, n))

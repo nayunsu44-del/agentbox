@@ -247,7 +247,7 @@ def test_terminal_approval_neutralizes_control_chars(monkeypatch, capsys):
 
 # 보안 검수 N-1(방안 G): GUI 구간 동안 바뀐 파일 목록
 def test_workspace_manifest_parse_and_diff():
-    from agentbox.sandbox import _parse_manifest, diff_manifest
+    from agentbox.gui_state import _parse_manifest, diff_manifest
 
     raw = "a.md\x0010\x001.5\x001.6\x00dir/줄\n바꿈 이름\x002\x002.0\x002.1\x00".encode()
     m, truncated = _parse_manifest(raw)
@@ -316,7 +316,7 @@ def test_mask_linear_on_adversarial_input():
 
 # 보안 검수 N-1 보강: GUI 구간이 끝날 때 멈출 화면 계정 프로세스 (실제 데스크톱 컨테이너의 ps를 본뜸)
 def test_gui_strays():
-    from agentbox.sandbox import gui_strays
+    from agentbox.gui_state import gui_strays
 
     D = 1001
 

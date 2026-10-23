@@ -16,7 +16,8 @@ from concurrent.futures import wait as wait_futures
 from typing import Any
 
 from .desktop import DesktopControl
-from .sandbox import SandboxManager, diff_manifest, gui_strays
+from .gui_state import diff_manifest, gui_strays
+from .sandbox import SandboxManager
 
 
 class GuiBursts:
