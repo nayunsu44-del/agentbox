@@ -65,6 +65,9 @@ class Settings:
     max_body_bytes: int = field(default_factory=lambda: int(_env("AGENTBOX_MAX_BODY", str(8 * 1024 * 1024))))
     max_upload_body_bytes: int = field(
         default_factory=lambda: int(_env("AGENTBOX_MAX_UPLOAD_BODY", str(256 * 1024 * 1024))))
+    # 동시에 처리하는 연결·요청 수 (uvicorn limit_concurrency). 넘으면 503. 화면 웹소켓도 하나씩 센다.
+    # 본문 해석은 요청마다 메모리를 쓰므로 동시 수를 묶어 둔다 (보안 검수 run-5 N1). 0이면 끈다.
+    max_connections: int = field(default_factory=lambda: int(_env("AGENTBOX_MAX_CONNECTIONS", "256")))
     # AP-1 승인 대기 상한. 지나면 거부로 처리한다.
     approval_timeout: int = field(default_factory=lambda: int(_env("AGENTBOX_APPROVAL_TIMEOUT", "300")))
     # 데스크톱 템플릿 (UX-1, UX-2, TL-2)

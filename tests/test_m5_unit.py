@@ -145,6 +145,65 @@ def test_disk_is_rechecked_before_pending_row(tmp_path):
     box.bursts._burst_pool.shutdown()
 
 
+def _fake_app(tmp_path, monkeypatch):
+    """Docker 없이 실제 build() 앱을 만든다 (Docker SDK만 가짜)."""
+    import docker
+
+    from agentbox import api
+
+    class _C:
+        id = "c" * 64
+        status = "running"
+        attrs = {"State": {"Status": "running"}}
+
+    class _Client:
+        containers = type("Cs", (), {"get": lambda self, cid: _C()})()
+
+        def info(self):
+            return {"Runtimes": {"runc": {}}}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(docker, "from_env", lambda *a, **k: _Client())
+    for k, v in {"AGENTBOX_HOME": str(tmp_path), "AGENTBOX_HUMAN_TOKEN": "hum_" + "d" * 40,
+                 "AGENTBOX_DOCKER_CLI": "/bin/false", "AGENTBOX_MIN_FREE": "0"}.items():
+        monkeypatch.setenv(k, v)
+    app, box, human = api.build()
+    box.sandboxes.conn.execute(
+        "INSERT INTO sandboxes (id, container_id, source_dir, image, runtime, token_hash, status, created_at, template)"
+        " VALUES ('sb_x', ?, '/tmp', 'img', 'runc', 'h', 'running', '2026-01-01', 'desktop')", (_C.id,))
+    return app, box, human
+
+
+def test_unauthenticated_body_is_refused_before_reading(tmp_path, monkeypatch):
+    """보안 검수 run-5 N1: 토큰 없는 요청도 본문(최대 8MiB)을 다 읽고 JSON을 해석한 뒤에 401이 나서, 요청 하나가
+    약 200MB를 썼고 512MiB 제한에서는 동시 4건에 서버가 죽었다. 본문을 읽기 전에 자격 증명을 확인한다."""
+    from fastapi.testclient import TestClient
+
+    from agentbox import api
+    from agentbox import desktop as D
+    app, box, human = _fake_app(tmp_path, monkeypatch)
+    decoded = []
+    real = api.json.loads
+    monkeypatch.setattr(api.json, "loads", lambda *a, **k: decoded.append(1) or real(*a, **k))
+    body = b'{"args":{"a":[' + b",".join([b"{}"] * 300_000) + b"]}}"
+    with TestClient(app) as c:
+        for headers in ({}, {"Authorization": "Bearer junk"}, {"cookie": f"{D.COOKIE}=nope"}):
+            r = c.post("/sandboxes/sb_x/tools/exec", content=body,
+                       headers={"content-type": "application/json", **headers})
+            assert r.status_code == 401, headers
+        assert decoded == []
+        r = c.post("/login", data={"token": "x" * (70 * 1024)})
+        assert r.status_code == 413                                    # 로그인 폼은 작게
+        r = c.post("/approvals/apr_none", json={"decision": "approve"}, headers={"Authorization": f"Bearer {human}"})
+        assert r.status_code == 404                                    # 사람 토큰은 그대로 라우트까지 간다
+        assert decoded
+        cookie, _ = box.desktop.new_session("*")
+        r = c.post("/ui/approvals/apr_none/approve", data={"x": "1"}, headers={"cookie": f"{D.COOKIE}={cookie}"})
+        assert r.status_code != 401                                    # 로그인 세션도 통과
+
+
 def test_desktop_ws_does_not_block_event_loop_on_sqlite(tmp_path, monkeypatch):
     """보안 검수 run-5: 화면 웹소켓이 이벤트 루프에서 SQLite·감사 기록을 기다려, DB 쓰기 잠금이 잡혀 있으면
     연결 하나에 서버 전체(/healthz 포함)가 수 초 멈췄다."""

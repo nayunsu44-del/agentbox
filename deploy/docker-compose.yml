@@ -15,6 +15,9 @@ services:
       dockerfile: deploy/Dockerfile
     image: agentbox-control:0.1
     restart: unless-stopped
+    # 컨트롤 플레인 메모리 상한. 넘으면 이 컨테이너만 재시작되고 호스트·샌드박스는 영향을 받지 않는다.
+    # 인증한 요청도 8MB JSON 하나가 해석 중 수백 MB를 쓸 수 있어 넉넉히 잡는다 (보안 검수 run-5 N1)
+    mem_limit: ${AGENTBOX_MEM_LIMIT:-2g}
     environment:
       # 샌드박스의 /source는 호스트 데몬이 바인드 마운트한다. 그래서 데이터 폴더는 호스트와
       # 컨테이너에서 같은 절대 경로여야 한다.
