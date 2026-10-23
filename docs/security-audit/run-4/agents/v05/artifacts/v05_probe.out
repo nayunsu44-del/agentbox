@@ -1,0 +1,33 @@
+== A. real gui_state.gui_strays, daemon 300 in a burst-start session (sid 1), no window ==
+A1 no declared window -> [300]
+A2 window list names 300 (forged) -> []
+A3 window list names 301 only -> [300]
+A5a baseline windowed ancestor 85 -> [300]
+A5b helper 302 windowed + 300 named -> []
+A5c helper 302 windowed only -> [300]
+A4 daemon in NEW session sid 777, window list names 300 -> [300]
+A6 by-design ancestor route: app 310 (new, sid 1, windowed) child helper 311 (sid 1) -> []
+
+== B. real DesktopTools.desktop_processes / kill_processes against a fake docker exec ==
+parsed procs: [(1, 1, 0), (85, 1, 1001), (300, 1, 1001)]
+window_pids parsed from xdotool stdout: [300, 301]
+exec: ['timeout', '-k', '2', '15', 'ps', '-eo', 'pid=,ppid=,sid=,uid=,args='] user= None demux= None
+exec: ['timeout', '-k', '2', '15', 'sh', '-c', 'for w in $(xdotool search --onlyvisible --name . 2>/dev/null); do xdotool getwindowpid $w 2>/dev/null; done'] user= desktop demux= True
+gui_strays with those wins, baseline {1,85}: []
+kill argv: ['timeout', '-k', '2', '15', 'kill', '-KILL', '--', '300'] user= desktop
+
+== C. real GuiBursts._stop_strays: spared pid skips the kill and leaves no record ==
+no forged window | error: None | killed: [300]
+forged window names 300 | error: None | killed: []
+audit events emitted: [["gui_processes_stopped", {"snapshot_id": "s1", "reason": "idle", "processes": [{"pid": 300, "args": "daemon"}], "count": 1}]]
+
+== D. X capability of this verifier sandbox ==
+DISPLAY: None | /tmp/.X11-unix: False
+xdotool -> None
+xprop -> None
+Xvfb -> None
+xdotool -> None
+python3 -> /usr/bin/python3
+gcc -> None
+cc -> None
+python Xlib: absent (ModuleNotFoundError)

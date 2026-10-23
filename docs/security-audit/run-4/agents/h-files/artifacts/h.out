@@ -1,0 +1,117 @@
+# h-files run-4 local check: agentbox/sandbox.py overlaps()/safe_path()/_workspace_path()/clean_name()/_source_mount()
+# command: python tools/sbx.py h-files /usr/bin/python3 /scratch/h.py  (uid 65534, no net, /target ro)
+{
+ "fs_case_insensitive": true,
+ "probe_stat_same_inode": true,
+ "ov_ancestor_of_data": true,
+ "ov_same": true,
+ "ov_below_data": true,
+ "ov_unrelated": false,
+ "ov_missing_path": false,
+ "alias_paths_identical_strings": false,
+ "alias_samefile_true": true,
+ "ov_case_variant_unaltered": true,
+ "ov_unstatable_alias": false,
+ "safe_path": {
+  "/workspace/a": "/workspace/a",
+  "a": "/workspace/a",
+  "": "/workspace",
+  "   ": "/workspace",
+  "/workspace/../etc/passwd": "REJECT",
+  "//workspace/x": "REJECT",
+  "/workspaceevil": "REJECT",
+  "/source/x": "/source/x",
+  "/workspace/../source/y": "/source/y",
+  "/workspace/./a/../b": "/workspace/b",
+  "x/../../etc/passwd": "REJECT",
+  "/source": "/source",
+  "/workspace": "/workspace",
+  "/WORKSPACE/x": "REJECT"
+ },
+ "workspace_path": {
+  "/source/x": "REJECT",
+  "/workspace": "REJECT",
+  "/workspace/a": "/workspace/a",
+  "/workspace/../source/y": "REJECT"
+ },
+ "clean_name": [
+  {
+   "name": ".",
+   "len": 1,
+   "result": "REJECT"
+  },
+  {
+   "name": "..",
+   "len": 2,
+   "result": "REJECT"
+  },
+  {
+   "name": "a/b",
+   "len": 3,
+   "result": "REJECT"
+  },
+  {
+   "name": "a\\b",
+   "len": 3,
+   "result": "REJECT"
+  },
+  {
+   "name": "a\u0000b",
+   "len": 3,
+   "result": "REJECT"
+  },
+  {
+   "name": "a\nb",
+   "len": 3,
+   "result": "REJECT"
+  },
+  {
+   "name": "‮exe.txt",
+   "len": 8,
+   "result": "‮exe.txt"
+  },
+  {
+   "name": "-rf",
+   "len": 3,
+   "result": "-rf"
+  },
+  {
+   "name": "\"q\"",
+   "len": 3,
+   "result": "\"q\""
+  },
+  {
+   "name": "...",
+   "len": 3,
+   "result": "..."
+  },
+  {
+   "name": ".hidden",
+   "len": 7,
+   "result": ".hidden"
+  },
+  {
+   "name": "a b",
+   "len": 3,
+   "result": "a b"
+  },
+  {
+   "name": "aaaaaaaaaaaaaaaa",
+   "len": 200,
+   "result": "aaaaaaaaaaaaaaaa"
+  },
+  {
+   "name": "aaaaaaaaaaaaaaaa",
+   "len": 201,
+   "result": "REJECT"
+  }
+ ],
+ "mount": {
+  "target": "/source",
+  "read_only": true,
+  "bind_options": {
+   "NonRecursive": true
+  },
+  "type": "bind"
+ }
+}

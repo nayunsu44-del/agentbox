@@ -1,0 +1,16 @@
+A1 logged_args keys: ['args_bytes', 'args_head', 'args_sha256', 'args_truncated']
+A2 args_head bytes: 16384 args_bytes: 80015
+A3 small args verbatim: {"command": "ls"}
+B big20 n=20 delta=344064 bytes/call=17203
+B big40 n=40 delta=688128 bytes/call=17203
+B small40 n=40 delta=20480 bytes/call=512
+C rejected: DELETE FROM audit WHERE id <= 10 -> audit log is append-only
+C rejected: UPDATE audit SET payload='{}' WHERE id = 1 -> audit log is append-only
+D1 verify before: True 80
+D2 verify after prefix deletion: ok=True checked=0 broken_at=None reason=None
+D3 remaining rows: 0
+E1 5 approval rows with 400KB args: delta=2007040 bytes/row=401408
+E2 rows still present after decision/expiry: 5 db bytes: 2416640
+E3 DELETE FROM approvals reachable in ApprovalStore API: False
+F NOT-RAISED
+G approvals.list() materialises rows: 5

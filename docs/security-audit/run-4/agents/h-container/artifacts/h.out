@@ -1,0 +1,11 @@
+sysctl fs/protected_symlinks = 1
+sysctl fs/protected_regular = 0
+sysctl fs/protected_hardlinks = 1
+template desktop command = ["/usr/local/bin/agentbox-desktop-start"] image = agentbox-desktop:0.1 desktop = True
+fixture: /scratch/fx/tmp/.X11-unix -> /scratch/fx/victim-dir ; /scratch/fx/tmp/xvfb.log -> /scratch/fx/victim-file
+fixture: link types  islink(.X11-unix)=True islink(xvfb.log)=True
+bash exit= 0 stdout= mkdir/chmod exit=0 stderr= 
+RESULT victim-dir mode after chmod-through-symlink = 1777 (was 700)
+RESULT victim-file content = 'XVFB-STDERR-TEXT\n' (was 'SENTINEL')
+RESULT links still symlinks: True True
+RESULT current uid = 65534

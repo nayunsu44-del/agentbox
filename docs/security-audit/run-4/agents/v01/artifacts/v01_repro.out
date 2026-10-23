@@ -1,0 +1,172 @@
+{
+ "versions": {
+  "python": "3.12.3",
+  "starlette": "1.9.0",
+  "fastapi": "0.161.1",
+  "uvicorn": "0.54.0"
+ },
+ "uvicorn_run_params": [
+  "access_log",
+  "app",
+  "app_dir",
+  "backlog",
+  "date_header",
+  "env_file",
+  "factory",
+  "fd",
+  "forwarded_allow_ips",
+  "h11_max_incomplete_event_size",
+  "headers",
+  "host",
+  "http",
+  "http2",
+  "interface",
+  "lifespan",
+  "limit_concurrency",
+  "limit_max_requests",
+  "limit_max_requests_jitter",
+  "log_config",
+  "log_level",
+  "loop",
+  "port",
+  "proxy_headers",
+  "reload",
+  "reload_delay",
+  "reload_dirs",
+  "reload_excludes",
+  "reload_includes",
+  "reset_contextvars",
+  "root_path",
+  "server_header",
+  "ssl_ca_certs",
+  "ssl_cert_reqs",
+  "ssl_certfile",
+  "ssl_ciphers",
+  "ssl_context_factory",
+  "ssl_keyfile",
+  "ssl_keyfile_password",
+  "ssl_version",
+  "timeout_graceful_shutdown",
+  "timeout_keep_alive",
+  "timeout_worker_healthcheck",
+  "uds",
+  "use_colors",
+  "workers",
+  "ws",
+  "ws_max_queue",
+  "ws_max_size",
+  "ws_per_message_deflate",
+  "ws_ping_interval",
+  "ws_ping_timeout"
+ ],
+ "multipart_bounds": [
+  "spool_max_size = 1024 * 1024  # 1MB",
+  "max_part_size = 1024 * 1024  # 1MB",
+  "max_files: int | float = 1000,",
+  "max_fields: int | float = 1000,",
+  "max_part_size: int = 1024 * 1024,  # 1MB",
+  "self.max_files = max_files",
+  "self.max_fields = max_fields",
+  "self.max_part_size = max_part_size",
+  "if len(self._current_part.data) + len(message_bytes) > self.max_part_size:",
+  "raise MultiPartException(f\"Part exceeded maximum size of {int(self.max_part_size / 1024)}KB.\")",
+  "if self._current_files > self.max_files:",
+  "raise MultiPartException(f\"Too many files. Maximum number of files is {self.max_files}.\")"
+ ],
+ "form_kwargs": "(self, headers: 'Headers', stream: 'AsyncGenerator[bytes, None]', *, max_files: 'int | float' = 1000, max_fields: 'int | float' = 1000, max_part_size: 'int' = 1048576) -> 'None'",
+ "request_form_defaults": [
+  "max_files: int | float = 1000,",
+  "max_fields: int | float = 1000,",
+  "max_part_size: int = 1024 * 1024,",
+  "self._get_form(max_files=max_files, max_fields=max_fields, max_part_size=max_part_size)"
+ ],
+ "app_built": true,
+ "max_upload_bytes": 52428800,
+ "results": [
+  {
+   "case": "control GET /healthz",
+   "consumed": 0,
+   "consumed_before_start": 0,
+   "status": 200,
+   "resp_bytes": 110,
+   "json_decoded": null,
+   "spools": []
+  },
+  {
+   "case": "POST /sandboxes 16 MiB json",
+   "consumed": 16777216,
+   "consumed_before_start": 16777216,
+   "status": 401,
+   "resp_bytes": 49,
+   "json_decoded": [
+    16777216
+   ],
+   "body_bytes": 16777216,
+   "peak_rss_kb": 125324,
+   "peak_rss_delta_kb": 32768,
+   "spools": []
+  },
+  {
+   "case": "POST /sandboxes/{sid}/tools/exec 4 MiB json",
+   "consumed": 4194304,
+   "consumed_before_start": 4194304,
+   "status": 401,
+   "resp_bytes": 49,
+   "json_decoded": [
+    4194304
+   ],
+   "body_bytes": 4194304,
+   "spools": []
+  },
+  {
+   "case": "POST /sandboxes/{sid}/restore 4 MiB json",
+   "consumed": 4194304,
+   "consumed_before_start": 4194304,
+   "status": 401,
+   "resp_bytes": 49,
+   "json_decoded": [
+    4194304
+   ],
+   "body_bytes": 4194304,
+   "spools": []
+  },
+  {
+   "case": "POST /approvals/{aid} 4 MiB json",
+   "consumed": 4194304,
+   "consumed_before_start": 4194304,
+   "status": 401,
+   "resp_bytes": 49,
+   "json_decoded": [
+    4194304
+   ],
+   "body_bytes": 4194304,
+   "spools": []
+  },
+  {
+   "case": "POST /sandboxes/{sid}/files 4 MiB multipart, no cookie",
+   "consumed": 4194442,
+   "consumed_before_start": 4194442,
+   "status": 401,
+   "resp_bytes": 75,
+   "json_decoded": null,
+   "body_bytes": 4194442,
+   "part_bytes": 4194304,
+   "spools": [
+    {
+     "max_size": 1048576,
+     "written": 4194304,
+     "rolled_to_disk": true,
+     "disk_bytes": 4194184,
+     "path": "15"
+    }
+   ],
+   "tempdir": "/scratch",
+   "tmpdir_listing": [
+    "home",
+    "probe.py",
+    "repro.py",
+    "v01_repro.out"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,156 @@
+{
+ "total": 30,
+ "failed": 0,
+ "checks": [
+  {
+   "check": "A1_sid_ticket_not_redeemable_as_star",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "A2_sid_ticket_redeem_exact_scope_ok",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "A3_ticket_is_one_time",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "A4_scoped_session_other_sid_rejected",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "A5_scoped_session_own_sid_ok",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "A6_scoped_session_web_ui_rejected",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "A7_star_ticket_not_redeemable_as_sid",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "A8_mismatched_redeem_burns_ticket",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "A9_star_ticket_redeem_star_ok",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "B1_session_valid_before_logout",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "B2_end_session_returns_public_id",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "B3_session_invalid_after_logout",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "C1_rotation_prunes_all_sessions",
+   "ok": true,
+   "detail": "ui_sessions rows=0"
+  },
+  {
+   "check": "C2_rotation_prunes_all_tickets",
+   "ok": true,
+   "detail": "ui_tickets rows=0"
+  },
+  {
+   "check": "C3_rotation_rejects_pre_rotation_cookie",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "C4_same_token_restart_keeps_session",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "C5_stale_gen_row_rejected",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "C6_stale_gen_row_deleted",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "C7_expired_session_rejected",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "D1_legacy_genless_rows_pruned",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "D2_legacy_cookie_rejected",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "E1_view_allowed_without_lease",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "E2_control_denied_without_lease",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "E3_control_allowed_with_own_lease",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "E4_control_denied_for_other_session",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "E5_lease_not_stealable",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "E6_state_reports_controller",
+   "ok": true,
+   "detail": ""
+  },
+  {
+   "check": "E7_handback_closes_control_conns",
+   "ok": true,
+   "detail": "['ctl']"
+  },
+  {
+   "check": "E8_handback_leaves_view_conns",
+   "ok": true,
+   "detail": "['ctl']"
+  },
+  {
+   "check": "E9_logout_closes_all_session_conns",
+   "ok": true,
+   "detail": "['view', 'ctl']"
+  }
+ ]
+}

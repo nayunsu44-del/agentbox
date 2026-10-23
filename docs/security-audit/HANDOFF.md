@@ -7,7 +7,7 @@
 - **무엇:**
   - run-1: Cloudflare `security-audit` 스킬(6단계)로 agentbox 전체를 감사했다. 기준 커밋 `7fc501f`.
   - run-2: run-1이 남긴 needs_validation 5건을 실제 Docker에서 검증했다.
-- **브랜치·PR:** run-3은 `ccr-e2c70e17-r0gmhn`, draft PR #8(아래 "3차 감사(run-3) 진행 상태"). run-1·2 때 작업 브랜치는 `ccr-e10bee8e-6wt669`. PR #1(감사 수정·CI), #2(화면 링크 세션 범위), #3(FIFO), #4(runc 차단), #5(GUI 백그라운드 정리·세션 만료, `8e4db9e`)는 `main`에 병합됐다. 병합할 때마다 작업 브랜치를 최신 `main`에서 다시 시작한다.
+- **브랜치·PR:** run-4는 `ccr-17444317-ygb3a1`, draft PR #15(아래 "4차 감사(run-4) 결과"). run-3은 `ccr-e2c70e17-r0gmhn`, draft PR #8(아래 "3차 감사(run-3) 진행 상태"). run-1·2 때 작업 브랜치는 `ccr-e10bee8e-6wt669`. PR #1(감사 수정·CI), #2(화면 링크 세션 범위), #3(FIFO), #4(runc 차단), #5(GUI 백그라운드 정리·세션 만료, `8e4db9e`)는 `main`에 병합됐다. 병합할 때마다 작업 브랜치를 최신 `main`에서 다시 시작한다.
 - **현재 상태:** 감사 확정 9건 중 **8건 수정 완료**, **N-1(High)은 방안 C·A·G + 백그라운드 정리로 부분 완화**(복구·경고·기록·정리, 승인 우회는 남음). 기각 1건. README "아직 고치지 않은 것" 항목(비밀값 가림, 화면 링크 세션, FIFO, runc)도 모두 고쳤다.
 - **테스트:** 전체 `pytest` 214개 통과(run-3 수정 회귀 테스트 9개 포함, 2026-10-22)(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
 
@@ -162,3 +162,67 @@ pytest                                                 # 160 passed
 8. 검증자별 `agents/<id>/scratch`는 `chown 65534`로 미리 만든다. `gen5.py`가 대신 해 준다.
 
 이번 세션 확인 결과: 전체 pytest 231개 통과(재개 세션, 실제 Docker와 다시 빌드한 데스크톱 이미지, 건너뛴 것 없음). 이전 세션은 214개. CI의 acceptance가 건너뛴 테스트를 실패로 처리하므로, 바인드 마운트 테스트가 root가 아니면 `sudo -n`을 쓰게 고쳤다(`192019f`).
+
+## 4차 감사(run-4) 결과 — 2026-10-23 (부분 감사, 확정 건 수정 대기)
+
+- **기준과 브랜치:** 작업 브랜치 `ccr-17444317-ygb3a1`, draft PR #15. 감사 기준은 `main` `9805d91`(리팩토링 PR #11~#14 뒤)이다.
+- **프로필·예산:** `standard`, 호출 상한 50을 **모두** 썼다.
+- **상태:** `run_status: incomplete`(`budget_exhausted`). 비평이 제안한 3단위(critic-1 2개, critic-2 1개)를 헌팅하지 못했다.
+- **보고서(한국어):** `run-4/REPORT.md`, `FINDINGS-DETAIL.md`, `NEEDS-VALIDATION.md`. 영어 레코드 원문은 항목마다 접어 두었다.
+
+### 진행 경과
+1. **정찰(리눅스, Opus 4회):** `architecture.md`와 30단위 장부를 만들었다.
+2. **2~6단계 1차(Windows DeepSeek 하네스, 46회):** 소유자 지시로 모든 서브에이전트를 DeepSeek(`deepseek-ai/DeepSeek-V4.1-Flash`)로 돌렸다.
+3. **검토 보완(리눅스, 4회):** DeepSeek를 쓸 수 없는 환경이라 소유자 승인으로 Opus·Sonnet을 썼다.
+   - 1차에서 판정 없이 빠진 후보 v11을 v11(Opus)이 다시 검증했다. r13(Sonnet)이 레코드를 확인했다.
+   - 부모가 실제 Docker로 v11을 재현했고, r14(Opus)가 확정 승격을 검증했다.
+   - 최종 비평 critic-2(Opus)를 돌렸다.
+   - critic-1의 2단위를 장부에 `deferred`로 넣었다. 승인 카드 단위의 잘못 매핑된 검사를 바로잡았다.
+   - 도구를 리눅스로 이식했고, 보고서를 한국어로 다시 썼다.
+
+### 결과 (`run-4/findings.json` 13건, 두 검증기 PASS)
+| ID | 판정 | 심각도 | 내용 | 지문 파일 |
+|---|---|---|---|---|
+| F1 | 확정 | 중간 | 인증 전 요청 본문을 끝까지 읽고 해석·임시 저장한 뒤 401 | `api.py` |
+| F2 | 확정 | 중간 | 인계 사이 `gui_lock`을 기다리던 GUI 입력이 구간 없이 실행 → 스냅샷·`gui_changes` 없음 | `service.py` |
+| F3 | 확정 | 중간 | 승인 미리보기·도구 오류 문자열로 감사 로그 상한 우회(run-3 v08 수정이 덜 막음) | `service.py` |
+| F4 | 확정 | 낮음 | 승인 카드 `rm` 영향 표가 공백·줄바꿈 경로를 잘못 표시 | `sandbox.py` |
+| F5 | 확정 | 낮음 | 인증 없는 `/static/novnc/*`가 요청마다 `docker create`와 tar 추출 | `sandbox_desktop.py` |
+| F6 | 확정 | 낮음 | 복원과 삭제가 겹치면 삭제한 샌드박스와 토큰이 되살아남(parent-live 6회 중 5회) | `service.py` |
+| F7 | 확정 | 낮음 | 스냅샷 상한 TOCTOU: `touch`와 `write_file`을 겨루면 승인 없이 커밋(parent-live 21회 중 18회) | `service.py` |
+| F8 | 확정 | 낮음 | 인증 없는 로그인 실패마다 지울 수 없는 감사 행 | `web.py` |
+| N1~N5 | 검증 필요 | — | `same_origin` scheme 무시, 감사·승인 행 무제한, 컨테이너 출력 리더 상한 부재, `_NET_WM_PID` 신뢰, 남은 bidi/보이지 않는 문자 | |
+
+### 남은 일
+1. **확정 8건 수정**(소유자 지시 대기). 제안 순서: F1·F3(인증 전·감사 상한) → F2·F7(스냅샷 게이트를 락 안에서 다시 판단) → F6(수명 주기 락) → F4·F5·F8.
+2. **보류 3단위**는 다음 run의 1순위다.
+   - 데스크톱 WebSocket이 `ws.accept()` 전에 동기 SQLite·Docker를 호출한다.
+   - 승인 테이블이 마스킹·상한 없이 남는다.
+   - 인수 중 열리는 에이전트 GUI 구간(critic-2).
+3. **검증 필요 5건**은 run 뒤에 부모가 실측했다(`run-4/agents/parent-live/`, 에이전트 예산 밖). 판정은 그대로다. 바꾸려면 새 검증자 예산이 필요하다.
+   - N2(감사·승인 행 무제한), N4(`_NET_WM_PID` 위조), N5(ALM으로 `>`가 `<`로 보임)는 저장소 쪽 막힌 지점이 모두 풀린 **확정 후보**다.
+   - N1은 Chromium에서 강제 로그아웃만 성립한다. Firefox·WebKit은 확인하지 못했다.
+   - N3은 증가가 선형이고 제한 시간으로 묶여 낮음이나 하드닝 쪽이다.
+   - 남은 배포 사실: 데이터 볼륨 크기, 컨테이너 메모리 제한, 운영자가 쓰는 브라우저.
+4. **최종 비평(critic-2)**은 `stop: false`였고 새 경계 1개를 냈다. 사람이 화면을 인수한 동안 `decide`나 `call_tool` 스냅샷이 에이전트 GUI 구간을 열어, 사람이 띄운 프로세스를 죽이거나 사람 편집을 에이전트 기록으로 남길 수 있는지다. 예산이 없어 `deferred`로 넣었다. 그래서 보류는 **3단위**이고, 깨끗한 커버리지는 주장하지 않는다.
+
+### 실행 환경 (리눅스에서 이어받을 때)
+1. 서비스와 이미지를 준비한다.
+   - `nohup dockerd >/tmp/dockerd.log 2>&1 &`
+   - `pip install -e '.[test]' pyte`
+   - `docker pull ubuntu:24.04 buildpack-deps:noble-curl`
+   - `docker build -t agentbox-desktop:0.1 images/desktop`
+2. 스크래치패드에 스킬과 감사 소스를 준비한다.
+   - `git clone --depth 1 https://github.com/cloudflare/security-audit-skill skill`
+   - `git worktree add --detach <scratchpad>/src-audited 9805d91`
+3. `run-4/tools/common.py`는 호스트(`os.name`)에 따라 경로와 `sbx`를 고른다.
+   - run 폴더 경로는 도구 파일 위치에서 계산한다.
+   - 스크래치패드는 `AUDIT_SCRATCHPAD`로 준다. Windows(`sbx.py`, `common.py`, `parent_live_lifecycle.py`)에서는 반드시 설정해야 하고, 리눅스에서는 설정하지 않으면 기본값을 쓴다. 리눅스 bash `tools/sbx`의 `TARGET`·`LOG` 줄은 새 스크래치패드로 바꾼다.
+   - 1차 Windows 기록의 사용자 경로는 `<WINDOWS_HOST_ROOT>`로 가렸다.
+   - 승격은 `tools/promote_linux.py`, Windows에서는 `tools/promote.py`·`tools/sbx.py`를 쓴다.
+4. 도구:
+   - 지시문 생성: `gen_hunt.py`, `gen3.py`, `gen5.py`, `gen_critic.py`
+   - 결과 반영: `apply.py`(3·5단계), `ingest_hunt.py`
+   - 보고서: `gen6.py`(`ko_text.py`의 한국어 문장과 `report_notes.py`를 씀)
+   - 1차 때 쓴 일회용 스크립트는 `tools/oneoff/`에 설명과 함께 모았다.
+5. 검증기: `node <skill>/skills/security-audit/validate-findings.cjs run-4/findings.json`, `validate-coverage-ledger.cjs run-4/coverage-ledger.json`.

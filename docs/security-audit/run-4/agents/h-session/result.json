@@ -1,0 +1,160 @@
+{
+ "units": [
+  {
+   "coverage_id": "agentbox%2Fapi.py%23GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%20%2B%20takeover%2Fhandback%20%2B%20state%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fdesktop.py%23ticket%20redeem%20%2B%20session%20scope%20%2B%20session%20revocation%20on%20human-token%20rotation%20%2B%20lease::agentbox%2Fdesktop.py%20%2B%20agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
+   "disposition": "covered",
+   "reviewed_paths": [
+    "agentbox/desktop.py",
+    "agentbox/api.py",
+    "agentbox/web.py",
+    "agentbox/service.py",
+    "agentbox/config.py"
+   ],
+   "checks": [
+    {
+     "agent_id": "h-session",
+     "reviewed_paths": [
+      "agentbox/desktop.py"
+     ],
+     "invariant": "A browser session or ticket is valid only for the human-token generation that issued it, so rotating the human token revokes every pre-rotation session and ticket",
+     "method": "local",
+     "result": "Prior record agentbox/desktop.py:ui_sessions:human-token-rotation-does-not-revoke-browser-sessions no longer holds. ui_sessions and ui_tickets now store a gen fingerprint of the human token (desktop.py:34-42, 53-55); __init__ deletes every row whose gen differs from this run's token gen (desktop.py:104-105), session_scope rejects and deletes a gen-mismatch row (desktop.py:157-159), and redeem does the same for tickets (desktop.py:126). Local harness: 30/30 checks passed. Opening the same DB with token B after issuing sessions and tickets under token A left 0 ui_sessions and 0 ui_tickets rows, the pre-rotation cookie was rejected, a gen-mismatch row inserted after init was rejected and deleted, a legacy gen-less row was pruned by the ALTER+DELETE migration (desktop.py:99-105), and an expired session was refused; re-opening with the same token kept the login, so restart persistence is preserved.",
+     "artifact": "agents/h-session/artifacts/h.out"
+    },
+    {
+     "agent_id": "h-session",
+     "reviewed_paths": [
+      "agentbox/desktop.py"
+     ],
+     "invariant": "One-time ticket redemption is bound to the exact scope it was issued for (sandbox id or web-UI '*'), cannot cross that namespace, and is not reusable",
+     "method": "local",
+     "result": "redeem(ticket, sid) requires row.scope == the caller's sid, is one-time (the row is deleted first), unexpired and current-gen (desktop.py:118-128). Local: a sandbox ticket redeemed only against its own sid (redeem(t,'*') = None, redeem(t,'sb_one') = ok); the second redeem returned None; a '*' ticket was not redeemable as a sandbox id and a fresh '*' ticket redeemed only as '*' (A7/A9); the redeemed session answered only for its own sid and was refused for the web UI (A4-A6). A mismatched redeem burns the ticket because the DELETE precedes validation — fail-closed.",
+     "artifact": "agents/h-session/artifacts/h.out"
+    },
+    {
+     "agent_id": "h-session",
+     "reviewed_paths": [
+      "agentbox/desktop.py",
+      "agentbox/api.py"
+     ],
+     "invariant": "Every browser doorway enforces the session's scope: '*' is required for web-UI authority and '*' or that sandbox id for its desktop routes",
+     "method": "source",
+     "result": "desktop.session(cookie, sid) requires scope in ('*', sid) and session(cookie) with no sid requires '*' (desktop.py:162-167). screen_human refuses anything but '*' (api.py:149-155), desktop_human accepts '*' or that sandbox (api.py:157-163), desktop_state repeats the check (api.py:327), and /sandboxes/{sid}/desktop plus the WS route call session(cookie, sid) (api.py:319, 346). The /ui pages guarded only by session_of() (web.py:96-97, 120, 166-168, 197-198) go through session(cookie) with sid=None, so a sandbox-scoped link session is redirected, and every other /ui route uses browser_human (web.py:171, 176, 214, 218, 231, 242, 246, 253, 260, 266, 272). No cookie is accepted by the JSON API, which is Bearer-only (api.py:115-129).",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-session",
+     "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/web.py",
+      "agentbox/service.py"
+     ],
+     "invariant": "Logout ends the session row, releases its takeover lease and closes its live screen streams, and no login path lets a client choose the session identifier (no fixation)",
+     "method": "source",
+     "result": "POST /logout (web.py:142-151) calls end_ui_session (service.py:567-577), which deletes the row, handbacks every lease held by that session id and close_session()s its open streams before deleting the cookie. Both login paths mint a fresh server-side secrets.token_urlsafe(32) cookie (desktop.py:130-140): start_session always creates a new row (web.py:109-115) and the desktop ticket path sets the cookie that redeem() created (api.py:311-318), so a value planted by another party cannot survive login. /login POST and /logout are Origin-checked (web.py:132-133, 144-145); a bare GET /login?ticket= only redeems a one-time 60 s ticket.",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-session",
+     "reviewed_paths": [
+      "agentbox/desktop.py",
+      "agentbox/api.py",
+      "agentbox/config.py"
+     ],
+     "invariant": "Session cookie scope and transport: host-only, Path=/, HttpOnly, SameSite=Strict, Secure in every supported TLS mode, no sibling cookie selected differently",
+     "method": "source",
+     "result": "set_cookie sets no Domain (host-only), Path defaults to '/', httponly=True, samesite='strict', secure from settings.secure_cookie or an https request (desktop.py:58-60, api.py:135-136, web.py:113-114, config.py:68-69). cmd_serve forces secure_cookie for --tls-cert or --behind-tls-proxy and refuses a plaintext non-loopback bind without --insecure (agentbox/cli.py:68-74, 96-102, 124-126), so the cookie does not cross a plaintext off-host transport in a supported mode. One cookie name and one Path are used, so no component can select a differently scoped duplicate, and the desktop page is served with Cache-Control: no-store (api.py:323).",
+     "artifact": null
+    }
+   ],
+   "candidate_fingerprints": [],
+   "unresolved": []
+  },
+  {
+   "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws%20-%3E%20agentbox%2Fdesktop_ws.py%23relay::agentbox%2Fapi.py%23cookie%20session%20%2B%20same_origin%20%2B%20lease%20on%20WebSocket%20%2B%20agentbox%2Fdesktop_ws.py%23session%20re-check::agentbox%2Fdesktop_ws.py%20%2B%20agentbox%2Fapi.py::CLIENT-SIDE.md%23Cross-site%20WebSocket%20request%20use",
+   "disposition": "covered",
+   "reviewed_paths": [
+    "agentbox/api.py",
+    "agentbox/desktop_ws.py",
+    "agentbox/desktop.py",
+    "agentbox/service.py",
+    "agentbox/sandbox_desktop.py",
+    "agentbox/sandbox.py"
+   ],
+   "checks": [
+    {
+     "agent_id": "h-session",
+     "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/desktop_ws.py"
+     ],
+     "invariant": "A cross-site WebSocket upgrade cannot use the ambient session cookie: scope, Origin, mode and lease are all checked before any byte reaches x11vnc",
+     "method": "source",
+     "result": "api.py:343-353 is the only @app.websocket route in the tree (grep). The upgrade requires a cookie session scoped to that sid (desktop.session(cookie, sid), desktop.py:162-167), same_origin(headers), mode in ('view','control'), and may_connect. same_origin rejects any Origin whose urlsplit(origin).netloc differs from the Host header (api.py:131-133), so another site's browser Origin fails; the cookie is also host-only plus SameSite=Strict and HttpOnly (desktop.py:58-60), so it is not attached to a cross-site handshake, and the only other credential (Bearer) is not ambient. Control additionally requires the caller's own lease (may_connect, desktop.py:235-239).",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-session",
+     "reviewed_paths": [
+      "agentbox/desktop.py"
+     ],
+     "invariant": "Live screen streams die with their authority: handback closes control streams, logout closes all of the session's streams, a lease cannot be stolen, and view-only streams carry no input authority",
+     "method": "local",
+     "result": "Local harness checks E1-E9 all passed: a view connection is allowed without a lease; a control connection is refused without a lease and for any session other than the lease holder; take() raises PermissionError for a different session; release() (handback) closed the control connection and left the view connection open; close_session() (logout) closed both connections of that session; state() reported controller=human with mine=true for the holder.",
+     "artifact": "agents/h-session/artifacts/h.out"
+    },
+    {
+     "agent_id": "h-session",
+     "reviewed_paths": [
+      "agentbox/desktop_ws.py",
+      "agentbox/service.py"
+     ],
+     "invariant": "An open stream re-checks its session and does not outlive logout, session expiry, sandbox deletion/restore or a handback",
+     "method": "source",
+     "result": "session_watch re-checks session(cookie, sid) every desktop.recheck = 30 s and, when the session is gone, records session_ended and calls box.handback(sid, session, 'session_ended') for the lease holder (desktop_ws.py:67-80, desktop.py:89). Handback closes control streams through release() (desktop.py:201-208); logout closes them with no 30 s window (service.py:571-576); delete/restore reach end_desktop, which handbacks and close_all()s (service.py:579-587) and kills the container's x11vnc so proc.wait ends the relay (desktop_ws.py:84-96). The relay re-checks may_connect immediately after registering the connection, closing the register-versus-handback race (desktop_ws.py:41-43).",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-session",
+     "reviewed_paths": [
+      "agentbox/desktop_ws.py",
+      "agentbox/sandbox_desktop.py",
+      "agentbox/sandbox.py"
+     ],
+     "invariant": "Settle the recon lead: whether the relay does blocking work on the event loop and whether its 30 s re-check covers sandbox existence and the lease",
+     "method": "source",
+     "result": "Real but availability-only, not an authentication failure: relay calls box.sandboxes.vnc_command(sid) (desktop_ws.py:20) -> _desktop/_require_running (sandbox_desktop.py:39-42, sandbox.py:343-347) -> client.containers.get() (blocking Docker SDK call, sandbox.py:225-232) plus box.log_human (SQLite append under the process-wide audit lock, service.py:590-594) directly on the event loop before ws.accept (desktop_ws.py:25); recorded under uncovered. Re-checking only the cookie session is sufficient for the auth boundary: view streams are meant to need no lease (x11vnc -viewonly, sandbox_desktop.py:131-144), and every control stream is closed by release()/close_all()/close_session() the moment its lease ends.",
+     "artifact": null
+    }
+   ],
+   "candidate_fingerprints": [],
+   "unresolved": []
+  }
+ ],
+ "candidates": [],
+ "hardening": [
+  "GET /login?ticket= redeems the '*' ticket (deleting it) but discards the session row that redeem() created and mints a second one through start_session (web.py:123-127 with web.py:109-115), leaving an unused full-admin ui_sessions row for up to 12 h whose cookie is never emitted; return the redeemed session instead of creating a spare.",
+  "Redeeming a desktop ticket overwrites any existing cookie of the same name (api.py:317) while the previous session row stays valid, so a full-admin browser session is silently replaced by a sandbox-scoped one and can be revived by restoring the old cookie; consider a per-scope cookie name or an explicit notice.",
+  "same_origin compares only urlsplit(origin).netloc against the client-supplied Host and ignores the scheme (api.py:131-133). It is sound today because the session cookie is host-only, but it would become bypassable if the cookie ever gained a Domain attribute or if another app shared the same host; compare against a configured public origin (scheme + host) instead.",
+  "desktop.redeem deletes the ticket before validating scope/expiry/gen (desktop.py:125-127), so any wrong-scope visit of a link burns it (fail-closed, but the user is left with a 403 and needs a new ticket).",
+  "Ticket URLs carry the credential in the query string (api.py:306, web.py:156). uvicorn access logging is off (cli.py:127), but any front proxy or CDN access log will retain a 60 s full-admin or sandbox-scoped credential; strip the query at the proxy or accept this as documented.",
+  "The takeover lease key is the 32-bit public session id ('hs_' + token_hex(4), desktop.py:133) and ui_sessions.public has no UNIQUE constraint, so a collision would let one session satisfy lease.session == session for another; not reachable by a lower-trust principal today (sessions are minted only from the human token or a human-issued ticket), but a UNIQUE index removes the class."
+ ],
+ "uncovered": [
+  {
+   "surface": "WebSocket /sandboxes/{sid}/desktop/ws -> agentbox/desktop_ws.py#relay (and any future async route that calls blocking sandbox helpers)",
+   "boundary": "Blocking Docker SDK and SQLite work executed directly on the ASGI event loop before ws.accept: desktop_ws.py:20-21 -> sandbox_desktop.py:131-144 / sandbox.py:225-232 (_require_running -> containers.get) and service.log_human -> process-wide audit lock",
+   "subsystem": "agentbox/desktop_ws.py + agentbox/sandbox_desktop.py + agentbox/sandbox.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "starting_paths": [
+    "agentbox/desktop_ws.py",
+    "agentbox/sandbox_desktop.py",
+    "agentbox/api.py"
+   ],
+   "reason": "Any holder of a sandbox-scoped desktop link (the lowest-trust authenticated browser principal, handed out deliberately) can open repeated WS upgrades, and each one performs a synchronous Docker API call and an audit append on the single event loop, stalling every other HTTP/WS request including approval decisions. Sizing the stall needs the real daemon, and no listed unit owns blocking work inside async route handlers (h-pool owns the tool pools, h-audit owns the audit lock's read path), so this needs its own deterministic unit."
+  }
+ ],
+ "artifacts_to_promote": [
+  "h.out"
+ ]
+}

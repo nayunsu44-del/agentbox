@@ -1,0 +1,1988 @@
+[
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/api.py:preauth-request-body-read-before-principal",
+  "title": "Unauthenticated request bodies are fully read, JSON-decoded and multipart-spooled before the principal dependency rejects the request",
+  "description": "agentbox's body routes declare a request-body model - or a File(...) list - together with Depends(principal) / human_only / screen_human (agentbox/api.py:175, 206, 216, 251, 277). In FastAPI's request handler the body is read and JSON-decoded - and on the upload route streamed through request.form() and spooled - before solve_dependencies resolves any of those dependencies, so an unauthenticated client decides how many bytes the control plane buffers, decodes and writes to TMPDIR before it is told 401. Nothing in the tree bounds that work: the only middleware is _NoFraming (api.py:63-80, registered at 113), the serve entry point passes no request-size or concurrency limit to uvicorn (agentbox/cli.py:127), and the shipped Caddy front end has no request_body directive (deploy/Caddyfile:5). The caps that do exist - max_upload_bytes per file (config.py:57, enforced inside the endpoint at api.py:278-283) and LOGGED_ARGS_MAX (service.py:37-38) - run only after a principal exists. Starlette's multipart parser bounds part cardinality (1000 files/fields) and 1 MiB for non-file fields, but not file-part bytes.",
+  "root_cause": "Authentication dependencies run after FastAPI's body-parsing stage, and nothing in front of the app - ASGI middleware, uvicorn options, or the bundled Caddy reverse proxy - enforces a maximum request-body size, so unauthenticated work scales with the attacker's body size instead of with the negligible work needed to reject an unauthenticated request.",
+  "intended_behavior": "Requests that cannot yet be authenticated should be rejected before their body is buffered, decoded or written to disk, and bodies above a documented cap should be refused with 413 regardless of credential state.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 174,
+    "scope": "POST /sandboxes, and every sibling body route: /sandboxes/{sid}/restore (205-206), /sandboxes/{sid}/tools/{tool} (215-216), /approvals/{aid} (250-251), /sandboxes/{sid}/files (276-277)",
+    "description": "A lower-trust network client with no token reaches a route that declares both a body (CreateSandbox) and Depends(human_only). Declaring the body is what makes FastAPI's handler stage read and JSON-decode the whole request body before any dependency is solved (verified in the installed fastapi 0.161.1 get_request_handler source: body read/decode block precedes the solve_dependencies call)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 115,
+    "scope": "principal() - first credential check for the JSON API; human_only and screen_human build on it",
+    "description": "principal() compare_digest's the bearer token (119), looks up an agent token (121) and raises 401 at 117/124. It runs only after the body stage, so no principal exists while the body is buffered and decoded."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 277,
+    "scope": "POST /sandboxes/{sid}/files multipart body",
+    "description": "files: list[UploadFile] = File(...) makes the handler call request.form() before screen_human runs; Starlette streams the whole multipart body and rolls every file part past the 1 MiB spool threshold into a SpooledTemporaryFile under the control plane's TMPDIR."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 278,
+    "scope": "per-file cap applied after parsing and after authentication",
+    "description": "limit = settings.max_upload_bytes with await f.read(limit + 1) at 281-283 executes only inside the endpoint, i.e. after the whole body has been spooled and only when a principal was already accepted, so it cannot bound pre-auth work."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/api.py",
+    "line": 113,
+    "scope": "the only middleware installed on the app (no body-size gate on the way into FastAPI's body stage)",
+    "description": "_NoFraming is the last app-owned code a request passes, and it only appends response headers. With cli.py:127 and deploy/Caddyfile:5 adding no limit either, the attacker-chosen body becomes control-plane heap and temp-disk state before principal()/screen_human can reject it."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/api.py",
+    "line": 63,
+    "description": "_NoFraming (63-80), registered at 113, is the app's only middleware: app.add_middleware appears exactly once in the tree, so there is no body-limit middleware."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 5,
+    "description": "reverse_proxy agentbox:8765 with no request_body directive: the shipped proxy forwards request bodies without a size bound."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 57,
+    "description": "The only upload bound is max_upload_bytes (50 MiB per file by default); it is consumed inside the endpoint at api.py:278-283, after parsing and after authentication."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 37,
+    "description": "LOGGED_ARGS_MAX / LOGGED_ARGS_HEAD (37-38) cap only the audit copy of tool args, after a principal is established."
+   },
+   {
+    "file": "deploy/docker-compose.yml",
+    "line": 22,
+    "description": "The compose deployment runs the single agentbox service behind Caddy with AGENTBOX_BEHIND_TLS_PROXY=1, no mem_limit and no request-size limit, exposing 8765 only on the compose network."
+   },
+   {
+    "file": "deploy/Dockerfile",
+    "line": 17,
+    "description": "CMD agentbox serve --host 0.0.0.0 --port 8765 --behind-tls-proxy: the one uvicorn process (cli.py:127) serves the JSON API, the approval UI and the audit chain, so buffered bytes hit shared availability rather than one isolated worker."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "None: no Authorization header and no session cookie are required for the buffering; every tested path returned 401 only after the body had been consumed."
+   },
+   {
+    "kind": "network_routing",
+    "description": "The client can reach the control plane through the shipped Caddy front end (compose publishes 443/80 and forwards bodies without a size directive), or directly when agentbox serve is used."
+   },
+   {
+    "kind": "environmental_dependency",
+    "description": "Impact scales with the memory and TMPDIR of the single uvicorn process that also serves the human approval queue and the audit chain; the compose service sets no mem_limit, so exhausting the process takes the approval path down with it (pending approvals, 300 s default, age toward timeout while the operator restarts)."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "An unauthenticated network client that never holds a token sends bodies of its choosing to routes it knows will answer 401, or to the upload route, and lets the control plane read, decode and spool them. The attacker's spend is the bytes it uploads, while the server retains about twice that in heap per in-flight body (measured), with no per-request and no concurrency bound in the shipped configuration.",
+   "payloads": [
+    "POST /sandboxes HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: application/json\r\nContent-Length: 16777216\r\n\r\n{\"source_dir\": null, \"template\": \"cli\", \"pad\": \"AAAA...\"}",
+    "POST /sandboxes/sid1/files HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: multipart/form-data; boundary=X-BOUNDARY\r\n\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"files\"; filename=\"a.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n<4194304 bytes>\r\n--X-BOUNDARY--\r\n"
+   ],
+   "instructions": [
+    "Inside the approved OS sandbox only (no network, no Docker socket, 512 MiB, 1 CPU, uid 65534, 120 s), with /target read-only on PYTHONPATH and AGENTBOX_HOME under /scratch: replace docker.from_env with an in-process fake whose info() reports only the runc runtime, then build the real app with api.build(Settings()) from the audited tree.",
+    "Drive the app at the ASGI layer with an HTTP scope for the target path and a receive() that streams the declared body in 64 KiB http.request messages, recording how many body bytes the app consumed before it emitted http.response.start.",
+    "Patch starlette.requests.Request.json to record len(raw body) at decode time, and starlette.formparsers.SpooledTemporaryFile to record max_size, bytes written, whether it rolled to a real temporary file and that file's on-disk size under TMPDIR.",
+    "Send the payloads with no Authorization header and no cookie; record the status, the bytes consumed before the response started, and the decode/spool records. Read resource.getrusage(RUSAGE_SELF).ru_maxrss before and after the largest JSON request to bound the memory effect. Keep the largest body at 16 MiB so the sandbox limit is never approached, and stop after the first confirming observation.",
+    "Send a control request (GET /healthz, no body) through the same driver to prove the app object is functional and the 401 comes from the credential check."
+   ],
+   "observed_result": "Installed stack: fastapi 0.161.1, starlette 1.9.0, uvicorn 0.54.0. POST /sandboxes with a 16,777,216-byte JSON body and no Authorization returned 401, but the app had consumed all 16,777,216 bytes before emitting http.response.start and Request.json() had decoded 16,777,216 bytes; peak RSS grew 32,768 KiB (2.0x the body). /sandboxes/{sid}/tools/exec, /sandboxes/{sid}/restore and /approvals/{aid} behaved identically with 4,194,304-byte bodies - all bytes consumed and decoded before the 401. POST /sandboxes/{sid}/files with one 4,194,304-byte part and no cookie returned 401 after consuming all 4,194,442 bytes; at that moment the SpooledTemporaryFile (max_size 1,048,576) had rolled to a real temporary file holding 4,194,184 bytes in TMPDIR, the endpoint's 50 MiB per-file cap never ran, and the temporary file was removed when the form closed (no residue afterwards). A control GET /healthz returned 200 with 0 body bytes consumed. The installed multipart parser carries max_files/max_fields = 1000 and max_part_size = 1 MiB, but max_part_size is applied only to non-file fields, so a 4 MiB file part passed untouched."
+  },
+  "remediation": {
+   "strategy": "Reject oversized bodies before FastAPI's body stage and before any authentication work: install an ASGI middleware beside _NoFraming that answers 413 when the declared Content-Length already exceeds the cap and counts streamed bytes for chunked bodies, aborting at the cap; keep the application/JSON cap above the largest legitimate body (write_file content is bounded by max_write_bytes = 1 MiB, so a 64 KiB JSON cap would break authenticated tool calls) and give the multipart route an aggregate body cap from a new setting (default e.g. 64 MiB for the whole request, not per file); and add request_body { max_size ... } to deploy/Caddyfile so the shipped proxy refuses the same oversized bodies before they reach the process.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/api.py",
+     "fixed_code": "# from starlette.requests import ClientDisconnect\n\nclass _BodyLimit:\n    \"\"\"FastAPI가 본문을 읽기 전에 크기 상한을 강제한다 (인증 전, 보안 검수 run-4 v01).\"\"\"\n\n    def __init__(self, app, json_max: int, upload_max: int):\n        self.app, self.json_max, self.upload_max = app, json_max, upload_max\n\n    def _cap(self, scope) -> int:\n        return self.upload_max if scope.get(\"path\", \"\").endswith(\"/files\") else self.json_max\n\n    async def __call__(self, scope, receive, send):\n        if scope[\"type\"] != \"http\":\n            return await self.app(scope, receive, send)\n        cap = self._cap(scope)\n        declared = None\n        for name, value in scope[\"headers\"]:\n            if name == b\"content-length\":\n                try:\n                    declared = int(value)\n                except ValueError:\n                    declared = None\n        if declared is not None and declared > cap:\n            return await Response(\"요청 본문이 너무 큼\", status_code=413)(scope, receive, send)\n        seen = 0\n\n        async def limited():\n            nonlocal seen\n            message = await receive()\n            seen += len(message.get(\"body\", b\"\"))\n            if seen > cap:\n                raise ClientDisconnect()   # 스트리밍 본문이 상한을 넘으면 연결을 끊는다\n            return message\n\n        return await self.app(scope, limited, send)\n\n    # _NoFraming 등록 옆에:\n    app.add_middleware(_BodyLimit, json_max=settings.max_body_bytes,\n                       upload_max=settings.max_upload_body_bytes)"
+    },
+    {
+     "file_name": "agentbox/config.py",
+     "fixed_code": "    # FastAPI가 본문을 읽기 전에 거부할 요청 본문 상한. write_file 인자(max_write_bytes)보다 커야 한다.\n    max_body_bytes: int = field(default_factory=lambda: int(_env(\"AGENTBOX_MAX_BODY\", str(4 * 1024 * 1024))))\n    # 업로드 경로의 요청 전체 상한 (파일 하나가 아니라 한 요청)\n    max_upload_body_bytes: int = field(\n        default_factory=lambda: int(_env(\"AGENTBOX_MAX_UPLOAD_BODY\", str(64 * 1024 * 1024))))"
+    },
+    {
+     "file_name": "deploy/Caddyfile",
+     "fixed_code": "{$AGENTBOX_SITE} {\n\trequest_body {\n\t\tmax_size 64MB\n\t}\n\treverse_proxy agentbox:8765\n}"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "high",
+    "reason": "No token, no interaction and no knowledge beyond the route list: one ordinary HTTP request whose declared body the attacker chooses, and the same request works on four JSON routes and the upload route."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Availability of the single control-plane process that also serves the human approval queue and the audit chain: memory grows about 2x the bytes sent per request (measured +32 MiB for a 16 MiB body), there is no per-request body cap and no concurrency limit, so retained memory scales with concurrent in-flight bodies; the decode/parse of the buffered body runs in the request task on the event loop, stalling unrelated requests while it works, and the multipart path also writes attacker-sized bytes to the container's TMPDIR. No confidentiality or integrity boundary is crossed, and an operator who adds a proxy body cap or a container mem_limit removes the effect."
+   },
+   "overall_severity": "medium"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Every cited line exists in the audited tree at 9805d91 (trace and evidence re-read line by line), and an independent ASGI-level reproduction on the real app object with the installed fastapi 0.161.1 / starlette 1.9.0 reproduced the claimed result: the full body was consumed and decoded before the 401, and the multipart part was on disk before the 401. No middleware, uvicorn option or shipped proxy directive bounds the body. The ordering is FastAPI/Starlette default behaviour (calibration only, since the architecture summary names no comparable product baseline); agentbox bounds its other resource paths explicitly (tool_pool, PENDING_APPROVALS_MAX, max_upload_bytes, LOGGED_ARGS_MAX), so this omission is not a deliberate design choice."
+  }
+ },
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+  "title": "same_origin compares only the Origin netloc with Host, so an http:// page on the same host passes the CSRF origin check of a TLS deployment and can clear the session cookie",
+  "description": "Every cookie-authenticated UI mutation funnels through api.same_origin (api.py:131-133), which returns True when Origin is absent or when urlsplit(Origin).netloc equals the Host header; the scheme is never compared. A plaintext http://H page is a different web origin from the TLS deployment https://H but carries the same netloc, so the gate accepts it. Independently reproduced (agents/v02/scratch/v02_origin.py, artifact v02_origin.out; api.build with docker.from_env stubbed, ASGI served as https://agentbox.example): Origin http://agentbox.example was accepted for POST /login (303, issuing the Secure SameSite=strict HttpOnly host-only session cookie), POST /ui/approvals/apr_000000000000/approve (200; box.decide entered with the '*' session and rendered approval-not-found), POST /ui/sandboxes (handler reached box.create_sandbox) and POST /logout (303; end_ui_session entered, server session ended - a later GET /ui with the same cookie redirected to /login). Origin https://agentbox.example was accepted identically; Origin https://evil.example, Origin: null, Origin http://agentbox.example@evil.example and Origin http://agentbox.example:8443 against Host agentbox.example were all 403; a POST with no Origin was accepted. Consequence (1): where a browser attaches the Strict cookie to a cross-scheme POST, the human-scoped action runs - approve/deny for a known apr_ id, a sandbox built for an attacker-chosen source_dir, or server-side session end. Consequence (2), browser-independent once the request is sent: POST /logout answers even a cookieless cross-origin request with 303 plus an unconditional cookie-clearing Set-Cookie (web.py:149-150), so a page served at http://H forces a client-side logout while the server-side session survives. No anti-CSRF token, Referer or Sec-Fetch check exists anywhere in agentbox/ (grep finds none) and the only response-wide guard is X-Object-Frame/CSP frame-ancestors (api.py:66), which stops iframe clickjacking but not a top-level auto-submitted form; no Strict-Transport-Security is emitted in agentbox/ or deploy/ (no response carries one; only audit docs mention it), so nothing forces the upgrade of http://H. The decisive unknown stays the browser's schemeful same-site behaviour: the run-3 loopback Chromium 141 run had the Secure cookie withheld (only the forced browser logout occurred), no browser exists in sbx, and Firefox/WebKit are unobserved, so whether consequence (1) is reachable cannot be decided from source or from this sandbox.",
+  "claimed_root_cause": "api.py:131-133: same_origin() returns True when urlsplit(origin).netloc == headers.get('host') (and when Origin is absent); the scheme is never compared, and the closure receives only headers (api.py:131) although the app derives the request scheme elsewhere (api.py:136, web.py:114). Nothing in agentbox/ or deploy/ emits Strict-Transport-Security (deploy/Caddyfile:5 is a bare reverse_proxy), so the CSRF gate degrades to whatever same-site semantics the browser applies to http://H versus https://H.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/web.py",
+    "line": 217,
+    "scope": "decide - POST /ui/approvals/{aid}/{decision} (peers: create web.py:174, logout web.py:142)",
+    "description": "Cookie-authenticated, form-encodable mutations with no anti-CSRF token; the only origin binding is same_origin. All three decorators verified in the audited tree."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 145,
+    "scope": "screen_principal",
+    "description": "Resolves the browser cookie via box.desktop.session_scope() at api.py:142 and then calls same_origin(request.headers) at api.py:145; logout calls the same closure directly at web.py:144. The cookie is checked before the origin, so a cross-scheme request without a cookie gets 401 rather than 403."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 133,
+    "scope": "same_origin",
+    "description": "Netloc-only comparison, missing Origin accepted - reproduced: Origin http://agentbox.example passes against a request served over https://agentbox.example, foreign host, null, the userinfo trick and a port mismatch fail."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/web.py",
+    "line": 223,
+    "scope": "box.decide (also create_sandbox web.py:178, end_ui_session web.py:146)",
+    "description": "With the request accepted the human-scoped action runs: decide executes the stored args with actor='human' and the '*' session, create builds a sandbox for a form-supplied source_dir, and logout ends the session when the cookie did arrive."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/api.py",
+    "line": 133,
+    "description": "urlsplit(origin).netloc == headers.get('host') drops the scheme component, so http://H and https://H are indistinguishable to the gate; reproduced accepting http://agentbox.example for a request served as https://agentbox.example."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 131,
+    "description": "same_origin is typed to receive only headers, so the served scheme is not even in scope; the app already derives it from request.url.scheme at api.py:136 and web.py:114, which is the seam a fix needs."
+   },
+   {
+    "file": "agentbox/desktop.py",
+    "line": 60,
+    "description": "set_cookie issues the session cookie httponly=True, samesite='strict', max_age=12h, host-only (no Domain); observed Set-Cookie: HttpOnly; Max-Age=43200; Path=/; SameSite=strict; Secure under the https fixture. Whether it travels on a cross-scheme POST is browser policy (schemeful same-site), the decisive unknown."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 149,
+    "description": "logout builds a 303 and calls r.delete_cookie(D.COOKIE) unconditionally at web.py:150, even when end_ui_session returned None because no cookie was attached; reproduced: cookieless cross-scheme POST /logout -> 303 with agentbox_session cleared (Max-Age=0, Path=/) while the server session state is untouched."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 102,
+    "description": "s.secure_cookie = s.secure_cookie or tls or behind: the Secure attribute is forced exactly for direct-TLS and behind-TLS-proxy deployments, i.e. the deployments where the http/https scheme fork exists."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 66,
+    "description": "The only response-wide middleware adds X-Frame-Options SAMEORIGIN and CSP frame-ancestors 'self'; there is no CSRF token, Referer or Sec-Fetch-Site validation in agentbox/ (grep over *.py finds none) and no TrustedHostMiddleware, so a top-level form POST is unguarded beyond same_origin."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 5,
+    "description": "The site block is a bare reverse_proxy agentbox:8765; no header directive, no HSTS anywhere in deploy/, agentbox/ or images/ (tree-wide grep for Strict-Transport-Security matches only audit docs), and the fixture responses carry no strict-transport-security header."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 126,
+    "description": "Behind-proxy mode trusts X-Forwarded-Proto (proxy_headers=True, forwarded_allow_ips from AGENTBOX_TRUSTED_PROXIES) and deploy/Caddyfile:2-3 says the proxy supplies Host and X-Forwarded-Proto, so request.url.scheme is a usable served scheme for the regression fix."
+   },
+   {
+    "file": "docs/security-audit/run-4/agents/v02/artifacts/v02_origin.out",
+    "line": 1,
+    "description": "Verifier's own ASGI reproduction (produced in sbx from agents/v02/scratch/v02_origin.py; session ids redacted): cross-scheme Origin accepted on /login, /ui/approvals approve and /ui/sandboxes, 403 for foreign/null/userinfo/port-mismatch, 303 plus clearing Set-Cookie on /logout both with and without a cookie, and no HSTS on any response."
+   },
+   {
+    "file": "docs/security-audit/run-3/agents/parent-live/artifacts/l3/l4.out",
+    "line": 4,
+    "description": "Real Chromium 141, run-3 parent-live (not re-run here): the cross-scheme POST had same_origin accept the http Origin but the Secure SameSite=Strict cookie was withheld (schemeful same-site), so only delete_cookie forced a client-side logout; the server session was not ended. Firefox and WebKit are unobserved."
+   }
+  ],
+  "blockers": [
+   "Browser behaviour (decisive): whether a browser an operator actually uses attaches the Secure SameSite=strict session cookie to a cross-scheme http://H -> https://H form POST. Chromium 141 withheld it (docs/security-audit/run-3/agents/parent-live/artifacts/l3/l4.out:4, reported, not re-run in run-4); Firefox and WebKit current behaviour and the legacy cut-offs are untested, no browser exists in sbx, and the answer cannot be derived from source. Without the cookie only consequence (2), the client-side forced logout, remains.",
+   "Network position: whether an attacker can serve plaintext http://H on the deployment host name at all (on-path network attacker, a plaintext listener on port 80, or a DNS/HTTP hijack). No Strict-Transport-Security is emitted anywhere in agentbox/ or deploy/, so nothing forces the upgrade, but whether an on-path attacker and browser preload state are in scope is an owner decision.",
+   "Deployment shape: whether both schemes are exposed at the same effective netloc (direct TLS on 443 plus cleartext 80, or behind-proxy mode where Caddy owns the http->https redirect). In a loopback http-only deployment the scheme fork does not exist, and if HSTS or a preload entry is present the http page never loads."
+  ],
+  "validation_plan": {
+   "local": "Repo-side half is done and reproduced by the verifier: agents/v02/scratch/v02_origin.py builds the real app (api.build with docker.from_env stubbed) and drives it over ASGI as https://agentbox.example - cross-scheme Origin accepted on /login, /ui/approvals approve, /ui/sandboxes and /logout, foreign/null/userinfo/port-mismatch 403, /logout always emitting the clearing Set-Cookie; artifact v02_origin.out. Remaining decisive step is a loopback browser lab run outside sbx (parent-live): map H to 127.0.0.1, start agentbox with --tls-cert/--tls-key (self-signed, lab-trusted) on https://H:443 with a dummy human token, and a plaintext http://H:80 page that auto-submits a top-level form to https://H/logout and to https://H/ui/sandboxes with source_dir set; log in on https://H, open http://H, and record (a) whether agentbox_session is sent on the POST, (b) whether the response is 303/200 (accepted) rather than 403, (c) for /logout whether the server session ends (GET /ui then 303 /login) and whether a ui_logout row appears in /audit, (d) for /ui/sandboxes whether a new sandbox exists. Repeat on current Firefox and WebKit and on any engine or policy that disables schemeful same-site. Regression: change same_origin to compare BOTH the scheme and the netloc, taking the served scheme from request.url.scheme (already used at api.py:136 and web.py:114, and X-Forwarded-Proto-aware under cli.py:126) instead of the headers-only signature at api.py:131; then both cross-scheme POSTs must return 403 and the clearing Set-Cookie must disappear, while Origin https://H with Host H still passes and the existing tests/test_unit.py suite stays green.",
+   "deployment": "Owner confirms, without probing live endpoints: (1) whether the operator-facing host name sends Strict-Transport-Security or is on the browser preload list; (2) whether a plaintext http:// listener for that name is reachable (direct TLS on 443 plus cleartext 80, or a TLS proxy fronting the plaintext port where the http->https redirect is the only barrier) and whether an on-path attacker is in scope; (3) which browser engines and versions operators use; (4) whether any operator browser or policy lacks schemeful same-site. If HSTS is present and every browser is schemeful, only the browser-independent forced-logout residual from the unconditional delete_cookie at web.py:149-150 remains, and the same scheme comparison removes it."
+  }
+ },
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention",
+  "title": "Agent-grown audit and approval rows in the shared control-plane SQLite file have no aggregate bound or retention, so an agent can fill the host disk and neither recovery path keeps the audit chain",
+  "description": "Every accepted agent tool request appends two audit rows (tool_request before the policy decision, policy_decision as soon as decide() returns) before any approval request, snapshot or execution, a risky call adds an approval_requested row plus an approvals row holding the full raw args, and every failed POST /approvals/{aid} adds an approval_forbidden row. Args are now capped per record (80,000-byte command is stored as a 16,384-byte head), but nothing bounds the tables: in an isolated fixture two rows per call added 17,203 bytes to the .db file, identically at n=20 and n=40, and 512 bytes per call for {command: ls}; five approval rows of 400,000-byte args took 2,007,040 bytes and every row survived executed/denied/expired. Triggers abort UPDATE and DELETE on audit, grep finds no DELETE for audit or approvals, no VACUUM, no count/size quota and no retention job, so growth is permanent and host disk is the only limit. When the volume fills, AuditLog.append raises AuditWriteError, which service.py turns into 503 for tool calls, human lifecycle, approval decisions and handbacks, so all sandboxes stop rather than the offending one. Recovery is not available either: deleting the oldest rows made verify() fail permanently at the first survivor (broken_at=7, 'id가 1 다음에 7로 건너뜀'), while deleting every row made verify() report ok=True with checked=0, so an operator must choose between permanently broken verification and a silently erased history.",
+  "claimed_root_cause": "The audit table is append-only by design (audit.py:35-38) and the per-record arg cap (service.py:37-38, 180-194) is the only bound on agent-driven growth; grep over agentbox/ finds no aggregate quota, retention window, pruning command or size check for the audit or approvals tables (the only sqlite DELETEs are ui_tickets, ui_sessions and takeover_leases in desktop.py), and the delete path for a sandbox only unlinks capture PNGs (service.py:106-109, 471-475). The shared SQLite file used by AuditLog, SandboxManager, ApprovalStore and DesktopControl (api.py:86-94, config.py:84-86, default ./data/agentbox.db, host bind mount at deploy/docker-compose.yml:28) therefore has the host volume as its only limit, and capacity recovery is mutually exclusive with the integrity contract (audit.py:230-236).",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 215,
+    "scope": "call_tool (POST /sandboxes/{sid}/tools/{tool})",
+    "description": "An agent token reaches this route through principal() (api.py:115-124). The body is ToolCall whose args is an unconstrained dict[str, Any] (api.py:51-52), and there is no request-body, key-count or value-size cap on this route; the only body cap in the API is the human upload route (api.py:278-283) and the shipped Caddyfile is a bare reverse_proxy with no request_body limit (deploy/Caddyfile:4-6)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 295,
+    "scope": "_call_tool: tool_request and policy_decision appends",
+    "description": "tool_request is appended with _logged_args(args) (295-296) and policy_decision is appended the moment policy.decide returns (297, appended at 303), before any approval request (324), snapshot (343) or execution, so every accepted request writes two rows even when the decision is DENY (308-309) and nothing runs."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 189,
+    "scope": "_logged_args per-record cap",
+    "description": "Only the single record is bounded: args over 64 KiB become a 16 KiB head plus args_bytes and args_sha256. Measured: {'command': 'a'*80000} produced args_head of exactly 16,384 bytes and args_bytes 80,015; the two rows added 17,203 bytes per call at both n=20 and n=40 (linear), and {command: 'ls'} added 512 bytes per call, so per-record capping does not bound the table."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 324,
+    "scope": "_call_tool REQUIRE_APPROVAL branch",
+    "description": "approvals.create stores the full raw args and preview with no cap (approvals.py:49-59); PENDING_APPROVALS_MAX=20 (service.py:44, 312-316) limits pending concurrency only, and measured rows of 400,000-byte args took 401,408 bytes each and were still present after executed, denied and expired transitions. A sandbox delete does not remove them."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/audit.py",
+    "line": 179,
+    "scope": "AuditLog.append INSERT",
+    "description": "The row is inserted into the same SQLite file; the append-only triggers (audit.py:35-38) abort any UPDATE and DELETE (both reproduced: 'audit log is append-only'), and no code path in the package removes audit rows."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 592,
+    "scope": "log_human fail-closed conversion",
+    "description": "At disk-full every append raises AuditWriteError, which becomes ServiceError(503) here (593-594) and likewise for tool calls (305-306), approval decisions (402-404) and handbacks (539-541), so the blast radius is every sandbox and every human operation rather than the agent's own process."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/audit.py",
+    "line": 230,
+    "scope": "AuditLog.verify chain and id check",
+    "description": "verify starts from GENESIS with expected_id 1 and rejects the first row that does not chain (233-236). Reclaiming space by deleting the oldest rows therefore fails permanently (measured: after removing ids 1..6, ok=False, broken_at=7), while deleting every row returns ok=True with checked=0, so capacity recovery either breaks /audit/verify for good or erases the history without a trace."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/audit.py",
+    "line": 35,
+    "description": "audit_no_update and audit_no_delete raise ABORT 'audit log is append-only'; the fixture reproduced both rejections."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 233,
+    "description": "verify() rejects any row whose id is not expected_id and any prev_hash that does not match, which is what makes prefix pruning distinguishable from tampering forever."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 37,
+    "description": "LOGGED_ARGS_MAX and LOGGED_ARGS_HEAD are the only size controls on the audit path and they are per record, not per table, per sandbox or per deployment."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 182,
+    "description": "The author comment states the audit log cannot be deleted and that an agent growing it with large args cannot be undone."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 106,
+    "description": "drop_captures removes only capture PNGs (106-109) and delete_sandbox only calls it (471-475); approval rows holding the full unmasked args and preview survive decision and expiry (5 of 5 measured rows remained) and nothing removes them on sandbox deletion."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 44,
+    "description": "snapshot_quota exists specifically so an agent cannot fill host disk with docker commits without a human, showing the intended invariant that agent actions are host-disk bounded; no comparable control exists for the audit or approvals tables."
+   },
+   {
+    "file": "agentbox/approvals.py",
+    "line": 49,
+    "description": "create() stores json.dumps(args) and the preview with no cap, and ApprovalStore exposes no delete method; 400,000-byte args measured 401,408 bytes per row."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 86,
+    "description": "AuditLog, SandboxManager, ApprovalStore and DesktopControl all open settings.db_path, so one file carries all four components' state (config.py:84-86; the compose deployment bind-mounts that home on the host, deploy/docker-compose.yml:28)."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 206,
+    "description": "/ui/approvals loads every historical approval row for the sandbox with full args and preview parsed and then keeps the last five (208-209); agentbox/templates/index.html:25 and agentbox/templates/sandbox.html:25 poll that view every 2 s, so retained rows keep costing control-plane read work."
+   }
+  ],
+  "blockers": [
+   "Free space, any filesystem or volume quota, and the planned lifetime of the volume holding data/agentbox.db (config.py:29 home=./data, config.py:84-86 db_path, deployed as a host bind mount at deploy/docker-compose.yml:26-28) are deployment facts. Nothing in the repository bounds stored total: no retention, no count or size quota, no VACUUM. At the measured 17,203 bytes per maximum-size tool call (512 bytes for a trivial call) the time to exhaustion depends entirely on that free space, from minutes on a small volume to months on a large one, and no repository fact decides it.",
+   "The call rate an agent can sustain is partly a deployment fact: the repository has no rate limit on the tool route, tool_concurrency=4 (config.py:53) and the 32-thread tool_pool (api.py:103) bound concurrency only, and the shipped Caddyfile is a bare reverse_proxy (deploy/Caddyfile:4-6), but any operator-added proxy or network control is outside the source.",
+   "Whether operators prune or rotate that SQLite file out of band, and which loss they accept, is a deployment/owner decision: source and fixture show that partial pruning permanently fails /audit/verify (audit.py:230-236) while total truncation passes as an empty log, so the product offers no capacity recovery that keeps the history verifiable."
+  ],
+  "validation_plan": {
+   "local": "Already performed in the approved sandbox (tools/sbx.py v03: /target read-only on PYTHONPATH, /scratch writable, no network, no Docker socket, uid 65534, 512 MiB, 120 s). Built AuditLog and ApprovalStore on scratch databases and replayed exactly what _call_tool writes: (1) _logged_args('exec', {'command': 'a'*80000}) returned args_head of 16,384 bytes and args_bytes 80,015; (2) 20 and 40 pairs of tool_request plus policy_decision rows added 344,064 and 688,128 bytes after PRAGMA wal_checkpoint(TRUNCATE), i.e. 17,203 bytes per call at both sizes, and 40 pairs with {'command': 'ls'} added 20,480 bytes, i.e. 512 bytes per call; (3) DELETE FROM audit and UPDATE audit both failed with sqlite3.IntegrityError 'audit log is append-only'; (4) dropping only the delete trigger and removing ids 1..6 left verify() returning ok=False, checked=0, broken_at=7, reason 'id가 1 다음에 7로 건너뜀', while deleting every row left verify() returning ok=True with checked=0; (5) five ApprovalStore rows of 400,000-byte args took 2,007,040 bytes (401,408 each) and all five were still listed after executed, denied and expired, with no delete method on the store; (6) approvals.list() re-parses full args. The disk-full to AuditWriteError to 503 conversion was not exercised (filling a filesystem is a saturation test); it rests on audit.py:193-194 wrapping sqlite3.Error and the fail-closed handlers cited in the trace. Output: scratch/fixout.txt and scratch/fixout2.txt; the numbers above were observed directly, the files are supplementary.",
+   "deployment": "Owner-observed on a throwaway deployment, never a shared or production host, and without filling the volume: record the free space and any quota on the volume holding data/agentbox.db; issue 200 bounded tool calls from one agent token with 80,000-byte exec commands (denied calls are sufficient, since the two audit rows are written before any execution) and 200 with {command: ls}; confirm the .db size delta is about 3.4 MB and 0.1 MB respectively and that it does not shrink after the calls stop, after sandbox deletion, or after any documented maintenance command; then check whether the operator has any out-of-band retention or rotation for that file, and confirm that once the volume is full the tool route and the human lifecycle route both return 503 from AuditWriteError while other sandboxes are unaffected by definition only. Extrapolate from the per-call delta instead of filling the disk."
+  }
+ },
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+  "title": "list_dir, outbox_list, preview glob expansion and screenshot buffer unbounded container output in the shared control-plane process",
+  "description": "On a sandbox that the agent token controls, four control-plane readers take the whole container-produced stream through Docker's non-streaming exec_run, with no byte cap and, for three of them, no container-side timeout: SandboxManager.list_dir (sandbox.py:428) runs `ls -la` on any /workspace or /source path; SandboxManager.outbox_list (sandbox.py:534) runs an unbounded `find -maxdepth 1 -printf`; SandboxManager._expand (sandbox.py:560) globs a preview pattern; DesktopTools.screenshot (sandbox_desktop.py:86-88) `cat`s /home/desktop/.cache/agentbox-shot.png and only then checks the PNG magic. _truncate (sandbox_common.py:24-32) and _parse_outbox (sandbox.py:111-124) run after the whole buffer exists, so they bound the returned value, not the peak. The peak is paid by the one shared FastAPI process, so one sandbox's listing is charged to every sandbox. Measured locally against the real reader functions with a fake exec_run: a 16 MiB stream makes list_dir peak at 16.19 MiB, against 0.32 MiB for exec's _Head reader on the same stream; 5.0 MB of find output becomes 58.6 MiB retained and 72.6 MiB peak after _parse_outbox (12.3x, record count uncapped); 4.2 MB of glob output becomes 209,715 Python strings; an 8 MiB PNG is accepted unchanged and then base64-encoded to 11.2 MB for the agent response (service.py:143). The screenshot path is the one with superlinear amplitude: the shot file sits in the desktop user's writable home (_SHOT, sandbox_desktop.py:32), so uid 1001 can point it at a character device and turn one cheap call into up to 15 s of unthrottled `cat`, bounded only by a wall clock (_X_TIMEOUT, sandbox_desktop.py:26,46-50), whose exit-code check also runs after the read. The host-disk half of the claim is narrower than proposed: service.py:328 writes the captured PNG with no size check, but only after the magic test passes, so a /dev/zero symlink costs memory and no disk; a huge PNG-prefixed file is needed for the disk variant. The list_dir/outbox_list/_expand variants are ~1:1 with container output, and the container's output ceiling is its writable layer, which the repository caps only when the optional AGENTBOX_DISK is set (config.py:42, sandbox.py:263-264).",
+  "claimed_root_cause": "The _Head/_OUT_LIMIT discipline for exec and the container-side _timed plus head -c discipline for read_file, outbox_read and workspace_manifest were applied reader by reader; four readers that consume attacker-selected container output were left with a plain exec_run read (sandbox.py:428, 534, 560 and sandbox_desktop.py:86-88), and the screenshot reader's only bound is a timeout that is checked after the full read.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 216,
+    "scope": "POST /sandboxes/{sid}/tools/{tool} (Depends(principal))",
+    "description": "Agent-token route for the sandbox's own tools. default_policy.yaml:10 is `default: allow`, so list_dir and screenshot reach the readers below with no approval and no snapshot."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 350,
+    "scope": "_call_tool ALLOW branch -> self._run_tool",
+    "description": "Runs on a tool_pool thread; the reader work and its peak memory happen on that shared pool, outside any per-call size accounting."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 127,
+    "scope": "_run_tool list_dir branch",
+    "description": "Returns sb.list_dir(sid, path) straight into the tool result with no byte, entry or time check on the way."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 141,
+    "scope": "_run_tool screenshot branch (inside gui_lock)",
+    "description": "Calls sb.screenshot and then base64-encodes the entire PNG into the tool response at 143, so the response holds a second full copy of container-controlled bytes."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 318,
+    "scope": "_call_tool REQUIRE_APPROVAL branch: preview = self._preview(...)",
+    "description": "The exec preview is computed before the approval row exists, so sandboxes.preview -> _expand streams glob output even if the human then denies, and once per pending request (up to PENDING_APPROVALS_MAX)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 428,
+    "scope": "SandboxManager.list_dir: c.exec_run(['ls','-la','--',p], user=AGENT_UID, demux=True)",
+    "description": "The whole ls stream is read into the control plane with no byte cap and no container-side timeout; _truncate at 432 shortens the value only after the peak has been allocated."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 560,
+    "scope": "SandboxManager._expand: c.exec_run(['sh','-c', glob loop, '_', pattern])",
+    "description": "Shell glob output is buffered whole, then decoded and returned as one string per match; the caller materialises the entire list into preview notes."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 534,
+    "scope": "SandboxManager.outbox_list: c.exec_run(['sh','-c', find -printf])",
+    "description": "find -printf output is buffered whole and parsed afterwards into one dict per record, then sorted, with no count cap; reached from the human routes api.py:290 and web.py:233, where container-chosen names drive the cost."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 88,
+    "scope": "DesktopTools.screenshot: png = res.output[0] or b''",
+    "description": "`cat {_SHOT}` (86) is buffered completely, bounded only by the 15 s timeout, and the PNG magic plus exit-code checks run at 89 only after the full read."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 95,
+    "description": "_Head.add keeps only _OUT_LIMIT+1 bytes and merely counts the remainder; only exec's reader (411-416) uses it for container output."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 411,
+    "description": "exec streams with api.exec_start(..., stream=True, demux=True), and the comment at 408-409 names the exact hazard (a single cat /dev/zero buffering hundreds of MB). This is the control the four readers skip."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 428,
+    "description": "list_dir exec_run with no _timed wrapper and no head -c; the argv captured locally is ['ls','-la','--','/workspace'] with kwargs demux/user/workdir only."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 432,
+    "description": "_truncate(out) runs after the whole stream is in memory, so the 64 KiB listing is a display cap, not a memory cap."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 441,
+    "description": "read_file does use _timed(_READ_TIMEOUT, ...) plus head -c limit+1, i.e. the sibling that got both guards."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 376,
+    "description": "workspace_manifest does use _timed(_MANIFEST_TIMEOUT, ...) plus `| head -c _MANIFEST_CAP` at 378."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 545,
+    "description": "outbox_read does use _timed(_READ_TIMEOUT, ...) plus head -c limit+1."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 111,
+    "description": "_parse_outbox builds one dict per NUL record, sorts the list and applies no count cap: locally 5.0 MB of records became 58.6 MiB retained."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 561,
+    "description": "_expand decodes the whole stream and returns every match line; 4.2 MB of output became 209,715 strings."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 26,
+    "description": "_X_TIMEOUT = 15 is the only bound on the screenshot exec; there is no byte cap anywhere on this path."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 32,
+    "description": "_SHOT is /home/desktop/.cache/agentbox-shot.png, inside the desktop user's own home, so uid 1001 can replace it with a symlink before the control plane cats it."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 48,
+    "description": "_x raises on exit 124/137 only after exec_run returned, i.e. after the full read; the timeout bounds wall clock, not bytes already buffered."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 143,
+    "description": "The screenshot result is base64-encoded into the tool response: +33% bytes and a second simultaneous copy of the PNG."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 328,
+    "description": "In the approval path the same PNG is written to settings.home/captures with no size check; it is only reached when the PNG magic check at sandbox_desktop.py:89 passes."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 209,
+    "description": "_summary drops 'listing' from the audit row for list_dir, so the audit log is not the amplifier on this path (calibration against the unbounded-args finding)."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 290,
+    "description": "outbox_list's own entrypoint is the human screen route (web.py:233 for the UI fragment), not the agent tool route in the trace."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 42,
+    "description": "disk_limit defaults to empty and sandbox.py:263-264 sets storage_opt only when it is non-empty, so by default the container side of the 1:1 readers is bounded only by the host disk."
+   }
+  ],
+  "blockers": [
+   "The decisive quantity - how much memory the control plane actually holds while a real container streams - is produced inside the docker SDK's non-streaming exec_start reader. The approved sandbox has no Docker daemon or socket (uid 65534, no /var/run/docker.sock), so no real exec stream can be created or sized; the peaks reported here come from an in-process fake exec_run that hands the real reader functions pre-built bytes, which understates the real peak because the SDK buffers the same bytes as well.",
+   "The superlinear variant needs /home/desktop/.cache/agentbox-shot.png replaced by a symlink to /dev/zero (or to a huge PNG-prefixed file) by uid 1001 inside a live agentbox-desktop sandbox; the audit sandbox has neither that image nor an X session, and the control plane's own `scrot -o -z` overwrites the path on the non-symlink case.",
+   "Whether the resulting peak is fatal depends on owner-side topology that the repository does not fix: deploy/ sets no memory limit for the agentbox service, the host's memory and any cgroup limit are unknown, AGENTBOX_DISK is unset by default, and the blast radius (control-plane restart drops every sandbox's desktop session and in-flight approvals) is an operational fact."
+  ],
+  "validation_plan": {
+   "local": "Owner-run on a disposable Docker-backed sandbox with AGENTBOX_DISK=2g and no network. (1) Create ~200k empty files in /workspace using unapproved batch `touch` calls (touch is in the read-only allowlist, default_policy.yaml:25-27) or one gated exec. (2) Record VmHWM from /proc/<pid>/status of the control-plane process, call POST /sandboxes/{sid}/tools/list_dir {\"path\":\"/workspace\"} with a dummy agent token, record VmHWM again, and confirm the returned listing stops at 64 KiB while the peak grew by roughly the raw ls size. (3) Control: run the same directory through the capped exec reader (`ls -la /workspace`) and confirm the delta stays near 64 KiB. (4) Put 200k files in /workspace/outbox, call GET /sandboxes/{sid}/outbox, and check for the ~12x parse amplification measured here. (5) Send one `rm /workspace/*` exec so the REQUIRE_APPROVAL branch runs _preview before any human decision, and measure the _expand cost. (6) Desktop variant: in a disposable desktop sandbox, as uid 1001 point the shot path at /dev/zero, call POST /tools/screenshot, and stop the test as soon as VmHWM growth is visible, noting whether the 15 s timeout keeps it under the host limit.",
+   "deployment": "Owner-observed on the compose stack: watch the agentbox container's RSS while a dummy agent lists a 200k-entry /workspace, compare it with the same agent running an allowlisted `ls -la` through the capped exec reader, and record whether the service has a cgroup memory limit and what an OOM does to running sandboxes and pending approvals. Then, with captures enabled, watch the same RSS during a burst of gated calls against a desktop sandbox whose shot path was replaced by a device symlink, and confirm that no file appears under settings.home/captures in the /dev/zero case while a huge PNG-prefixed file does produce one."
+  }
+ },
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process",
+  "title": "GUI burst stray kill spares a uid-1001 process in a burst-start session whose pid the client-declared _NET_WM_PID window list names",
+  "description": "Verified in the audited tree (9805d91): at GUI-burst close GuiBursts._finish (gui_bursts.py:120) calls _stop_strays, which reads desktop_processes (gui_bursts.py:83) and kills gui_strays(procs, wins, burst['pids']) (gui_bursts.py:84-85). For a new uid-1001 process the only remaining exemption is the window test: p['pid'] in window_pids or a non-baseline ancestor pid in window_pids (gui_state.py:85-86); baseline pids, pid 1, other uids and docker-exec roots are exempted earlier (gui_state.py:80). window_pids are the decimal tokens of `xdotool getwindowpid` over `xdotool search --onlyvisible --name .` (sandbox_desktop.py:59-61), i.e. the _NET_WM_PID property the X client writes for itself; the parser filters with isdigit only, never checks that the pid owns a window or is the declaring client, and xdotool is run as the desktop account on the desktop-owned display (sandbox_desktop.py:46-47, images/desktop/agentbox-desktop-start:20,30,38). I re-ran the real gui_state.gui_strays and the real GuiBursts._stop_strays in the sandbox (agents/v05/artifacts/v05_probe.out): a headless uid-1001 daemon 300 in the burst-start session sid 1, parented by the baseline Thunar 85, is killed when window_pids is empty (line 2) and is spared when the window list merely names 300 (line 3); naming an unrelated pid 301 does not spare it (line 4), and a windowed but baseline ancestor 85 does not spare it (line 5). With the real _stop_strays the forged case killed nothing and emitted no gui_processes_stopped record at all, while the control case killed [300] and logged it (lines 20-22). Two preconditions bound the claim, and both are runtime facts of the image rather than source facts. (1) The window test is reached only when p['sid'] is in base_sids, the sessions of the uid-1001 baseline pids (gui_state.py:63,82-84); a new session is killed regardless of window, which my run confirms for a daemon in sid 777 (line 8). tests/test_unit.py:330-334 encodes exactly that for a terminal opened during a burst: the terminal window 150 is spared but its shell 152 and the shell's job 160 are killed as a new session, so a daemon typed into a terminal opened during the burst is not in this candidate's class. (2) The attacker needs an X client that can set _NET_WM_PID to another process's pid and then have xdotool report it; the image recipe installs xdotool, socat and x11-xserver-utils but not x11-utils (xprop), python or a compiler (images/desktop/Dockerfile:17-23), so whether such a client exists in the running image is unobserved. Impact is bounded and detective-control shaped: GUI input is approval-free by design (N-1) and the burst's snapshot and gui_changes are its documented record. A spared daemon keeps writing /workspace after the close, where the only manifest read (gui_bursts.py:122) has already happened, and its writes produce no gui_changes and no gui_processes_stopped row; because it is then present at the next burst open (gui_bursts.py:70,76), gui_state.py:80 treats it as baseline forever, which is the candidate's 'survives every burst close'. Calibration, not dismissal: the by-design ancestor clause already spares a helper of any windowed app opened during the burst (tests/test_unit.py:335-336; my line 9), so the forgery route adds capability mainly for a process with no new windowed ancestor, for example one started from a baseline windowed app such as the pre-existing file manager (tests/test_unit.py:337 keeps such a script in the kill list).",
+  "claimed_root_cause": "The stray-kill exemption is decided from container-declared X window metadata instead of a control-plane-verifiable link. sandbox_desktop.desktop_processes (sandbox_desktop.py:59-61) turns every decimal token printed by xdotool getwindowpid into a window pid, gui_state.gui_strays (gui_state.py:85-86) spares a new uid-1001 process in a burst-start session when its pid, or a new ancestor pid, is in that set, and gui_bursts._stop_strays (gui_bursts.py:83-85) kills only the remaining pids. Because _NET_WM_PID is written by the X client and every process in the desktop session can reach display :0 (images/desktop/agentbox-desktop-start:20,30,38), the attacker chooses which of its base-session processes look windowed, so the burst-end kill no longer bounds what keeps running.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 215,
+    "scope": "POST /sandboxes/{sid}/tools/{tool}",
+    "description": "Agent token (lowest-trust network principal, prompt-injectable) posts a GUI input tool. GUI tools are in the allowed set with no approval (service.py:135-139), and GUI input executes as uid 1001 in the desktop session (sandbox_desktop.py:94-129)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 343,
+    "scope": "AgentBox._call_tool -> _needs_snapshot",
+    "description": "For GUI input _needs_snapshot is true, so _snapshot (250-265) takes the recovery snapshot and opens the burst, whose baseline is the workspace manifest plus the current pid set (gui_bursts.py:65-77)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 148,
+    "scope": "AgentBox._run_tool (type)",
+    "description": "The typed command is delivered into the desktop session as uid 1001. Whether the resulting shell or daemon ends up in a session that existed at burst open is a runtime fact of the image's terminal/launcher behaviour (tests/test_unit.py:330-334 models a terminal shell as a new session that is killed), not a source fact."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/gui_bursts.py",
+    "line": 120,
+    "scope": "GuiBursts._finish",
+    "description": "When the burst closes (close_idle, gui_bursts.py:137-155) the strays are collected and killed (120) before the closing manifest is read (122)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 59,
+    "scope": "DesktopTools.desktop_processes",
+    "description": "window_pids is the isdigit-filtered set of xdotool getwindowpid values for every visible window with a non-empty name, i.e. client-declared _NET_WM_PID integers; no window ownership or declaring-client identity is checked (59-61)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/gui_state.py",
+    "line": 85,
+    "scope": "gui_strays",
+    "description": "A new uid-1001 process in a burst-start session is spared when its pid is in window_pids, or when a non-baseline ancestor pid is, regardless of which process actually owns that window."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/gui_bursts.py",
+    "line": 85,
+    "scope": "GuiBursts._stop_strays",
+    "description": "kill_processes receives only the unexempted pids (kill -KILL -- <pids> as the desktop account, sandbox_desktop.py:64-67), so a forged-window daemon is not signalled and keeps modifying /workspace after the close."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/gui_state.py",
+    "line": 85,
+    "description": "The windowed test reads only window_pids (client-declared) plus a new-windowed-ancestor heuristic; nothing binds the spared pid to the window's owning client."
+   },
+   {
+    "file": "agentbox/gui_state.py",
+    "line": 80,
+    "description": "The other exemptions are baseline pids, pid 1, non-1001 uids and from_exec (docker-exec roots), so for a base-session process the window test is the sole gate."
+   },
+   {
+    "file": "agentbox/gui_state.py",
+    "line": 63,
+    "description": "base_sids is built only from the sessions of uid-1001 baseline pids, which is why the candidate's class is base-session processes."
+   },
+   {
+    "file": "agentbox/gui_state.py",
+    "line": 82,
+    "description": "A process in a session that did not exist at burst open is killed regardless of any window, bounding the attack to base sessions."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 53,
+    "description": "The docstring states the window set is the _NET_WM_PID of visible windows, a property the X client writes."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 59,
+    "description": "The xdotool search --onlyvisible --name . / getwindowpid pipeline is run as the desktop account, so any uid-1001 client's windows are in scope."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 61,
+    "description": "Output is split and filtered by isdigit only; nothing checks that the pid exists, owns a window, or is the declaring client, and the set is not intersected with procs."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 66,
+    "description": "kill_processes signals only the pids it is given, as the desktop account; there is no cgroup or session-wide sweep elsewhere (kill_processes has no other caller)."
+   },
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 80,
+    "description": "The stated purpose of the kill is to stop GUI-launched background work that would otherwise keep changing files outside policy after the burst ends."
+   },
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 88,
+    "description": "Only the selected pids are logged as gui_processes_stopped, so a spared daemon leaves no failure record; my run shows the forged case logs nothing and the control logs the kill."
+   },
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 122,
+    "description": "The closing manifest is read after the kill, and nothing reads /workspace again between bursts, so a survivor's later writes are never diffed."
+   },
+   {
+    "file": "images/desktop/agentbox-desktop-start",
+    "line": 20,
+    "description": "Xvfb, the Xfce session and every GUI tool run as the desktop account via setpriv (19-23, 30, 38), so the display is reachable by uid-1001 code in that session."
+   },
+   {
+    "file": "images/desktop/agentbox-desktop-start",
+    "line": 38,
+    "description": "startxfce4 runs as the desktop account, the identity the agent's typed GUI input inherits."
+   },
+   {
+    "file": "images/desktop/Dockerfile",
+    "line": 18,
+    "description": "Installed packages are xvfb, xauth, x11vnc, socat, xdotool, scrot, x11-xserver-utils, Xfce, thunar, xfce4-terminal, mousepad, procps and base tools; there is no x11-utils (xprop), no python and no compiler, so whether the image can set an arbitrary _NET_WM_PID at all is a runtime fact."
+   },
+   {
+    "file": "tests/test_unit.py",
+    "line": 332,
+    "description": "The intended-behaviour test models the shell and job inside a burst-opened terminal as a new session (152) and keeps them in the kill list, which is the precondition this candidate needs to overcome."
+   },
+   {
+    "file": "agents/v05/artifacts/v05_probe.out",
+    "line": 3,
+    "description": "My local run of the real gui_strays: with window_pids={300} the headless base-session daemon 300 is absent from the kill list; with the list naming 301 (line 4) or only the baseline ancestor 85 (line 5) it is killed."
+   }
+  ],
+  "blockers": [
+   "The decisive platform step is not observable here: this sandbox has no X server and no X client. Reproduced in the run (agents/v05/artifacts/v05_probe.out:25-33): DISPLAY unset, /tmp/.X11-unix absent, xdotool/xprop/Xvfb absent, python Xlib absent. So neither 'a uid-1001 client sets _NET_WM_PID to another process's pid' nor 'xdotool getwindowpid reports that value for its window' can be observed.",
+   "Related image fact: the recipe (images/desktop/Dockerfile:17-23) provides xdotool and socat but no xprop/x11-utils, no python and no compiler, and xdotool has no generic property setter. Whether the running image contains any program able to write an arbitrary _NET_WM_PID (base-layer or Xfce component, or a hand-written X11-protocol client over the unix socket via socat) must be read from the live image; if none exists the forgery route is refuted for this image and only the by-design ancestor route remains.",
+   "Reachability needs the daemon's sid to be one that existed at burst open (gui_state.py:63,82-84): a typed command's shell normally gets a new session (tests/test_unit.py:330-334, my line 8). Whether GUI-only input can place a headless daemon in the startxfce4 session is a runtime property of the image's terminal/launcher behaviour.",
+   "Observing survival after a real idle close needs the Docker-backed desktop container (docker exec for ps, xdotool, kill and the audit read); the Docker daemon is forbidden in this verifier sandbox, so the end-to-end kill/no-kill result and the missing gui_processes_stopped row are shown only against the real pure function and the real _stop_strays with a fake container."
+  ],
+  "validation_plan": {
+   "local": "Disposable agentbox-desktop:0.1 container, network none, built from the audited tree, dummy files only. (1) Record `command -v xprop python3 gcc cc socat xdotool` and `dpkg -l x11-utils` as the property-setter inventory. (2) Start the desktop; as the desktop account via docker exec -u desktop, first start the helper in a burst-start session (launched from the panel/Thunar or from a pre-existing windowed app) and confirm with `ps -eo pid=,ppid=,sid=,uid=,args=` that its sid equals a session that predates the burst; then start the headless writer `sh -c 'while :; do date +%s >> /workspace/_v05_probe; sleep 2; done' &` in that same session. (3) With the inventory from step 1, map a 1x1 titled visible window in that session and set its _NET_WM_PID to the writer's pid (a second window may carry the helper's own pid). If no tool can set the property, stop: the forgery route is refuted for this image. (4) Call the real SandboxManager.desktop_processes(sid) and feed procs/wins into the real gui_state.gui_strays with baseline = the pids taken immediately before step 2; record the wins set and the returned kill list. Expected if the finding holds: the writer pid is absent from the list, while the same call with wins=set() returns it. (5) Call kill_processes(sid, returned list), then confirm by ps that the writer still runs and that /workspace/_v05_probe's mtime advances past AGENTBOX_GUI_SNAPSHOT_IDLE. Non-destructive: dummy probe file only, writer killed and container discarded at the end.",
+   "deployment": "Owner-observed on a disposable desktop sandbox with dummy tokens and dummy files: during a real burst drive the agent's click/type to open a terminal from the panel and start `nohup sh -c \"while :; do date +%s >> /workspace/_v05_probe; sleep 2; done\" &`, plus the property helper if the image has one. Just before close record `ps -eo pid=,ppid=,sid=,uid=,args=` and `for w in $(xdotool search --onlyvisible --name .); do xdotool getwindowpid $w; done`, let the burst close on AGENTBOX_GUI_SNAPSHOT_IDLE, then read GET /audit as the human: the gui_processes_stopped record for that close must omit the writer pid, an exec ps must still show it running, and no later gui_changes row may exist for its writes. Refuted if the writer is killed, or if its session is new so the sid rule kills it, or if the image has no property setter. Fix check: exempt only baseline pids/sessions and control-plane docker-exec ancestry, or bind any spared pid to a control-plane-verified owner (for example the X socket owner in /proc/<pid>/fd) instead of trusting _NET_WM_PID. Audit reads and dummy files only."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets",
+  "title": "Approval impact table misreports rm targets whose paths contain whitespace or newlines (an existing file is shown as nonexistent)",
+  "description": "For a gated exec the \"system-computed impact\" table is produced by SandboxManager._expand / _walk and preview_command. _expand hands the already-unquoted rm operand to sh as $1 and iterates over $1 unquoted, so the operand is word-split on IFS and each fragment is pathname-expanded before the [ -e ] existence test; results are newline-framed and re-split in Python, and _walk frames find output the same way. preview_command turns an empty match list into \"삭제 시도 (현재 존재하지 않음)\" and every returned line into a \"삭제\" row. The rm itself later runs through bash -c with the original quoting, so the computed path set and the executed path set differ: an agent whose workspace target contains a space obtains approval for a deletion the card describes as an apparent no-op, or for a card that lists unrelated decoy files, while the real file is deleted. Reproduced with the verbatim scripts: the card for a lone rm of an existing \"final report.docx\" showed exactly one row, \"삭제 시도 (현재 존재하지 않음)\", and no note.",
+  "root_cause": "The preview path transport is not a lossless representation of a filesystem path. sandbox.py:559 iterates $1 unquoted under the default IFS, so an operand that shlex already unquoted (preview.py:33-44) is re-split into words and each word is expanded again before the existence test; matches are framed with printf \"%s\\n\" and re-split by splitlines() (sandbox.py:562), and _walk's find | head output is split the same way (sandbox.py:565-569). preview.py:90-91 maps an empty expansion to the \"does not currently exist\" row and preview.py:96-98 maps each returned line to a deletion row, so a split operand both hides the real target and can manufacture paths the command will never touch. The executed command keeps its quoting (sandbox.py:411), so the card and the effect diverge.",
+  "intended_behavior": "The affected list shown beside the approval must name exactly the paths the stored command will act on, so approving the card is equivalent to approving the effect: a path that exists must never be reported as nonexistent, and a path must never be listed as deleted unless the command deletes it.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 215,
+    "scope": "POST /sandboxes/{sid}/tools/{tool}",
+    "description": "The agent posts tool=exec with body.args.command under its own sandbox token."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 318,
+    "scope": "AgentBox._call_tool",
+    "description": "For a REQUIRE_APPROVAL decision (default_policy.yaml:12-16 routes rm to require_approval) the preview is computed while the approval is created, before any human sees it."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 215,
+    "scope": "AgentBox._preview",
+    "description": "exec previews delegate to SandboxManager.preview with the raw command string."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 573,
+    "scope": "SandboxManager.preview",
+    "description": "preview_command runs with expand=_expand and walk=_walk bound to the running container."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/preview.py",
+    "line": 89,
+    "scope": "preview_command rm branch",
+    "description": "Each rm operand (quotes already consumed by _split_segments, preview.py:33-44) is expanded once through the container callback."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 559,
+    "scope": "SandboxManager._expand",
+    "description": "The operand is passed as $1 and iterated unquoted, so the shell word-splits it on IFS and globs the fragments before [ -e \"$p\" ]; the surviving words are what get tested."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 562,
+    "scope": "SandboxManager._expand return",
+    "description": "Matches are framed one per line and re-split with splitlines(), so a name containing a newline arrives as two or more fake paths."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/preview.py",
+    "line": 90,
+    "scope": "preview_command affected rows",
+    "description": "An empty expansion becomes the \"삭제 시도 (현재 존재하지 않음)\" row and each returned line becomes a deletion row; the result is stored with the approval and rendered as the system-computed impact."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 411,
+    "scope": "SandboxManager.exec after approval",
+    "description": "After the human approves, decide() snapshots (service.py:412) and _run_tool passes the stored command unchanged (service.py:126) to exec, which runs it verbatim through bash -c; the quoting is intact there, so the file the table called nonexistent is actually deleted."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 559,
+    "description": "for p in $1 - the operand is expanded without quotes under the default IFS, so a space splits it and each fragment is globbed; reproduced with only the cd target retargeted."
+   },
+   {
+    "file": "agentbox/preview.py",
+    "line": 91,
+    "description": "An empty match list becomes the \"삭제 시도 (현재 존재하지 않음)\" row - the false no-op statement for an existing but split path, produced with notes=[]."
+   },
+   {
+    "file": "agentbox/preview.py",
+    "line": 97,
+    "description": "Matched paths become \"삭제\" rows, so split words (decoy names that exist) are presented as the deletion set."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 562,
+    "description": "out.splitlines() turns one filename containing a newline into several rows; expand(\"*\") over fixtures \"a\\nb\" and ok.txt returned [a, b, ok.txt]."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 565,
+    "description": "_walk frames find output line by line (splitlines at 569), so a recursive rm over \"dir with space/inner\\nname.txt\" reports \"dir with space/inner\" and \"name.txt\" instead of the real path."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 411,
+    "description": "The approved command runs as a single bash -c argument, so shell quoting is honoured and the computed set diverges from the executed set."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 412,
+    "description": "decide() snapshots before execution, which bounds the impact to low."
+   },
+   {
+    "file": "agentbox/preview.py",
+    "line": 125,
+    "description": "The per-segment note added for run-3 v17 shows the module already treats \"the table may be incomplete\" as security-relevant; the split-path case produces no note at all."
+   },
+   {
+    "file": "agentbox/templates/_approvals.html",
+    "line": 14,
+    "description": "The table renders the not-existing row without the deletion highlight (only effect == 삭제 gets class del), so the sole row on the card looks like a failed no-op; the raw command is shown above it at line 8."
+   },
+   {
+    "file": "agentbox/display.py",
+    "line": 18,
+    "description": "Control characters are escaped for display, so the defect is in the computed path set, not in the rendering."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "A sandbox agent token (or prompt-injected code running as uid 1000 inside that sandbox) submits the rm; the default policy routes rm to require_approval, so the approval card is the only control between it and the deletion."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "A human opens the pending approval in the /ui/approvals card or agentbox approve and presses approve, relying on the system-computed impact table rather than re-reading the raw command."
+   },
+   {
+    "kind": "data_state",
+    "description": "The rm operand names an existing /workspace path containing whitespace (space or tab) or a newline; the agent can produce that state itself, since creating a new file with write_file needs no approval."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "Stock default_policy.yaml, where exec commands containing rm route to require_approval (default_policy.yaml:12-16)."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "The sandbox agent wants to delete /workspace/final report.docx but wants the card not to say so, so it submits exec rm \"final report.docx\". The card describes the target as \"삭제 시도 (현재 존재하지 않음)\" - an apparently already-failed no-op - and with decoy names present it lists files that will not be touched, while the approved command deletes the real file.",
+   "payloads": [
+    "rm \"final report.docx\"",
+    "decoy fixtures final and report.docx in the same directory",
+    "rm over a workspace containing a file named \"a\\nb\"",
+    "rm -r over \"dir with space\"/\"inner\\nname.txt\"",
+    "rm notes.txt; mv important /tmp/important (run-3 v17 revalidation)"
+   ],
+   "instructions": [
+    "Create fixtures in the approved sandbox (tools/sbx.py v06, no network, read-only /target, writes only /scratch): a directory holding one file literally named final report.docx plus notes.txt.",
+    "Copy the sandbox.py:559 and sandbox.py:565 scripts verbatim, changing only cd /workspace to the fixture directory (the sandbox has no /workspace and uid 65534 cannot create one), and wrap them exactly as sandbox.py:560-562 / 567-569 do (decode, splitlines) to build the expand and walk callbacks.",
+    "Import agentbox.preview from /target (PYTHONPATH) and call preview_command('rm \"final report.docx\"', 200, expand, walk); compare the affected rows and notes with os.path.exists on the real file.",
+    "Repeat with decoy files final and report.docx present, and with fixtures named \"a\\nb\" and \"a\\tb.txt\" for the expand path and \"dir with space/inner\\nname.txt\" for the walk path.",
+    "Re-run the run-3 v17 case rm notes.txt; mv important /tmp/important and check that its per-segment note still appears.",
+    "Show the sink: run sh -c 'rm \"final report.docx\"' in the fixture directory (the quoting sandbox.py:411 hands to bash) and confirm the file the table called nonexistent is gone."
+   ],
+   "observed_result": "Case B: affected=[{path: \"final report.docx\", effect: \"삭제 시도 (현재 존재하지 않음)\"}], notes=[], real target exists: true. Case C (decoys present): affected=[{path: \"final\", effect: \"삭제\"}, {path: \"report.docx\", effect: \"삭제\"}] while the real target still exists and is never listed. Newline case: expand(\"*\") -> [\"a\", \"b\", \"ok.txt\"] for files \"a\\nb\" and ok.txt, and the old find framing returned [\"dir with space\", \"dir with space/inner\", \"name.txt\"]. Sink: sh -c 'rm \"final report.docx\"' exited 0 and the directory went from [final report.docx, notes.txt] to [notes.txt]. Case A (revalidation): \"rm notes.txt; mv important /tmp/important\" produced the rm row AND the per-segment note, so the run-3 omission defect is fixed. The proposed fix was also executed against the same fixtures: with IFS= and NUL framing expand returned [\"final report.docx\"] and a single \"a\\nb\", and find -print0 | head -z kept \"dir with space/inner\\nname.txt\" whole. Everything ran inside tools/sbx.py v06."
+  },
+  "remediation": {
+   "strategy": "Make both preview transports lossless. In _expand, disable IFS word splitting (IFS=) so the operand is tested as one word while pathname expansion still happens, and frame results with NUL instead of newline; in _walk, use find -print0 with head -z and split on NUL. Then one match is one path: the \"does not currently exist\" row is emitted only when the path really is absent, and no row names a path the command will not touch. Add a regression test that pushes names containing a space, a tab and a newline through both the non-recursive and the recursive branch and asserts the returned list equals the fixture paths.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/sandbox.py",
+     "fixed_code": "def _expand(self, c, pattern: str) -> list[str]:\n    \"\"\"컨테이너 안에서 glob만 펼친다. 명령 치환은 일어나지 않는다.\"\"\"\n    script = ('cd /workspace; IFS=; for p in $1; do if [ -e \"$p\" ] || [ -L \"$p\" ]; then printf \"%s\\\\0\" \"$p\"; fi; done')\n    res = c.exec_run([\"sh\", \"-c\", script, \"_\", pattern], user=AGENT_UID, demux=True)\n    out = (res.output[0] or b\"\").decode(\"utf-8\", errors=\"replace\")\n    return [p for p in out.split(\"\\0\") if p]"
+    },
+    {
+     "file_name": "agentbox/sandbox.py",
+     "fixed_code": "def _walk(self, c, path: str, limit: int) -> list[str]:\n    res = c.exec_run([\"sh\", \"-c\", 'cd /workspace; case \"$1\" in -*) set -- \"./$1\" \"$2\";; esac; find \"$1\" -print0 2>/dev/null | head -z -n \"$2\"',\n                      \"_\", path, str(limit)],\n                     user=AGENT_UID, demux=True)\n    out = (res.output[0] or b\"\").decode(\"utf-8\", errors=\"replace\")\n    return [p for p in out.split(\"\\0\") if p]"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "The mechanics are deterministic for any rm operand naming a /workspace path with whitespace or a newline, and the agent can create such a name itself with an ungated write_file before requesting the rm, so the condition is attacker-chosen rather than accidental; exploitation still needs the approver to rely on the table instead of the raw command displayed immediately above it, and only rm and curl reach this preview."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "What is lost is informed consent on the card, not a boundary: the effect is a deletion inside the requesting agent's own /workspace, the resource class the rm approval governs, decide() snapshots immediately before execution so the files are recoverable, and the decoy rows are misleading text rather than an additional capability."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Every cited line was re-read in 9805d91, the divergence was reproduced inside the approved sandbox with the verbatim _expand/_walk scripts (only the cd target substituted) and the verbatim preview_command, the sink step confirms the stored command keeps its quoting and really deletes the file, and the proposed fix was executed against the same fixtures."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/sandbox_desktop.py:extract-novnc-unauthenticated-no-singleflight",
+  "title": "Unauthenticated GET /static/novnc/* runs docker create plus a full /usr/share/novnc tar extraction on every request while home/novnc/core/rfb.js is absent, with no single-flight",
+  "description": "api.py:355-356 registers GET /static/novnc/{path:path} with no Depends(), principal, cookie or ticket and calls box.sandboxes.extract_novnc(novnc_dir) at api.py:358 before it resolves or validates the requested path. extract_novnc (sandbox_desktop.py:146-169) has one guard: it returns True when dest/core/rfb.js exists (148). While that marker is absent, every request runs self.client.containers.create(desktop_image, [\"true\"], network_mode=\"none\") (152), joins the whole /usr/share/novnc archive into memory with b\"\".join(stream) (156-157), extractall()s it into the control plane's data directory (163-166) and removes the container (160-161). There is no lock, no in-flight marker and no negative cache, so every concurrent caller passes the line-148 check and duplicates the daemon work: measured in the approved sandbox with the Docker client stubbed, six concurrent unauthenticated GETs made six containers.create calls, and twelve concurrent GETs made twelve. The claimed concurrent 500/FileExistsError outcome is fixture-dependent rather than universal: it reproduces (1 x 200, 5 x 500 FileExistsError on '<home>/novnc/core') only when the served tar has no directory members, because tarfile's own os.makedirs(upperdirs) in _extract_member is unguarded; with a directory-complete archive of the kind containers.get_archive('/usr/share/novnc') produces, all six and all twelve concurrent requests returned 200 while still performing six and twelve creates. Failures are still uncaught and unbounded in time: a truncated or corrupt archive raised ReadError outside the narrow ImageNotFound/NotFound/APIError handlers, producing 500 on every request, three creates for three requests and a marker that never appears, and the route also pays the create before it answers 404 (three unauth GETs for /static/novnc/does-not-exist.js each made one create). Once one extraction succeeds the marker makes later requests cheap, so the duplication is confined to the pre-marker window and to broken states.",
+  "root_cause": "An unauthenticated static-asset route performs Docker-daemon work and an archive extraction behind a check-then-act test on a single marker file, with no lock, no in-flight flag and no negative cache; exceptions outside the narrow docker-error handlers escape as a 500 without publishing the marker or any bounded negative state, so the expensive state persists and the work is repeatable by any anonymous client.",
+  "intended_behavior": "Static assets should not require per-request daemon work: the extraction should happen once (at startup or on the first authenticated desktop route) under a lock that lets one caller do it while the others wait or observe the result, and a failed extraction should leave a bounded negative state instead of being retried by every request. /static/novnc/* should answer 404/503 without creating containers whenever the marker is absent.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 355,
+    "scope": "GET /static/novnc/{path:path}",
+    "description": "The route decorator adds no Depends() and the handler at 356 takes only the path, so it is exempt from the human, desktop-link and agent principals used everywhere else and is reachable by any network client; deploy/Caddyfile:4-5 exposes it through a bare reverse_proxy with no auth, rate limit or body limit."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 358,
+    "scope": "extract_novnc called on every request",
+    "description": "The handler calls box.sandboxes.extract_novnc(novnc_dir) before resolving or validating path (360-362), so the only thing that keeps a request cheap is the marker file the function itself is supposed to create."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 148,
+    "scope": "the sole guard is a marker-file existence check",
+    "description": "if (dest / \"core\" / \"rfb.js\").exists(): return True - a check-then-act test performed outside any lock, with no in-flight marker and no negative cache, so N concurrent callers all proceed to the sink."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 152,
+    "scope": "containers.create + get_archive + extractall",
+    "description": "Each request that finds no marker creates a container from the desktop image (152), pulls the whole /usr/share/novnc tar into memory with b\"\".join(stream) (156-157), extracts it into settings.home (162-166) and removes the container (161)."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 153,
+    "description": "Only ImageNotFound/APIError are caught around create, and only NotFound/APIError around get_archive (158-159); the tarfile open/getmembers/extractall at 163-166 and the remove at 161 are outside any handler, so a corrupt archive or a failing remove escapes as a 500."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 166,
+    "description": "tf.extractall(dest.parent, members, filter=\"data\") writes the tree into the control plane's data directory with no lock and no in-flight marker, which is why concurrent callers that all passed line 148 duplicate the extract."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 169,
+    "description": "The return value is the same marker that the error paths never publish, so a create, remove or extraction failure leaves the expensive state in place and the next request repeats the whole sequence."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 361,
+    "description": "The path-relative check and the is_file()/404 happen only after the extraction attempt, so even a request for a missing asset pays one containers.create (measured: three unauthenticated GETs for /static/novnc/does-not-exist.js made three creates and returned 404 each time)."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 100,
+    "description": "novnc_dir = settings.home / \"novnc\": the extraction target sits in the control plane's persistent data directory, so the unauthenticated request path also writes shared operator-owned state."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 167,
+    "description": "The rename at 167-168 is dead at this call site because api.py:358 always passes a dest whose name is already \"novnc\"; it therefore affords no additional race, and the raced work is the tarfile extraction itself."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 5,
+    "description": "The only front door is a bare reverse_proxy to agentbox:8765 with no basic_auth, rate limit or request_body limit, so nothing upstream bounds how many concurrent unauthenticated extraction requests reach the route."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "None - the route requires no principal, cookie or ticket."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "The desktop image is present (otherwise create raises ImageNotFound and the route is cheap) and home/novnc/core/rfb.js is absent: a fresh install before anyone opened a desktop page, or a state left behind by a failed or partial extraction. Nothing else in the tree calls extract_novnc, so the marker is created by this unauthenticated route on first use."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "Two or more requests must be in flight together to duplicate the daemon work; a single request duplicates nothing, and the first success publishes the marker and ends the window for later requests."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "An unauthenticated client issues GETs to /static/novnc/core/rfb.js (or any path under that prefix), early in a deployment's life and in parallel, so the first-time extraction happens under its timing instead of a real user opening the desktop page, and so one marker miss is multiplied by the number of simultaneous requests.",
+   "payloads": [
+    "GET /static/novnc/core/rfb.js  (no headers, no cookie) - six copies issued concurrently",
+    "GET /static/novnc/core/rfb.js  (no headers, no cookie) - twelve copies issued concurrently",
+    "GET /static/novnc/does-not-exist.js  (no headers, no cookie) - sequential, tree deleted before each"
+   ],
+   "instructions": [
+    "In the approved sandbox, patch docker.from_env to return an in-process fake client whose containers.create counts calls and whose get_archive serves a fixed tar containing novnc/core/rfb.js (the sandbox has no daemon), then build the real app with fastapi 'build(Settings(home=<scratch>/home))'.",
+    "Delete home/novnc and issue one GET, then a second GET, recording status codes and the number of containers.create calls (marker published, steady state cheap).",
+    "Delete home/novnc again and issue six, then twelve, concurrent GETs with asyncio/threads using separate TestClient instances (raise_server_exceptions=False) and an app-level exception handler that records exception types, recording status codes and containers.create calls.",
+    "Repeat with an archive that omits directory members, and with a truncated archive, to separate the fixture-dependent FileExistsError outcome from the fixture-independent duplication and 500-on-error outcomes."
+   ],
+   "observed_result": "With home/novnc deleted, one unauthenticated GET returned 200, made 1 containers.create call and wrote home/novnc/core/rfb.js; the next GET made 0 create calls and returned 200 (marker hit). After deleting the tree, six concurrent unauthenticated GETs made 6 create calls, and in a second run twelve concurrent GETs made 12 create calls; with a directory-complete archive all of those responses were 200 and no exception was raised. With an archive that has no directory members, the same six-request burst returned one 200 and five 500s with FileExistsError: [Errno 17] File exists: '<home>/novnc/core' while still making 6 creates. Three unauthenticated GETs for /static/novnc/does-not-exist.js, each with the tree deleted first, made 3 more create calls and returned 404 each time. With a truncated archive, three sequential unauthenticated GETs each made another containers.create call and returned 500 ReadError: unexpected end of data with the marker still absent, and four concurrent requests against a truncated archive made 4 creates and 4 x 500."
+  },
+  "remediation": {
+   "strategy": "Extract once, under a lock, outside the request path: do it at startup or on the first authenticated desktop route, guard it with a per-directory lock plus an in-flight event so concurrent callers wait for the winner, publish the marker only after a successful extraction, and treat any failure as a bounded negative state (a timestamped failure marker that short-circuits the route for a cooldown). /static/novnc/* should answer 404/503 without creating containers whenever the marker is absent.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/sandbox.py",
+     "fixed_code": "        self.client = docker.from_env()\n        self._lock = threading.Lock()\n        self._novnc_lock = threading.Lock()   # single-flight for extract_novnc"
+    },
+    {
+     "file_name": "agentbox/sandbox_desktop.py",
+     "fixed_code": "    def extract_novnc(self, dest: Path) -> bool:\n        marker = dest / \"core\" / \"rfb.js\"\n        if marker.exists():\n            return True\n        with self._novnc_lock:            # one extraction per process\n            if marker.exists():           # a waiter re-checks after the winner finished\n                return True\n            try:\n                c = self.client.containers.create(self.settings.desktop_image, [\"true\"], network_mode=\"none\")\n            except (ImageNotFound, APIError):\n                return False\n            try:\n                stream, _ = c.get_archive(\"/usr/share/novnc\")\n                out = b\"\".join(stream)\n            except (NotFound, APIError):\n                return False\n            finally:\n                try:\n                    c.remove(force=True)\n                except APIError:\n                    pass\n            dest.parent.mkdir(parents=True, exist_ok=True)\n            try:\n                with tarfile.open(fileobj=io.BytesIO(out)) as tf:\n                    members = [m for m in tf.getmembers() if m.isfile() or m.isdir()]\n                    tf.extractall(dest.parent, members=members, filter=\"data\")\n            except (OSError, tarfile.TarError):\n                shutil.rmtree(dest, ignore_errors=True)   # never serve a half tree\n                return False\n            return marker.exists()"
+    },
+    {
+     "file_name": "agentbox/api.py",
+     "fixed_code": "    @app.get(\"/static/novnc/{path:path}\")\n    def novnc(path: str):\n        root = novnc_dir.resolve()\n        # 정적 파일은 요청 경로에서 컨테이너를 만들지 않는다. 시작 시 한 번만 꺼낸다.\n        if not (root / \"core\" / \"rfb.js\").is_file():\n            raise HTTPException(404)\n        f = (root / path).resolve()\n        if not f.is_relative_to(root) or not f.is_file():\n            raise HTTPException(404)\n        return FileResponse(f)"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "The expensive state is the missing marker, which exists on a fresh install and after any failed extraction; once the marker exists the cost drops to zero, so the attacker has to arrive before the first legitimate desktop use or exploit a broken state, but no credential is needed to do either."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "Unauthenticated Docker-daemon work, control-plane threads and data-directory writes, each create holding the whole asset tar in memory, plus 500s and a repeatable path while extraction keeps failing; no data disclosure or privilege gain, and the per-request cost is bounded by one container create plus one asset-tree tar."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "The source trace is complete, every cited line was re-read in the audited tree, and the duplication, the pre-404 create and the repeat-after-failure behaviour were reproduced in the approved sandbox with the Docker client stubbed; the only correction to the candidate is that the concurrent FileExistsError 500s depend on an archive without directory members, while the duplication itself reproduced in both archive shapes."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/service.py:_call_tool:needs-snapshot-gate-before-gui-lock-lets-burstless-gui-input-after-handback",
+  "title": "A GUI input queued on gui_lock across a human handback executes with no open burst, so its changes get no snapshot and no gui_changes row",
+  "description": "AgentBox decides whether a GUI input needs a snapshot before it acquires gui_lock. While a human holds the desktop a takeover lease exists, so GuiBursts.needs_snapshot returns False and the input blocks on gui_lock instead of opening a burst. If the human hands the desktop back while that input is queued, the input runs with a lease check that now passes and no burst open: it writes as uid 1001, calls mark_input, and its fresh input timestamp makes needs_snapshot False for every later input until 60 s of input silence (gui_snapshot_idle) or 600 s after the last snapshot (gui_snapshot_interval). Those inputs produce no snapshot, no burst, and no gui_changes row; the only recovery point predates the human takeover, and the file effects of the inputs are never diffed or attributed.",
+  "root_cause": "The burst decision is taken outside the lock that serializes execution: service.py:343 evaluates _needs_snapshot (gui_bursts.py:52-63, which returns False while a non-stale lease or pending takeover exists) before _run_tool acquires gui_lock at service.py:136, and the only re-check under the lock (_check_control, service.py:152-161) validates the stale-lease/lease/pending-takeover state, never burst presence. _handback_locked (service.py:528-543) releases the lease (542) and calls forget_input (543) while still holding gui_lock, so the queued input resumes into a state where its earlier premise is gone and nothing takes a snapshot; mark_input (service.py:139) then suppresses the next burst decision.",
+  "intended_behavior": "Every GUI input that executes must be covered by an open burst bound to a snapshot taken before that input, and each burst must close into a gui_changes record (service.py:261-264 fails closed when a burst baseline cannot be opened; gui_bursts.py:157-162 re-timers lifecycle paths for exactly this reason). A burst decision taken before waiting on a lock must be re-validated after the lock is acquired.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 215,
+    "scope": "POST /sandboxes/{sid}/tools/{tool} -> AgentBox.call_tool",
+    "description": "Agent token from principal; default_policy.yaml has default: allow and no rule for click/type/key, so GUI inputs are approval-free, are audited as tool_request, and take the ALLOW branch."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 343,
+    "scope": "AgentBox._call_tool (ALLOW branch)",
+    "description": "_needs_snapshot is evaluated before any lock; while a takeover lease is present _over_snapshot_quota is skipped too and GuiBursts.needs_snapshot returns False, so no snapshot is taken and no burst is opened."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 136,
+    "scope": "AgentBox._run_tool (GUI branch)",
+    "description": "gui_lock is acquired afterwards without a timeout, so an input that already decided 'no burst needed' can sit queued while the human's handback holds the same lock."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 152,
+    "scope": "AgentBox._check_control",
+    "description": "The only re-check after acquiring gui_lock handles a stale lease, a live lease and the pending-takeover marker; burst presence and the earlier needs_snapshot result are never re-validated."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 542,
+    "scope": "AgentBox._handback_locked",
+    "description": "While gui_lock is still held, the human handback releases the lease; the queued input then acquires the lock with no lease and no pending marker, so _check_control passes."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 543,
+    "scope": "AgentBox._handback_locked",
+    "description": "forget_input only drops the input timestamp; the handback opens no burst, so the resumed input's decision premise is gone but nothing forces a snapshot."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 139,
+    "scope": "AgentBox._run_tool (GUI branch)",
+    "description": "The resumed input executes the GUI action and calls bursts.mark_input although no burst is open."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/gui_bursts.py",
+    "line": 62,
+    "scope": "GuiBursts.needs_snapshot",
+    "description": "The fresh input timestamp makes the next decision False, so later inputs run burstless until gui_snapshot_idle of silence or gui_snapshot_interval since the last snapshot."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/gui_bursts.py",
+    "line": 113,
+    "scope": "GuiBursts._finish",
+    "description": "Only an open burst is ever diffed and logged as gui_changes; no burst exists for these inputs, so their /workspace changes are never recorded."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 343,
+    "description": "Burst decision taken before the lock; with a lease present it is False."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 136,
+    "description": "gui_lock is acquired after that decision, with no timeout."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 152,
+    "description": "_check_control re-checks only stale lease, lease and pending takeover; no burst-presence condition."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 542,
+    "description": "The handback releases the lease inside the gui_lock-held section."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 543,
+    "description": "forget_input in the same section clears the timestamp but opens no burst."
+   },
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 58,
+    "description": "needs_snapshot returns False while a non-stale lease or pending takeover exists, assuming the input will get 423."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 139,
+    "description": "mark_input runs for an input that has no burst open."
+   },
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 62,
+    "description": "A fresh input timestamp suppresses the following burst decision."
+   },
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 113,
+    "description": "No burst, so no gui_changes row for the changes made by these inputs."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 278,
+    "description": "_snap_locks serializes SNAPSHOT_TOOLS, so at most one GUI input per sandbox is in _call_tool at a time; the window is the handback's lock-held section, not a queue of many inputs."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 50,
+    "description": "gui_snapshot_idle default 60 s: the burstless window ends after that much input silence."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 51,
+    "description": "gui_snapshot_interval default 600 s: upper bound with continuous input, because a snapshot older than that forces a new burst."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "A sandbox agent token (agt_...); GUI tools are default-allow (default_policy.yaml default: allow) and need no human approval."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "The single in-flight GUI input must take its burst decision while the takeover lease exists and then acquire gui_lock after the handback released the lease. A tight loop of click/type calls during the takeover (each 423) raises the hit rate; the window is the handback's lock-held section (audit write plus lease release), which SQLite/audit contention widens."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "The human must hand the desktop back through handback, logout, or pause/restore/delete via end_desktop, because that path is the one that holds gui_lock across the lease release."
+   },
+   {
+    "kind": "data_state",
+    "description": "A snapshot taken within gui_snapshot_interval (default 600 s) exists, so after the burstless input the fresh mark_input timestamp keeps later inputs from opening a burst; the queued input itself needs only the lease."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "An agent that wants to change the desktop without a gui_changes row and without a fresh recovery point keeps issuing GUI inputs while a human holds the desktop, so one of them is queued on gui_lock when the human hands back, and then keeps clicking/typing immediately afterwards.",
+   "payloads": [
+    "POST /sandboxes/sb_x/tools/click {\"args\":{\"x\":1,\"y\":1}} (opens the first burst and snapshot)",
+    "repeated POST /sandboxes/sb_x/tools/click {\"args\":{\"x\":2,\"y\":2}} while a takeover lease is held; all but the one landing in the handback window return 423",
+    "POST /sandboxes/sb_x/tools/click and /tools/type immediately after the handback"
+   ],
+   "instructions": [
+    "Bounded harness in the approved audit sandbox (sbx.py v08, no network, /target read-only): real AgentBox, GuiBursts and DesktopControl (sqlite :memory:); fake SandboxManager (click/type add a manifest entry), in-memory AuditLog with one hook, default-allow Policy, empty ApprovalStore.",
+    "Seed one click so a snapshot (snap_1) and an open burst exist; call box.takeover(sid, 'hs_human') so the burst is closed and a lease is held.",
+    "Install a hook on AuditLog.append('human_handback'): it starts the agent's click thread, waits until that thread has recorded its needs_snapshot decision (False, lease present, no burst), verifies it is blocked on gui_lock, then returns so box.handback(sid, 'hs_human') can release the lease and unlock.",
+    "Join the agent thread, then issue three more clicks, and read snapshot count, bursts._gui_burst, audit gui_changes rows and needs_snapshot.",
+    "Control run on a fresh box: seed click, three clicks while the burst is open, then takeover to close the burst, and compare the gui_changes diff."
+   ],
+   "observed_result": "The queued click executed with status 200 executed and needs_snapshot False taken while the lease was still present and no burst open; snapshots stayed 1 and gui_changes stayed at the single row the takeover wrote for the seed burst, while the click plus three following clicks (all 200) added 4 files (5 files total). All four burst decisions were False, so no new snapshot or burst appeared. The control run with the same four clicks inside an open burst logged gui_changes added=4 for snap_1 when the burst closed. The only artificial element is a pause inside the handback's audit append (a real SQLite write), which widens the natural window; the ordering it produces is one the code allows."
+  },
+  "remediation": {
+   "strategy": "Decide the GUI burst requirement under the same lock that serializes GUI execution: after gui_lock is acquired in _run_tool, re-evaluate needs_snapshot and take the snapshot / open the burst there, and fail closed with reset_timers if no burst is open. Key the decision on burst presence rather than only on input timestamps, and make the handback path force the next input to open a new burst instead of only forgetting the timestamp. Regression test: hold gui_lock with an input queued, release the lease inside the lock, release the lock, and assert the input never calls mark_input or executes without an open burst.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "if tool in GUI_TOOLS:\n    with self.desktop.gui_lock(sid):\n        self._check_control(sid)\n        if tool in GUI_INPUT:\n            if self.bursts.needs_snapshot(sid):   # must be re-decided here, not at _call_tool:343\n                self._snapshot(sid, tool, f\"before {tool}\", {})\n            if not self.bursts.is_open(sid):\n                self.bursts.reset_timers(sid)   # next input re-decides and opens a burst\n                raise SandboxError(\"GUI 구간이 열려 있지 않아 GUI 입력을 실행하지 않음. 잠시 뒤 다시 호출할 것\")\n            self.bursts.mark_input(sid)"
+    },
+    {
+     "file_name": "agentbox/gui_bursts.py",
+     "fixed_code": "def is_open(self, sid: str) -> bool:\n    \"\"\"입력이 실행될 때 열린 구간이 있는가. 구간 없이 실행하면 바뀐 것이 기록되지 않는다.\"\"\"\n    with self._lock:\n        return sid in self._gui_burst"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "The agent must land its single in-flight GUI input in the handback's lock-held section: at ~5-10 ms per call in a tight loop and a few ms of audit write plus release, the collision is reachable within a session, and it needs no agent control over when the human hands back. Not certain per attempt, so not high."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "The inputs themselves are still audited as tool_request/tool_result (coordinates, typed text), but their /workspace effects get no gui_changes diff and no snapshot is taken, so the burst-level attribution and recovery point the N-1 mitigation relies on silently misses an attacker-chosen window; the last snapshot predates the human takeover."
+   },
+   "overall_severity": "medium"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Every trace line was re-checked in the 9805d91 tree and the minimum result was reproduced on the real AgentBox, GuiBursts and DesktopControl objects, with a control run showing the same inputs are recorded when a burst is open. The residual uncertainty is only how often the natural window is hit."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap",
+  "title": "Agent tool input still reaches the append-only audit log uncapped through approval previews and tool error strings",
+  "description": "The new _logged_args cap (service.py:181-194) bounds only the two audit copies that pass through it (tool_request at 295-296, tool_execute at 413-414). The same agent-controlled strings still reach audit.append uncapped through two other sinks on the same request path. (1) For an approval-requiring call the payload appended at service.py:330-333 carries the preview dict verbatim (line 332); _preview returns sandbox.preview's preview_command, which copies the whole raw exec command (preview.py:131) and appends one note per command segment with no count cap (preview.py:125, only 'affected' is truncated at 126-128), and when _preview raises, the failure note embeds str(SandboxError) - that is the raw agent path from safe_path (service.py:319-320, sandbox.py:156). (2) For read_file, which the default policy allows without approval, the same SandboxError text is stored as tool_error payload.error (service.py:360-362). Neither the tool route (api.py:216; ToolCall.args is an unconstrained dict at api.py:51) nor the shipped reverse proxy (deploy/Caddyfile:5) bounds the body, and AuditLog.append inserts json.dumps(payload) with no size check (audit.py:183). Audit rows are append-only (audit.py:35-38), so every retained byte is permanent; at disk-full the audit-writing paths fail closed with 503.",
+  "root_cause": "_call_tool caps only the two _logged_args mirrors (service.py:295-296, 413-414). The approval_requested payload passes preview through unchanged (service.py:330-333) while _preview copies the raw command and one note per segment (service.py:213-226, preview.py:125,131), and the SandboxError handler at service.py:360-362 logs str(e) untruncated although safe_path (sandbox.py:156) embeds the agent raw path. audit.append imposes no length bound of its own.",
+  "intended_behavior": "Every payload that reaches the append-only audit log is bounded before the insert regardless of the producing call site: error strings, preview command, notes and affected paths are truncated to a fixed budget, the note count is capped, and the tool-args body is rejected above a small limit.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 216,
+    "scope": "POST /sandboxes/{sid}/tools/{tool}",
+    "description": "Agent-token route; ToolCall.args (api.py:51-52) is parsed from the JSON body with no size limit, so the argument size equals what the agent sends."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 295,
+    "scope": "tool_request record",
+    "description": "Records args through the capped _logged_args, then evaluates policy; the capped copy is not the only path the arguments take."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 318,
+    "scope": "_preview producer",
+    "description": "For exec, sandbox.preview returns preview_command's full raw command; for an invalid workspace path, safe_path raises with the raw path and the handler at 319-320 turns str(e) into a preview note; raw args also go to ApprovalStore.create at 324."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 330,
+    "scope": "approval_requested audit append",
+    "description": "The payload carries the preview dict minus the capture image with no truncation of command, notes or affected entries (line 332), written before any human is involved."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 361,
+    "scope": "SandboxError handler",
+    "description": "The untruncated str(e) is appended as payload.error; read_file and write_file need no approval, so this row is written on the first request."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/audit.py",
+    "line": 183,
+    "scope": "AuditLog.append INSERT",
+    "description": "json.dumps of the masked payload is inserted into the append-only audit table with no length or count bound."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 189,
+    "description": "The LOGGED_ARGS_MAX branch exists only inside _logged_args, whose two call sites are tool_request (295-296) and tool_execute (413-414); the preview/error sinks never pass through it."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 332,
+    "description": "approval_requested payload includes the preview dict verbatim."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 320,
+    "description": "A _preview failure is turned into a note containing the full exception text, i.e. the raw agent path from safe_path."
+   },
+   {
+    "file": "agentbox/preview.py",
+    "line": 131,
+    "description": "preview_command returns the full original command with no length cap."
+   },
+   {
+    "file": "agentbox/preview.py",
+    "line": 125,
+    "description": "One or more notes per command segment; the segment count is unbounded, only affected is truncated (126-128)."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 156,
+    "description": "safe_path raises SandboxError with the raw agent path in the message."
+   },
+   {
+    "file": "agentbox/sandbox_common.py",
+    "line": 15,
+    "description": "SandboxError is a plain RuntimeError, so nothing shortens the message before it is logged as tool_error."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 361,
+    "description": "tool_error payload stores str(e) without truncation."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 51,
+    "description": "ToolCall.args is an unbounded dict; no route-level body limit exists."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 5,
+    "description": "Shipped proxy is a bare reverse_proxy with no request_body limit."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 37,
+    "description": "The DELETE trigger makes audit rows undeletable."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 183,
+    "description": "No size or count check on the inserted payload."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 305,
+    "description": "AuditWriteError is mapped to ServiceError 503, so the audit-log failure mode is fail-closed for every tool call."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Any valid agent token for one sandbox; the human token is not needed."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "Default policy: delete_file always requires approval, non-allowlisted exec requires approval, while read_file and write_file are allowed, so the tool_error variant needs no approval at all."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "None: approval_requested rows are written before any human sees the request, and the read_file variant needs no approval."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent sends one oversized tool argument and picks whichever tool gives the largest uncapped echo into the audit log.",
+   "payloads": [
+    "POST /sandboxes/sb_x/tools/read_file with a 131072-byte invalid path",
+    "POST /sandboxes/sb_x/tools/delete_file with a 262145-byte invalid path",
+    "POST /sandboxes/sb_x/tools/exec with a command of 2001 segments (10003 bytes)"
+   ],
+   "instructions": [
+    "In the approved OS-enforced sandbox (sbx v09: /target read-only on sys.path, /scratch writable, uid 65534, 512 MiB, 1 CPU, 120 s, no network, no Docker), run /scratch/v09_repro.py with /usr/bin/python3.",
+    "The script builds a real AgentBox with real AuditLog, ApprovalStore, Policy(default_policy.yaml), safe_path, SandboxManager.read_file and preview_command, faking only the Docker- and SQLite-facing SandboxManager methods (get, template_of, _require_running, _container, _expand, _walk, exists).",
+    "Call box.call_tool with each payload and read back SELECT id,actor,event,tool,length(payload) FROM audit plus length(args),length(preview) from the approvals table.",
+    "Attempt DELETE FROM audit on an oversized row, then set PRAGMA max_page_count as a deterministic full-disk stand-in and observe the next append and the following tool call."
+   ],
+   "observed_result": "tool_request stayed bounded by _logged_args: 16,543 B for the two oversized-argument requests, and roughly 10.9 KB (not capped, because it fits under the 64 KiB LOGGED_ARGS_MAX) for the 10,003-byte exec request. The other sinks were not bounded: read_file with a 131,072-byte path outside /workspace returned 400 with a 131,115-byte message and wrote a 131,142-byte tool_error row with no approval; delete_file with a 262,144-byte path outside /workspace wrote a 262,342-byte approval_requested row whose single preview note began '미리보기 실패: 허용되지 않은 경로: /etc/AAAA…' (approval row: 262,156 B args, 262,244 B preview); exec with a 10,003-byte, 2001-segment command wrote a 96,207-byte approval_requested row carrying the full 10,003-byte preview.command and 2,001 notes (approval row: 10,018 B args, 96,109 B preview). DELETE FROM audit raised 'audit log is append-only'. With the page cap as a full-disk stand-in the append raised AuditWriteError 'database or disk is full' and the following tool call failed closed with 503."
+  },
+  "remediation": {
+   "strategy": "Bound payloads at the sink and at the producers: one recursive bounder inside AuditLog.append (string truncation plus list/dict cap) applied before compute_hash so verify() stays consistent, truncate the preview command/notes/affected and the SandboxError text before they are appended, and reject oversized tool-args bodies at the route with a request_body limit in the shipped proxy as defense in depth.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/audit.py",
+     "fixed_code": "AUDIT_STR_MAX = 4096\nAUDIT_LIST_MAX = 200\n\ndef _bound(v):\n    if isinstance(v, str):\n        return v if len(v) <= AUDIT_STR_MAX else v[:AUDIT_STR_MAX] + f\"...({len(v)} bytes)\"\n    if isinstance(v, dict):\n        return {k: _bound(x) for k, x in list(v.items())[:AUDIT_LIST_MAX]}\n    if isinstance(v, list):\n        return [_bound(x) for x in v[:AUDIT_LIST_MAX]]\n    return v\n\n# in append(), before compute_hash(prev_hash, record):\npayload = _bound(self._mask(payload or {}))"
+    },
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "AUDIT_TEXT_MAX = 512\n\ndef _audit_text(s: Any) -> str:\n    t = str(s)\n    return t if len(t) <= AUDIT_TEXT_MAX else t[:AUDIT_TEXT_MAX] + f\"...({len(t)} bytes)\"\n\n# _preview failure note and exec command, before they are appended/created:\nnotes = [f\"미리보기 실패: {_audit_text(e)}\"]\npreview[\"command\"] = _audit_text(preview.get(\"command\"))\npreview[\"notes\"] = [_audit_text(n) for n in (preview.get(\"notes\") or [])][:200]\npreview[\"affected\"] = (preview.get(\"affected\") or [])[:200]\n\n# SandboxError handler:\nexcept SandboxError as e:\n    short = _audit_text(e)\n    self.log_best_effort(sid, tool, \"tool_error\", {\"request\": req_id, \"error\": short})\n    raise ServiceError(400, short) from e"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "high",
+    "reason": "One authenticated agent request per row; the read_file variant needs no approval, snapshot or concurrency, and the row size follows the request body size."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Permanent undeletable growth of the shared control-plane SQLite file; at disk-full the tool, approval and lifecycle paths fail closed with 503 and recovery needs an operator to rebuild the database and rebuild the hash chain. Not RCE or a guaranteed crash."
+   },
+   "overall_severity": "medium"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Every cited line was re-read in the audited tree (9805d91) and the decisive result was independently reproduced: 131,142 B and 262,342 B and 96,207 B rows written beside tool_request rows that are either capped at 16,543 B or small enough to sit under the 64 KiB cap, a real append-only DELETE rejection, and a fail-closed 503 after a page-capped append, with only the Docker- and SQLite-facing SandboxManager methods faked."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/service.py:delete_sandbox:racing-restore_sandbox-resurrects-deleted-record-and-revives-agent-token",
+  "title": "A restore racing a delete resurrects the deleted sandbox row and re-authorizes the agent token the delete revoked",
+  "description": "DELETE /sandboxes/{sid} and POST /sandboxes/{sid}/restore each perform an unlocked read-modify-write on the same sandboxes row. If a DELETE completes between the restore's creation of the replacement container and the restore's final status write, the delete reports success and audits 'sandbox_delete', but the restore's last write puts status='running' and the new container_id back on the row. Neither operation rewrites token_hash, and revocation is expressed only as status!='deleted', so the agt_ token the delete revoked resolves to that sid again and its tool calls execute in the replacement container. The snapshots row also survives (delete removes only images), and the running replacement keeps the snapshot image in use, so the best-effort image removal raises and is swallowed. The control plane therefore reports a completed deletion while the sandbox, its /workspace and its agent authority are live again.",
+  "root_cause": "Lifecycle operations take no per-sandbox lock and re-read nothing. Service.restore_sandbox and Service.delete_sandbox (service.py:462-475) call SandboxManager.restore and SandboxManager.delete (sandbox.py:387-401, 320-332); each reads the row once with _rec, acts, and writes status/container_id unconditionally through _set, which is a bare UPDATE with no status predicate (sandbox.py:234-237). SandboxManager.restore never checks status=='deleted', so its final _set (sandbox.py:398) overwrites the delete's status write (sandbox.py:326) and reinstates the record. Revocation of the agent token is expressed only as status!='deleted' (sandbox.py:216, 221), so the overwritten status silently re-authorizes the original token hash.",
+  "intended_behavior": "_container (sandbox.py:225-232) and the token lookups (sandbox.py:211-223) treat status=='deleted' as final: a deleted sandbox is unusable and its agent token is invalid. DELETE is the revocation contract (service.py:471-475 logs sandbox_delete, ends the desktop, deletes the container, drops captures). No later or concurrent lifecycle call may reinstate the record, re-point it at a container, or make the revoked token valid again.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 206,
+    "scope": "POST /sandboxes/{sid}/restore",
+    "description": "sync human_only route hands the client-supplied snapshot_id to box.restore_sandbox and runs in the Starlette threadpool with no serialization against other lifecycle calls"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 465,
+    "scope": "AgentBox.restore_sandbox",
+    "description": "calls SandboxManager.restore outside any lock, after end_desktop has already run"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 388,
+    "scope": "SandboxManager.restore",
+    "description": "reads the row with _rec, which returns deleted rows too, and never checks status"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 393,
+    "scope": "SandboxManager.restore",
+    "description": "force-removes the row's old container (NotFound swallowed), so the row's stale container_id no longer exists"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 397,
+    "scope": "SandboxManager.restore",
+    "description": "starts the replacement container from the snapshot image; from this point the new container exists while no lock protects the row"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 211,
+    "scope": "DELETE /sandboxes/{sid}",
+    "description": "second human request for the same sid runs as a separate threadpool worker, so delete_sandbox executes concurrently with an in-flight restore"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 326,
+    "scope": "SandboxManager.delete",
+    "description": "marks the row deleted (unconditional UPDATE), after removing the old container_id the restore already removed"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 330,
+    "scope": "SandboxManager.delete",
+    "description": "snapshot image removal fails because the restore's new running container uses the image; APIError is swallowed, so the image and its snapshots row survive"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 398,
+    "scope": "SandboxManager.restore",
+    "description": "final _set overwrites the deleted status with status='running' and the replacement container_id"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 216,
+    "scope": "SandboxManager.token_matches",
+    "description": "only rejects status=='deleted', so the original agent token hash is accepted again"
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 221,
+    "scope": "SandboxManager.sandbox_for_token",
+    "description": "resolves the revoked token back to the sid, which api.principal turns into an agent principal (api.py:121-123)"
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 462,
+    "description": "restore_sandbox ordering: log, end_desktop, sandboxes.restore, bursts.reset_timers, log - no lock is acquired, unlike call_tool's _snap_locks (service.py:281-284)"
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 471,
+    "description": "delete_sandbox ordering: log, end_desktop, sandboxes.delete, drop_captures - no lock, so it can interleave with restore"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 185,
+    "description": "_rec returns the row for any sid including deleted ones, so restore's first read succeeds after a delete"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 234,
+    "description": "_set is a bare UPDATE with no status predicate, so the restore's write cannot tell that the row was deleted"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 225,
+    "description": "_container is the intended choke point that rejects status=='deleted' for every other operation; restore bypasses it by using _rec directly"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 320,
+    "description": "delete: read row, remove container, set status='deleted', then best-effort image removal with APIError and NotFound swallowed (327-332); the snapshots rows are never deleted"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 387,
+    "description": "restore: read row, remove old container, run new container, then unconditionally set container_id and status='running'"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 211,
+    "description": "token_matches expresses revocation only as status != 'deleted'"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 218,
+    "description": "sandbox_for_token uses the same status filter, so the reauthorization reaches api.principal (api.py:121-123)"
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 126,
+    "description": "human_only requires kind=='human'; both restore (205-207) and delete (209-212) are human-only, so the agent cannot issue either request - it only benefits from their interleaving"
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authorization_role",
+    "description": "Both requests need the human token or a browser session with scope '*'; the agent never issues them, but it holds the agt_ token whose revocation DELETE implements and needs no new credential, so the failure is a revocation/TOCTOU defect rather than an attacker-triggered request."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "The DELETE must complete its row read, status write and image-removal attempt inside the window that opens when the restore's replacement container has been created (sandbox.py:397) and closes at the restore's status write (sandbox.py:398), and the restore must be preempted in that window. This window is a few milliseconds of SQLite/thread scheduling, not the whole restore: in the measured alternative schedule where the DELETE lands during the long container-start portion, the delete removes the snapshot image first, the restore then fails with ImageNotFound, and the row stays deleted with the token invalid. So the overlap is reachable but narrow."
+   },
+   {
+    "kind": "data_state",
+    "description": "The sandbox has at least one snapshot row; DELETE never removes snapshots rows (sandbox.py:327-332 only tries to remove images) and restore accepts any row of that sid."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "No special runtime or container capability is needed: the resurrection is decided entirely in the SQLite row and the token lookups. The daemon fact that matters (images.remove refusing while a running container holds the image) is what real Docker does; the harness models it, and even if the image were removed the running replacement and the surviving snapshots row would still leave the sandbox resurrected."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "Holder of the agt_ token whose authority the human tried to revoke with DELETE. It needs no new credential and takes no action: after the overlapping restore the same token maps to the sid again and its tool calls return 200. The overlap itself requires two human-issued requests (restore and delete) whose timing the agent cannot control, so this is a failed revocation contract rather than a directly attacker-triggered race.",
+   "payloads": [
+    "POST /sandboxes/sb_54e49093/restore {\"snapshot_id\": \"snap_b2f2d73f\"}  (started first)",
+    "DELETE /sandboxes/sb_54e49093  (issued while the restore is between its replacement container's creation and its final status write)",
+    "POST /sandboxes/sb_54e49093/tools/list_dir {\"args\": {\"path\": \"/workspace\"}} with Authorization: Bearer <the agt_ token DELETE was meant to revoke>"
+   ],
+   "instructions": [
+    "Bounded local harness in the approved sbx sandbox (no network, no Docker daemon): real agentbox.config.Settings, agentbox.audit.AuditLog, agentbox.approvals.ApprovalStore, agentbox.policy.Policy, agentbox.desktop.DesktopControl, agentbox.service.AgentBox and agentbox.sandbox.SandboxManager with SQLite files under /scratch, driven through AgentBox methods (no HTTP server needed; the route bodies are one-line guard calls).",
+    "Docker is replaced by a fake client that models only the daemon facts this check needs: containers.run registers name and image and refuses a duplicate container name, images.remove refuses while a running container uses the image (the real docker conflict), and running an absent image raises ImageNotFound.",
+    "Create a cli-template sandbox with an empty source dir, take one snapshot (docker commit is faked into the image set), then start box.restore_sandbox(sid, snap) on a thread whose containers.run hook parks it after the replacement container exists but before its status write. The main thread runs box.delete_sandbox(sid) to completion and then releases the restore.",
+    "Read back: sandboxes.get(sid)['status'] and container_id, sandboxes.token_matches(sid, old_token), sandboxes.sandbox_for_token(old_token) (the value api.principal turns into Principal('agent', sid)), box.call_tool(sid, 'list_dir', {'path': '/workspace'}), snapshot rows/images, and audit.list(sandbox_id=sid).",
+    "Sequential control in the same process: create, snapshot, delete, then restore - it fails with ImageNotFound and leaves status 'deleted' with the token invalid.",
+    "Alternative schedule: park the restore before the replacement container is created, then run the delete to completion and release it."
+   ],
+   "observed_result": "Race run (delete parked inside the post-create window): delete_sandbox returned without error after status had become 'deleted' and token_matches and sandbox_for_token reported the token invalid; the parked restore then returned normally. Read-back: status 'running', container_id c2 present and alive, sandboxes.token_matches(sid, old_token)=true, sandbox_for_token(old_token)=sid, snapshot rows still 1, the snapshot image still present (delete's image removal raised because c2 runs it), and box.call_tool(sid, 'list_dir', {'path': '/workspace'}) returned 200 {'status': 'executed', 'result': {'path': '/workspace', 'listing': '...'}}. Audit sequence: sandbox_created, snapshot_request, snapshot, restore_request, sandbox_delete, restored, tool_request, policy_decision, tool_result. Sequential control: ImageNotFound 'no such image: agentbox-snap:sb_9df2e832-snap_3e1280c2', final status 'deleted', token invalid. Alternative schedule (delete before the replacement container exists): delete removed the image, the restore raised ImageNotFound, final status 'deleted', token invalid - so this ordering does not resurrect and bounds the vulnerable window."
+  },
+  "remediation": {
+   "strategy": "Serialize all lifecycle transitions per sandbox and make deletion final at the point of the check. Take one per-sid lifecycle lock in AgentBox (reuse the _snap_locks map with a distinct key) around pause/resume/snapshot/restore/delete so delete and restore cannot interleave, and have SandboxManager.restore re-read the row under that lock and refuse status=='deleted' before it removes the old container or starts the replacement. The two methods below are the decisive pair for this race; the same lock should wrap pause_sandbox/resume_sandbox/snapshot_sandbox as well, since pause's unconditional _set(status='paused') has the same shape. Regression case: drive restore and delete concurrently with the harness and assert that the row is either deleted with the old token invalid and no replacement container, or still not deleted only when no delete was observed.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "    def _lifecycle_lock(self, sid: str) -> threading.Lock:\n        with self._busy_lock:\n            return self._snap_locks.setdefault(\"lifecycle:\" + sid, threading.Lock())\n\n    def restore_sandbox(self, sid: str, snap_id: str, session: str | None = _NO_SESSION) -> dict[str, Any]:\n        with self._lifecycle_lock(sid):\n            self.log_human(\"restore_request\", sid, _with_session({\"snapshot_id\": snap_id}, session))\n            self.end_desktop(sid, \"sandbox_restored\")\n            rec = self.sandboxes.restore(sid, snap_id)\n            self.bursts.reset_timers(sid)\n            self.log_human(\"restored\", sid, _with_session({\"snapshot_id\": snap_id, \"container_id\": rec[\"container_id\"]}, session))\n            return rec\n\n    def delete_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> None:\n        with self._lifecycle_lock(sid):\n            self.log_human(\"sandbox_delete\", sid, _with_session({}, session))\n            self.end_desktop(sid, \"sandbox_deleted\")\n            self.sandboxes.delete(sid)\n            self.drop_captures(sid)"
+    },
+    {
+     "file_name": "agentbox/sandbox.py",
+     "fixed_code": "    def restore(self, sid: str, snap_id: str) -> dict[str, Any]:\n        rec = self._rec(sid)\n        if rec[\"status\"] == \"deleted\":   # 삭제는 되돌릴 수 없다: 지운 샌드박스의 행·토큰은 되살리지 않는다\n            raise SandboxError(f\"삭제된 샌드박스는 되돌릴 수 없음: {sid}\")\n        snaps = {s[\"id\"]: s for s in self.list_snapshots(sid)}\n        if snap_id not in snaps:\n            raise SandboxError(f\"이 샌드박스의 스냅샷이 아님: {snap_id}\")\n        try:\n            self.client.containers.get(rec[\"container_id\"]).remove(force=True)\n        except NotFound:\n            pass\n        tpl = self.template_of(sid)\n        c = self._run_container(tpl, snaps[snap_id][\"image\"], rec[\"source_dir\"], f\"agentbox-{sid}\")\n        self._set(sid, container_id=c.id, status=\"running\")\n        if tpl.desktop:\n            self._wait_display(c)\n        return self.get(sid)"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Both endpoints are human-only (api.py:126, 205-212), so the agent cannot trigger the interleaving, and the vulnerable window is only the few milliseconds between the restore's replacement-container creation and its status write: a DELETE that lands earlier during the multi-second container start wins instead (measured: ImageNotFound, row stays deleted). It remains a real TOCTOU - the restore thread only has to be preempted once inside that window while the delete, whose slow audit write already happened at its start, finishes - but the schedule is narrow and the second human action is unusual."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Revocation is silently undone: the agt_ token invalidated by DELETE authorizes tool calls again in a replacement container started from the snapshot (workspace restored, network none, caps dropped), the snapshots row and image survive a deletion that was reported complete, and the audit log records sandbox_delete followed by restored. The authority regained is the same single-sandbox agent authority the token had before, so this is a failed revocation and retention violation rather than host compromise."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "medium",
+   "reason": "The control-plane lineage is certain and was reproduced deterministically with the real Settings/AuditLog/ApprovalStore/Policy/DesktopControl/AgentBox/SandboxManager code against SQLite: status, token, snapshot row, audit order and an executed tool call all matched. The remaining uncertainty is external: the harness models the Docker daemon, and the real width of the post-create window and the daemon's images.remove-conflict behavior were not measured on a real daemon."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/service.py:snapshot-quota:toctou-between-quota-gate-and-pre-exec-snapshot",
+  "title": "Snapshot quota is decided from one container probe, but the docker commit is triggered by a second probe that the quota does not check",
+  "description": "An agent that holds only its own sandbox's agent token can get docker commits without approval after its sandbox has reached snapshot_quota (default 50). For an ALLOW decision, _call_tool consults _over_snapshot_quota (service.py:298). That function returns False whenever _needs_snapshot is False. For write_file, _needs_snapshot runs sandboxes.exists(), an untimed `test -e` exec inside the agent's own container (service.py:236 -> sandbox.py:458-461). The ALLOW branch then calls _needs_snapshot a second time (service.py:343) and commits on that result without checking the quota again (service.py:345 -> _snapshot -> sandbox.py:355). If the target path appears between the two probes, an over-quota call that should have become REQUIRE_APPROVAL/snapshot-quota becomes an unapproved commit. The agent can make the path appear in two ways. (a) It sends an allowlisted exec `touch <path>` (default_policy.yaml:22-29; touch is on line 27) at the same time as the write. exec is not in SNAPSHOT_TOOLS (service.py:35), so call_tool does not serialize it with the write_file under _snap_locks (service.py:278-285); tool_concurrency allows 4 concurrent calls. (b) Any process running in the container toggles the path. Within one sandbox, _snap_locks only serializes write_file, delete_file and GUI_INPUT calls against each other. The pending-approval cap (PENDING_APPROVALS_MAX=20) does not stop the bypass: it only blocks the REQUIRE_APPROVAL branch. Each commit is a full docker commit of the container (sandbox.py:355-356). config.py:44-46 records why the quota exists: commit copies the whole writable layer, and the quota keeps the agent from filling host disk without a human. Snapshot images are freed only when the sandbox is deleted (sandbox.py:327-332). The marginal harm depends on deployment. With AGENTBOX_DISK set (storage_opt, sandbox.py:263-264), the writable layer is bounded and the quota is the only bound on how many copies of that layer are kept, so the bypass multiplies it without limit. With the default empty AGENTBOX_DISK (config.py:41-42), the agent can already grow the writable layer directly through repeated unapproved write_file calls (1 MiB each, config.py:55), so the bypass mainly adds amplification. Local reproduction used the real AgentBox._call_tool/call_tool, Policy.load(default_policy.yaml), AuditLog and ApprovalStore with a fake SandboxManager. Its exists() stats a real file with a modelled 20 ms probe latency, and exec touch has a modelled 20 ms latency. No Docker was used. Results with the sandbox already at quota=2: a control call on a stably existing path returned 202 pending snapshot-quota with 0 commits. Concurrent agent exec `touch /workspace/pN` started 5 ms before, together with, or 5 ms after write_file gave 20/20 write_file calls returning 200 executed with a snapshot commit each, 0 approvals and policy_decision allow (an offset of -10 ms gave 18/20; -15 ms gave 0/20). A real background thread toggling the file every 2-20 ms produced 9 over-quota commits in 40 calls (7 in an earlier run), alongside 20 pending approvals. Parent-live on the real Docker engine (agents/parent-live/artifacts/snapquota-race.json, script agents/parent-live/parent_live_snapquota.py; audited tree 9805d91 in-process, buildpack-deps:noble-curl CLI sandbox, AGENTBOX_SNAPSHOT_QUOTA=2, two manual snapshots already taken): the control overwrite of a stably existing file returned 202 pending with rule snapshot-quota and no commit, while racing an allowlisted exec `touch /workspace/pN` against write_file /workspace/pN gave 18 of 21 unapproved commits (snapshot count 2 -> 20, every winning write 200 executed with 0 new approvals). The race won 3/3 at each of six start offsets from write-first by 20 ms to exec-first by 10 ms, and lost 3/3 only when exec started 20 ms before write_file (then the first probe already sees the file and the call goes to approval).",
+  "root_cause": "_call_tool reads the same mutable, agent-controlled container state twice: once in _over_snapshot_quota through _needs_snapshot/sandboxes.exists (service.py:298 -> 248 -> 236), then again in the pre-execution _needs_snapshot (service.py:343). It does not compute one 'snapshot needed' decision and bind both the quota gate and the commit to it. The quota therefore guards only the first probe, and the commit at service.py:345 has no quota check of its own. The serialization in _snap_locks covers only SNAPSHOT_TOOLS, so agent tools outside that set (exec) and processes inside the container can change the probed state between the two reads.",
+  "intended_behavior": "Once a sandbox's snapshot_count reaches snapshot_quota, no ALLOW-path tool call may trigger another docker commit without a human approval (config.py:44-46 states the quota exists so an agent cannot fill host disk through commits without a human). The quota decision and the commit must be bound to the same 'snapshot needed' evaluation, or the commit path must re-check the quota itself.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 216,
+    "scope": "call_tool route",
+    "description": "POST /sandboxes/{sid}/tools/write_file with the agent token of that sandbox (the only check is p.sandbox_id == sid at api.py:217-218). The call is dispatched to tool_pool and runs box.call_tool (api.py:219-220)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 283,
+    "scope": "AgentBox.call_tool",
+    "description": "Only SNAPSHOT_TOOLS (write_file/delete_file/GUI_INPUT, service.py:35) take the per-sandbox snap lock. A concurrent exec from the same agent runs unlocked at line 285."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 298,
+    "scope": "AgentBox._call_tool",
+    "description": "The quota gate is evaluated only for ALLOW decisions (write_file is allowed by default: default_policy.yaml:10). Its boolean only rewrites the decision; nothing is kept for the execution step."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 248,
+    "scope": "AgentBox._over_snapshot_quota",
+    "description": "Once snapshot_count >= quota, the result is _needs_snapshot(); if the first probe says 'no snapshot', the call stays ALLOW."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 461,
+    "scope": "SandboxManager.exists",
+    "description": "First probe: untimed docker exec `test -e <path>` as the agent uid inside the agent-controlled container (called from service.py:236)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 343,
+    "scope": "AgentBox._call_tool",
+    "description": "Second _needs_snapshot evaluation on the ALLOW path. The path now exists, so it returns True; the quota is not re-checked."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 355,
+    "scope": "SandboxManager.snapshot",
+    "description": "docker commit of the whole container (pause=True), reached via service.py:345 -> _snapshot (service.py:253). The image is retained until the sandbox is deleted, and a snapshot row is inserted that pushes snapshot_count further past the quota."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 243,
+    "description": "_over_snapshot_quota compares snapshot_count with the quota and returns _needs_snapshot(); its result is used only to rewrite the decision at line 298-302."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 236,
+    "description": "write_file needs_snapshot is sandboxes.exists(path), a live probe of agent-mutable state; SandboxError is mapped to False."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 345,
+    "description": "The ALLOW branch calls _snapshot on the second evaluation and does not consult the quota."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 35,
+    "description": "SNAPSHOT_TOOLS = {write_file, delete_file} | GUI_INPUT. exec is excluded, so call_tool (278-285) never serializes it with a write_file in the same sandbox."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 316,
+    "description": "The pending-approval cap only applies on the REQUIRE_APPROVAL branch. Calls that win the race take the ALLOW branch, so a full queue (20) does not stop the bypass; in the local run, commits continued alongside 429 responses."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 383,
+    "description": "snapshot_count is COUNT(*) of snapshot rows, the only quantity the quota measures."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 458,
+    "description": "exists() runs `test -e` through exec_run with no timeout, inside the sandbox the agent controls."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 327,
+    "description": "Snapshot images are removed only in delete(); nothing prunes them earlier."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 263,
+    "description": "storage_opt size (writable-layer bound) is applied only when disk_limit is set; it is empty by default (config.py:41-42)."
+   },
+   {
+    "file": "agentbox/default_policy.yaml",
+    "line": 27,
+    "description": "touch and mkdir are in the read-only-exec allowlist (rule at 22-29), so the agent can create the path without approval; Policy.decide returns allow/read-only-exec for `touch /workspace/p1`."
+   },
+   {
+    "file": "agentbox/default_policy.yaml",
+    "line": 10,
+    "description": "default: allow; no rule targets write_file, so Policy.decide returns allow with rule_id null for write_file."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 45,
+    "description": "The source comment states the quota's purpose: docker commit copies the whole write layer each time, and the quota keeps the agent from filling host disk without a human (snapshot_quota default 50 at line 46)."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 345,
+    "description": "Parent-live: the commit at this line ran 18 times past quota=2 on the real engine with no approval row (agents/parent-live/artifacts/snapquota-race.json)."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Only the sandbox's own agent token is needed; both requests (exec touch, write_file) are agent tool calls allowed by the default policy without approval."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "exec touch must land between the two exists() probes of the same write_file call. On the real engine this held whenever write_file started first or exec led by up to 10 ms (18/18); with exec leading by 20 ms the first probe already saw the file (0/3). tool_concurrency=4 permits the two concurrent calls."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "The quota is the only bound on the number of retained commits. With AGENTBOX_DISK set (storage_opt), each commit can copy up to that writable-layer size and the bypass removes the human gate on how many copies are kept; with the default empty AGENTBOX_DISK the agent can already grow the writable layer directly through unapproved write_file calls, so the bypass is mostly amplification."
+   },
+   {
+    "kind": "data_state",
+    "description": "The sandbox must already be at snapshot_count >= snapshot_quota; below the quota commits are allowed anyway."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "An agent holding only its own sandbox's agt_ token, already at the snapshot quota, wants more docker commits without a human. It sends an allowlisted exec `touch /workspace/pN` and a write_file to the same new path at nearly the same time; when the touch lands between the quota probe and the pre-execution probe, the write is allowed and commits a snapshot past the quota.",
+   "payloads": [
+    "POST /sandboxes/{sid}/tools/exec {\"args\": {\"command\": \"touch /workspace/p1\"}}",
+    "POST /sandboxes/{sid}/tools/write_file {\"args\": {\"path\": \"/workspace/p1\", \"content\": \"x\"}}"
+   ],
+   "instructions": [
+    "Start the control plane with AGENTBOX_SNAPSHOT_QUOTA=2 and create a CLI sandbox; take two snapshots so snapshot_count == 2.",
+    "Control: overwrite an existing file with write_file and confirm 202 pending with rule snapshot-quota and no new snapshot.",
+    "For N=1..21 send the two payloads concurrently with a new path pN, varying the start offset by a few milliseconds.",
+    "Read snapshot_count (GET /sandboxes/{sid}/snapshots) and the approvals list after each pair; a bypass is write_file 200 executed, snapshot_count +1, and no approval for that request."
+   ],
+   "observed_result": "Real Docker engine, in-process control plane from the audited tree (agents/parent-live/artifacts/snapquota-race.json): control 202 pending snapshot-quota, snapshots 2 -> 2. Race: 18 of 21 write_file calls returned 200 executed with a new snapshot and 0 new approvals, taking snapshot_count from 2 to 20 at quota 2; 3/3 wins at each offset from write-first 20 ms through exec-first 10 ms, 0/3 at exec-first 20 ms (those went to 202 pending). Phase 3 sandbox harness with modelled 20 ms probes (agents/v11/artifacts/race_probe.out) gave the same shape. The sandbox and every snapshot image were removed afterwards."
+  },
+  "remediation": {
+   "strategy": "Bind the quota gate and the commit to one evaluation and re-check the quota at the commit. In _call_tool, when the pre-execution _needs_snapshot is True and snapshot_count >= snapshot_quota, do not commit: turn the call into the snapshot-quota approval request (or refuse with 409 and let the agent retry) instead of executing. Doing the check inside the per-sandbox snap lock that already serializes write_file/delete_file keeps two writes from both passing it. Add a regression test that toggles the target between the two probes and asserts no commit happens while snapshot_count >= quota.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "        assert decision.action == ALLOW\n        if self._needs_snapshot(sid, tool, args):\n            quota = self.sandboxes.settings.snapshot_quota\n            if quota > 0 and self.sandboxes.snapshot_count(sid) >= quota:\n                # 상한 확인 뒤 대상이 생겼다 (보안 검수 run-4 v11). 커밋하지 않고 승인으로 돌린다\n                raise ServiceError(409, \"스냅샷 상한에 도달함. 다시 호출하면 승인 요청으로 처리됨\")\n            try:\n                self._snapshot(sid, tool, f\"before {tool} (request {req_id})\", {\"request\": req_id})\n            ..."
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "high",
+    "reason": "The agent alone triggers it with two default-allowed tool calls; on the real engine 18 of 21 attempts won across a ±10 ms start window, with no human interaction."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "The control defeated is the human gate on retained docker commits, which config.py:44-46 documents as the host-disk protection. Each bypassed commit is retained until the sandbox is deleted. With the default empty AGENTBOX_DISK the agent can already grow disk through unapproved write_file, so the marginal harm is amplification; it becomes a host-disk exhaustion path only where a per-sandbox disk limit is set and relied on. No confidentiality or cross-sandbox integrity boundary is crossed."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Source lineage verified by the Phase 3 and Phase 5 verifiers and the decisive interleaving reproduced on the real Docker engine with the audited control-plane code (18/21), with a control that shows the quota gate works when the race is not run."
+  }
+ },
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized",
+  "title": "The shared control-character filter misses U+061C - the only Unicode Bidi_Control code point it omits - plus the Cf/Zl/Zp invisibles, and the approval card renders them raw beside the argv that will execute",
+  "description": "Source and a local render confirm a residual gap in the run-3 fix, but not its security outcome. web._shown (web.py:33-37) sends every template output through display.escape_controls with keep_newlines=True (web.py:94), and that class does neutralise the run-3 payloads: rendering the real _approvals.html through web.py's exact Jinja wiring turns U+200E/U+200F/U+202A-E/U+2066-9 into literal \\uXXXX escapes while markupsafe escapes markup. The class is hand-written (display.py:13,15) and covers 11 of the 12 Unicode Bidi_Control characters: U+061C ARABIC LETTER MARK is absent, and so are U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028 and U+2029. Measured in the approved sandbox, all of them survive raw in both the command <pre> and the affected-path cell of the same card, and cli._safe (cli.py:33-35) is byte-identical, so the terminal approval view carries the same gap rather than disagreeing with the web view. What is not established is whether any of them lets the card read as a different command in the operator's browser. U+061C is bidi class AL, a strong right-to-left character, not an isolate: on its own it cannot reverse a run of ASCII letters (they stay strong L), and its bidi effect is limited to the resolved direction of adjacent neutral punctuation sitting between two of them. U+2028/U+2029 are mandatory line breaks that would split one argv into two visual lines inside the same pre block without hiding either line, and the remaining characters are invisible rather than reordering. That leaves a display-integrity question whose answer lives in the renderer, which no surface in this audit can observe.",
+  "claimed_root_cause": "display.py:13 and display.py:15 enumerate the control and bidi characters by hand. The set is C0/C1 plus exactly Bidi_Control minus U+061C, so ALM (Bidi_Control=Yes, bidi class AL) together with the Cf invisibles U+200B-200D, U+2060, U+FEFF, U+00AD and the separators U+2028/U+2029 pass through. web._shown applies that class to every str template output (web.py:35-36, 94) and cli._safe applies it to the terminal view (cli.py:35), so both human surfaces share the residual gap; nothing else filters those characters on the path from the stored approval args to the card.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 215,
+    "scope": "call_tool (POST /sandboxes/{sid}/tools/{tool}, agent token)",
+    "description": "The lowest-trust agent principal posts an exec call whose args.command it chooses; policy.decide routes a non-allowlisted program to approval, and nothing normalises or rejects unusual code points in the string."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 324,
+    "scope": "call_tool REQUIRE_APPROVAL branch",
+    "description": "The approval is created with the agent's original args dict and the system preview (service.py:318; preview adds no affected paths for a plain echo/python3 command). approvals.py:56 persists the args with json.dumps(ensure_ascii=False), so the code points are stored as bytes the card will show and service.py:398/421 later executes."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/web.py",
+    "line": 208,
+    "scope": "approvals_view",
+    "description": "Pending approvals, including the original args and the system-computed preview paths, are listed and rendered into _approvals.html by the same view that serves both GET /ui/approvals and the approve/deny POST handlers."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/web.py",
+    "line": 94,
+    "scope": "tpl.env.finalize = _shown",
+    "description": "finalize runs _shown over every output expression, which applies escape_controls(value, keep_newlines=True) to str values only (web.py:33-37); no template uses |safe or Markup, so this hand-written class is the entire filter for the card."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/templates/_approvals.html",
+    "line": 8,
+    "scope": "exec command <pre> (and the affected-path cell at line 14)",
+    "description": "The command is emitted into <pre> without short(), so only autoescape plus display.py:13/15 apply. Locally rendered with U+061C, U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028 and U+2029 placed in the command and in an affected path, every one of them reaches the HTML raw in both cells while U+200E/U+200F/U+202A-E/U+2066-9 come out as visible \\uXXXX escapes."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/display.py",
+    "line": 13,
+    "description": "UNSAFE is [\\x00-\\x1f\\x7f-\\x9f\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]. Tested in the sandbox against the 12 code points with Bidi_Control=Yes: it matches 11 of them and does not match U+061C; it also does not match U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028 or U+2029."
+   },
+   {
+    "file": "agentbox/display.py",
+    "line": 15,
+    "description": "_UNSAFE_KEEP_NEWLINES, the variant the web UI actually uses, repeats the same class minus tab/newline, so the U+061C and Cf/Zl/Zp omissions are identical on the web path."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 35,
+    "description": "_shown returns non-str values unchanged and calls escape_controls(value, keep_newlines=True) for str; a direct escape_controls call leaves U+061C, U+200B, U+200D, U+2060, U+FEFF, U+00AD, U+2028 and U+2029 unchanged in both keep_newlines modes while escaping U+200E/U+200F/U+202A-E/U+2066-9."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 94,
+    "description": "tpl.env.finalize = _shown is the only string filter registered for the web templates (filters['short'] is added at line 93), so the card's command and path cells depend entirely on the display.py class plus markupsafe autoescape."
+   },
+   {
+    "file": "agentbox/templates/_approvals.html",
+    "line": 8,
+    "description": "The exec command is emitted into <pre> with no short() and no filter; in the local render the markup payload was escaped ('&lt;script&gt;') and the run-3 bidi set became literal escapes, while U+061C/U+200B/U+2028 stayed raw."
+   },
+   {
+    "file": "agentbox/templates/_approvals.html",
+    "line": 14,
+    "description": "Container-derived affected paths are rendered by the same finalize; the local render shows the same nine code points raw inside the path cell, so the second human-facing string on the card is equally unfiltered."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 35,
+    "description": "cli._safe is escape_controls(str(s), keep_newlines=False); measured on the same command its output is byte-identical to web._shown, so the terminal approver shares the omission and there is no web-only asymmetry left to exploit."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 126,
+    "description": "exec runs str(args.get('command','')) from the approval row loaded at service.py:398 and executed at service.py:421, so the argv keeps the exact code points the card displayed; only the display side is filtered."
+   },
+   {
+    "file": "docs/security-audit/run-3/findings.json",
+    "line": 363,
+    "description": "Calibration: the run-3 remediation text for the shared class already listed 'Optionally add U+061C to _UNSAFE', so the ALM omission was known and deliberately left optional; this record is that follow-through, not a re-opened run-3 isolate spoof."
+   }
+  ],
+  "blockers": [
+   "No browser or terminal renderer is reachable from the approved sandbox (python3 plus the repo and jinja2/fastapi only, no network, no display), so the rendered order of the residual code points cannot be observed. The local run proves the reachability half only: U+061C, U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028 and U+2029 arrive raw in the card's <pre> and path cell while the argv executed by service.decide (service.py:398,421 -> service.py:126) keeps the same code points.",
+   "The decisive fact is whether a residual code point makes the card read as a different command. U+061C is bidi class AL, a strong right-to-left character that cannot reverse ASCII letter runs; U+2028/U+2029 add a mandatory break inside the same pre block but hide nothing; U+200B-200D/U+2060/U+FEFF/U+00AD are invisible and only affect how individual characters join. Which of these, if any, yields a misstatement depends on the browser engine, the resolved base direction and the font stack, none of which the repository pins (base.html:23 sets white-space: pre-wrap and no unicode-bidi isolation).",
+   "Which browser engine versions, fonts and terminal emulator the operator actually uses is unknown to this audit, and that choice decides whether ALM and the separator characters produce any visible difference between the approved view and the executed command."
+  ],
+  "validation_plan": {
+   "local": "Already done in this run (artifact v12bidi.out): a per-code-point table (unicodedata.category, unicodedata.bidirectional, UNSAFE/_UNSAFE_KEEP_NEWLINES match) plus a render of the real _approvals.html through web.py's exact wiring (Jinja2Templates over agentbox/templates, env.finalize = web._shown, env.filters['short'] = web._short) with a command and an affected path carrying every candidate code point and an inline script tag. Result: U+061C, U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028, U+2029 raw in both cells; U+200E/U+200F/U+202A-E/U+2066-9 as literal escapes; markup escaped; cli._safe output byte-identical to web._shown. Next, still offline with dummy data: render the same fragment from a loopback static file in a local browser engine (Playwright Chromium, Firefox, WebKit) and capture the rendered line/baseline order of the pre block for payloads built only from the residual set - (a) echo 'x' + ALM + ';>' + ALM + ' ; python3 /workspace/job.py', (b) the same command with U+2028 placed before the trailing echo, (c) a ZWSP inside one option token - then compare each capture with the argv string and record whether the card states a different command. Regression, worth doing regardless of the browser result: add U+061C to both regexes in display.py plus the Cf/Zl/Zp invisibles (keeping tab/newline in the keep_newlines variant) and add a test asserting escape_controls neutralises U+061C, U+200B and U+2028 in both modes; grep shows no test currently exercises this class.",
+   "deployment": "Owner-side and non-destructive: on a dummy sandbox, queue one pending exec approval whose command contains two ALMs around a ';' and a U+2028 between two shell commands, open /ui/approvals in the operator's real browser and the same request in the terminal 'agentbox approve' view, and compare what is rendered with the exact argv returned by GET /approvals/{aid} (or the audit 'tool_execute' args). No probing of live endpoints beyond the owner's own instance."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/web.py:unauthenticated-login-failure-audit-growth",
+  "title": "Unauthenticated failed POST /login writes one permanent hash-chained audit row per attempt, with no rate limit, aggregation or retention",
+  "description": "web.py:130-140 serves POST /login with no principal and no cookie requirement. On a token mismatch it calls box.log_human(\"ui_login_failed\", None, {}) at 136; service.py:590-594 forwards that to audit.append, which takes the single process-wide audit lock, runs BEGIN IMMEDIATE, reads the previous chain hash, inserts a row and commits (audit.py:162-185). Nothing rate-limits, deduplicates, aggregates, caps or prunes these rows: api.py:113 registers _NoFraming as the only middleware, deploy/Caddyfile:4-6 reverse-proxies /login with no rate or body limit, and audit.py contains no DELETE, VACUUM or retention code. Removal is not merely unimplemented but blocked: the audit_no_delete trigger (audit.py:37-38) rejects DELETE and verify() rejects any id gap (audit.py:233-234), so pruning rows later breaks the integrity check the operator relies on. The only precondition is same_origin (web.py:132), which returns True when the Origin header is absent (api.py:131-133), so a plain HTTP client reaches the write. Locally reproduced at the ASGI layer with the real AuditLog/AgentBox/handler: one wrong-token POST added exactly 1 ui_login_failed row, 250 such POSTs added 250 durable rows at ~11.5 ms each, and 6 concurrent clients sustained ~270 rows/s while raising the latency of an ordinary agent tool_request append from ~4.6-5.5 ms to ~36-40 ms. The same handler has the inverse defect: a non-ASCII token makes secrets.compare_digest raise TypeError at web.py:134, so the request returns a bare 500 with 0 rows recorded and the client also chooses which attempts enter the chain.",
+  "root_cause": "An unauthenticated, attacker-paced durable write into the append-only security record: the failed-login path uses the same serialized hash-chained append that gates tool executions, with no per-source or global rate limit, no aggregation, and no retention or compaction for the rows it creates - and the append-only triggers plus verify()'s contiguity check leave no legitimate way to remove them afterwards.",
+  "intended_behavior": "Anonymous authentication failures should be rate-limited and aggregated before they reach the audit chain (for example one \"N failures since T\" summary per source per interval), so one unauthenticated client cannot unilaterally grow the operator's security record or monopolize the audit lock every other append and read needs; the audit store should have a documented retention/compaction scheme that keeps chain verifiability (signed checkpoints plus archived segments). A malformed credential should be compared as bytes (or rejected on an ASCII check) so it becomes a recorded 401/400 instead of an unrecorded 500.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/web.py",
+    "line": 131,
+    "scope": "POST /login form handler",
+    "description": "def login(request: Request, token: str = Form(...)) has no principal, session or cookie requirement; the only precondition is the same_origin call at 132, and same_origin (api.py:131-133) returns True when the Origin header is absent."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/web.py",
+    "line": 136,
+    "scope": "token mismatch branch",
+    "description": "A wrong token falls through the compare_digest at 134 to box.log_human(\"ui_login_failed\", None, {}) and then renders the error page at 139; a non-ASCII token raises TypeError at 134 before this line and returns 500 with nothing recorded."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 590,
+    "scope": "log_human -> audit.append",
+    "description": "log_human forwards the event to self.audit.append(actor=\"human\", event=event, sandbox_id=sid, payload=payload) at 592; an AuditWriteError would become a 503, but on success the row is durable in SQLite."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/audit.py",
+    "line": 180,
+    "scope": "INSERT INTO audit under the process-wide lock",
+    "description": "append() takes self._lock at 162, BEGIN IMMEDIATE at 163, reads the last hash at 165, inserts the row at 179-184 and commits at 185; every other audit append (including tool_request/tool_result) and every human read or verify() waits on the same lock."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/audit.py",
+    "line": 126,
+    "description": "One process-wide threading.Lock (self._lock) serializes all appends, so unauthenticated login failures share one queue with tool-call records."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 129,
+    "description": "The database runs in WAL mode; nothing bounds rows, pages or file size, and agentbox/audit.py contains no DELETE, VACUUM, retention or compaction path (grep: 0 hits for DELETE FROM audit, VACUUM, retention)."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 37,
+    "description": "The audit_no_delete trigger (37-38) aborts every DELETE, so the rows an anonymous client creates cannot be removed at all, and verify() at 233-234 rejects any gap in ids, so trimming the table breaks the integrity check."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 132,
+    "description": "The failed-login path is gated only by same_origin; api.py:131-133 returns True when the Origin header is absent, so a direct HTTP client with no cookie or Origin reaches the audit write."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 113,
+    "description": "_NoFraming is the only middleware added (app.add_middleware(_NoFraming)); there is no rate limiter, body cap or connection throttle anywhere in the FastAPI app."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 5,
+    "description": "The shipped proxy is a bare reverse_proxy agentbox:8765 with no rate_limit and no request_body directive, so the deployment adds no bound in front of /login."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 86,
+    "description": "The audit database lives at AGENTBOX_HOME/agentbox.db, and deploy/docker-compose.yml:28 bind-mounts ${AGENTBOX_HOME_DIR} from the host, so growth consumes operator-owned disk that outlives the container."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 273,
+    "description": "The human audit page calls box.audit.verify() (and api.py:273 exposes it as GET /audit/verify), which loads the entire audit table under the same lock, so attacker-added rows directly lengthen the operator's integrity check."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "None - a wrong form token and no cookie; no Origin header required."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "The control plane is reachable through the shipped Caddy proxy, and AGENTBOX_HOME/agentbox.db persists across restarts with no pruning path."
+   },
+   {
+    "kind": "data_state",
+    "description": "The audit table is append-only at the database level (audit_no_update/audit_no_delete triggers) and verify() requires contiguous ids, so rows written by an anonymous client are permanent."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "The serialized append bounds the rate (~86 rows/s from one client, ~270 rows/s with 6 concurrent clients) but never the total number of rows."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "An unauthenticated client posts the login form with a wrong token as fast as the server answers, adding one durable audit row and one acquisition of the global audit lock per request, for as long as it likes.",
+   "payloads": [
+    "POST /login HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 10\r\n\r\ntoken=nope",
+    "POST /login ... token=%C3%BCn%C3%AFcode   (compare_digest raises TypeError -> 500, 0 rows recorded)"
+   ],
+   "instructions": [
+    "In the approved sandbox, set AGENTBOX_HOME to a scratch directory and instantiate the real AuditLog(settings.db_path), Policy.load, ApprovalStore, DesktopControl and AgentBox from the audited tree; register the real web.register handler on a FastAPI app with the same_origin predicate copied verbatim from api.py:131-133. The only stand-in is box.sandboxes (web.register reads box.sandboxes.runtime at registration time), because api.build() calls docker.from_env() at sandbox.py:162 and the sandbox has no Docker socket.",
+    "Drive POST /login through fastapi.testclient.TestClient with urlencoded bodies, no cookie and no Origin header, and count rows with event='ui_login_failed' in AGENTBOX_HOME/agentbox.db before and after each request.",
+    "Repeat with a non-ASCII token (token=%C3%BCn%C3%AFcode) and compare status code and row count; then hammer the handler from 6 threads while timing ordinary audit.append calls of the shape the tool path uses and audit.list() reads."
+   ],
+   "observed_result": "Independent reproduction matched and extended the candidate: 1 wrong-token POST added exactly 1 ui_login_failed row; 250 further wrong-token POSTs added 250 rows at ~11.5 ms per request (~86/s) with no rejection, cap or 429 at any point; 6 concurrent clients reached ~270 rows/s. Latency of a normal agent tool_request audit.append rose from a 4.6-5.5 ms baseline to 36-40 ms while the login flood ran, because both take audit.py's single lock. A non-ASCII token returned 500 (TypeError: comparing strings with non-ASCII characters is not supported) and added 0 rows, so the same client can also keep its attempts out of the chain."
+  },
+  "remediation": {
+   "strategy": "Rate-limit and aggregate failed logins before the audit append: a per-client-address token bucket plus a global cap, recording a compacted 'N failures since T' summary per window instead of one row per attempt (never dropping the fact that failures happened). Give the audit store a retention scheme that preserves chain verifiability (signed checkpoints plus archived segments) so operator disk growth is bounded and auditable. Compare credentials as bytes, or reject non-ASCII input explicitly, so a malformed credential is a recorded 400/401 rather than an unrecorded 500, and keep the 'audit before action' rule intact for tool paths.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/web.py",
+     "fixed_code": "    @app.post(\"/login\", include_in_schema=False)\n    def login(request: Request, token: str = Form(...)):\n        if not same_origin(request.headers):\n            raise HTTPException(403, \"다른 출처의 요청\")\n        # 바이트로 비교한다: 비ASCII 문자열은 compare_digest가 TypeError를 내서 500이 되고,\n        # 그 실패는 감사 로그에도 안 남아 공격자가 기록 여부를 고를 수 있게 된다.\n        given = token.strip().encode(\"utf-8\", \"replace\")\n        if not secrets.compare_digest(given, human_token.encode()):\n            # 주소별 초당 몇 건만 즉시 남기고, 나머지는 세었다가 다음 창에 요약 1건으로 남긴다\n            if _login_failures.record(request.client.host if request.client else \"unknown\"):\n                try:\n                    box.log_human(\"ui_login_failed\", None, {\"aggregated\": _login_failures.dropped()})\n                except ServiceError:\n                    pass\n            return render(request, \"login.html\", error=\"사람 토큰이 아님 (에이전트 토큰으로는 들어갈 수 없습니다)\")\n        return start_session(request, \"/ui\", \"token\")"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "high",
+    "reason": "A form POST with a wrong token from any client that can reach /login; no cookie, Origin header or token knowledge required, and the Caddy deployment in front of it has no rate limit."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "Permanent, unbounded growth of the append-only audit database on operator-owned host disk with no legitimate deletion path, plus measurable contention on the single audit lock that every tool-call append and every human verify() needs (4.6-5.5 ms baseline to 36-40 ms under a 6-client flood). Per-row cost is small (~200-250 bytes and ~11.5 ms serialized), so the effect is slow disk growth and degraded audit latency rather than immediate outage."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Every trace and evidence line was re-checked in the 9805d91 tree, and both the durable one-row-per-attempt growth and the non-ASCII unrecorded 500 were reproduced locally against the real handler, service and audit code with only the Docker-backed SandboxManager stubbed."
+  }
+ }
+]

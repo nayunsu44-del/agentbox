@@ -1,0 +1,150 @@
+{
+ "proposed_verdict": "confirmed",
+ "fingerprint": "agentbox/service.py:_call_tool:needs-snapshot-gate-before-gui-lock-lets-burstless-gui-input-after-handback",
+ "title": "A GUI input queued on gui_lock across a human handback runs with no burst, so its changes get no snapshot and no gui_changes record for up to 600 s",
+ "description": "_call_tool decides whether a GUI input needs a new burst before it acquires gui_lock. While a human holds the desktop a lease exists, so needs_snapshot returns False and the input is queued on gui_lock instead of opening a burst. If the human hands the desktop back inside that gap, the queued input runs with no open burst: it writes files as uid 1001, marks its input time, and from then on needs_snapshot returns False for every later input until the interval expires, so no snapshot, no burst and no gui_changes row are produced. The agent can therefore make a series of unrecorded desktop changes whose only recovery point predates the human takeover.",
+ "root_cause": "The burst decision is taken outside the lock that serializes execution: service.py:343 evaluates _needs_snapshot (gui_bursts.py:52-63, False while a lease is present) before _run_tool acquires gui_lock at service.py:136, and the re-check under the lock (_check_control, service.py:152-161) validates only the lease and the pending-takeover marker, never burst presence. _handback_locked (service.py:528-543) releases the lease and calls forget_input inside that lock, so the queued input resumes into a state where its earlier decision premise is gone, and mark_input (service.py:139) then suppresses the next burst decision.",
+ "intended_behavior": "Every GUI input that executes must be covered by an open burst bound to a snapshot taken before that input, and each burst must close into a gui_changes record. A decision taken before waiting on a lock must be re-validated after the lock is acquired.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 215,
+   "scope": "POST /sandboxes/{sid}/tools/click|type|key",
+   "description": "Agent token; GUI tools are approval-free by design and run as uid 1001 in the desktop session."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 343,
+   "scope": "AgentBox._call_tool",
+   "description": "_needs_snapshot is evaluated here, before any lock; with a takeover lease present it returns False (gui_bursts.py:58)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 136,
+   "scope": "AgentBox._run_tool",
+   "description": "The GUI branch acquires gui_lock without a timeout, so the queued input can wait arbitrarily long."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 152,
+   "scope": "AgentBox._check_control",
+   "description": "After acquiring the lock it re-checks the lease and the pending marker only; burst presence is not part of the check."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 528,
+   "scope": "AgentBox._handback_locked",
+   "description": "The human handback releases the lease and calls forget_input while holding gui_lock, exactly in the gap."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 139,
+   "scope": "AgentBox._run_tool GUI branch",
+   "description": "The resumed input executes and calls bursts.mark_input regardless of whether a burst is open."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/gui_bursts.py",
+   "line": 62,
+   "scope": "GuiBursts.needs_snapshot",
+   "description": "The fresh input time makes the next decision False, so no burst or baseline is taken for up to gui_snapshot_interval."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/gui_bursts.py",
+   "line": 113,
+   "scope": "GuiBursts._finish",
+   "description": "No burst exists to close, so no gui_changes row is written for these changes."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/service.py",
+   "line": 343,
+   "description": "Burst decision taken before the lock."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 136,
+   "description": "gui_lock acquired afterwards without a timeout."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 152,
+   "description": "_check_control has no burst-presence condition."
+  },
+  {
+   "file": "agentbox/gui_bursts.py",
+   "line": 58,
+   "description": "needs_snapshot returns False while a lease exists, which is why the queued input skipped the burst."
+  },
+  {
+   "file": "agentbox/gui_bursts.py",
+   "line": 62,
+   "description": "mark_input fresh timestamp suppresses the following burst decision."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 528,
+   "description": "Handback releases the lease and forget_input inside the lock-held section."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "A sandbox agent token; GUI tools are approval-free by design."
+  },
+  {
+   "kind": "timing_dependency",
+   "description": "The agent GUI call must already be waiting on gui_lock when the human handback runs; keeping several GUI calls cycling widens the window, and audit-lock contention widens it further."
+  },
+  {
+   "kind": "data_state",
+   "description": "A snapshot newer than gui_snapshot_idle exists, so needs_snapshot would otherwise be False."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "An agent that wants to change the desktop without leaving a gui_changes record keeps GUI calls in flight while a human is in control, then acts immediately after the handback.",
+  "payloads": [
+   "POST /sandboxes/sb_x/tools/click {args:{x:10,y:10}} x4 while a takeover lease is held",
+   "takeover and handback by the human",
+   "POST /sandboxes/sb_x/tools/type {args:{text:...}} immediately after handback"
+  ],
+  "instructions": [
+   "Bounded local harness in the approved audit sandbox: real AgentBox, GuiBursts and DesktopControl with a fake sandbox/audit and deterministic scheduling.",
+   "Seed one click so a burst and snapshot exist; take the desktop with a lease; queue a click on gui_lock; run _handback_locked(); then issue further clicks and read bursts state, snapshot count and audit rows."
+  ],
+  "observed_result": "5 clicks created 5 files but exactly one gui_changes row (snap_1/human_takeover/created_1); needs_snapshot stayed False and the snapshot count stayed 1; the queued click and the following three returned 200 executed. The control run with an open burst logged gui_changes for the same change."
+ },
+ "remediation": {
+  "strategy": "Re-evaluate needs_snapshot after acquiring gui_lock in _run_tool, fail closed when no burst is open, and key needs_snapshot on burst presence rather than only on input timestamps. Regression test: hold the lease and the lock with an input queued, release the lease, release the lock, and assert the input is refused or opens a burst and never marks input without a burst.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/service.py",
+    "fixed_code": "with self.gui_lock:\\n    self._check_control(sid, human)\\n    if tool in GUI_INPUT and self.bursts.get(sid) is None:\\n        self._snapshot(rec, sid, tool, args)\\n        if self.bursts.get(sid) is None:\\n            raise ServiceError(503, \"GUI burst could not be opened\")"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "medium",
+   "reason": "Needs a handback inside the window while an agent GUI call is queued; keeping several GUI calls in flight makes the collision repeatable but not certain."
+  },
+  "impact": {
+   "score": "medium",
+   "reason": "Desktop changes made through the agent GUI tools become unrecorded and unrecoverable past the last snapshot, defeating the burst-level audit and recovery guarantee the N-1 mitigation rests on."
+  },
+  "overall_severity": "medium"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "Deterministic reproduction on the real AgentBox, GuiBursts and DesktopControl objects; only the sandbox and audit were faked, and the control run shows the same path records changes when a burst is open."
+ },
+ "x_proposed_by": "h-gui-race"
+}

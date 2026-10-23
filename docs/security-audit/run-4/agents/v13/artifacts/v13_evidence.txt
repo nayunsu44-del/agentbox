@@ -1,0 +1,13 @@
+one_wrong 200 rows_before (271, 271) after (272, 272) db_before 131072 db_after 135224
+fifty_total_rows (321, 321) elapsed_49 0.566 ms_each 11.55 db_after 361824
+nonascii_status 500 rows_after (321, 321) delta 0
+body_head Internal Server Error
+after_200_more (521, 521) elapsed 2.342 db 1268224 verify_ok {'ok': True, 'checked': 521, 'broken_at': None, 'reason': None} verify_s 0.0071
+bytes_per_row_est 4548.6
+read_latency_ms_under_load [0.9, 1.1, 5.5, 1.1, 1.4, 1.7, 1.5, 1.6, 1.4, 1.1]
+total_rows_final (544, 544)
+--- contention ---
+baseline_tool_append_ms [15.12, 5.12, 4.88, 4.98, 4.91, 4.66, 4.5, 6.26, 4.61, 4.69, 4.51, 4.53, 4.59, 4.57, 4.72]
+under_load_tool_append_ms [34.52, 37.34, 37.63, 37.44, 37.78, 36.24, 36.35, 39.71, 35.92, 36.55, 36.34, 37.47, 39.28, 37.38, 39.43]
+rows_created_in_~1.6s_by_6_clients 428 total 488
+append_rate_rows_per_s 267.5

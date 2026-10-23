@@ -1,0 +1,248 @@
+{
+ "settings": {
+  "snapshot_quota": 2,
+  "image": "buildpack-deps:noble-curl"
+ },
+ "control": {
+  "status": 202,
+  "body_status": "pending",
+  "rule": "snapshot-quota",
+  "snapshots_before": 2,
+  "snapshots_after": 2
+ },
+ "trials": [
+  {
+   "n": 1,
+   "exec_offset_s": -0.02,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 2,
+   "snapshots_after": 3,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 2,
+   "exec_offset_s": -0.02,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 3,
+   "snapshots_after": 4,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 3,
+   "exec_offset_s": -0.02,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 4,
+   "snapshots_after": 5,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 4,
+   "exec_offset_s": -0.01,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 5,
+   "snapshots_after": 6,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 5,
+   "exec_offset_s": -0.01,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 6,
+   "snapshots_after": 7,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 6,
+   "exec_offset_s": -0.01,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 7,
+   "snapshots_after": 8,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 7,
+   "exec_offset_s": -0.005,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 8,
+   "snapshots_after": 9,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 8,
+   "exec_offset_s": -0.005,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 9,
+   "snapshots_after": 10,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 9,
+   "exec_offset_s": -0.005,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 10,
+   "snapshots_after": 11,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 10,
+   "exec_offset_s": 0.0,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 11,
+   "snapshots_after": 12,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 11,
+   "exec_offset_s": 0.0,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 12,
+   "snapshots_after": 13,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 12,
+   "exec_offset_s": 0.0,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 13,
+   "snapshots_after": 14,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 13,
+   "exec_offset_s": 0.005,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 14,
+   "snapshots_after": 15,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 14,
+   "exec_offset_s": 0.005,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 15,
+   "snapshots_after": 16,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 15,
+   "exec_offset_s": 0.005,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 16,
+   "snapshots_after": 17,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 16,
+   "exec_offset_s": 0.01,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 17,
+   "snapshots_after": 18,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 17,
+   "exec_offset_s": 0.01,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 18,
+   "snapshots_after": 19,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 18,
+   "exec_offset_s": 0.01,
+   "exec": 200,
+   "write": 200,
+   "write_body_status": "executed",
+   "snapshots_before": 19,
+   "snapshots_after": 20,
+   "new_approvals": 0,
+   "bypass": true
+  },
+  {
+   "n": 19,
+   "exec_offset_s": 0.02,
+   "exec": 200,
+   "write": 202,
+   "write_body_status": "pending",
+   "snapshots_before": 20,
+   "snapshots_after": 20,
+   "new_approvals": 1,
+   "bypass": false
+  },
+  {
+   "n": 20,
+   "exec_offset_s": 0.02,
+   "exec": 200,
+   "write": 202,
+   "write_body_status": "pending",
+   "snapshots_before": 20,
+   "snapshots_after": 20,
+   "new_approvals": 1,
+   "bypass": false
+  },
+  {
+   "n": 21,
+   "exec_offset_s": 0.02,
+   "exec": 200,
+   "write": 202,
+   "write_body_status": "pending",
+   "snapshots_before": 20,
+   "snapshots_after": 20,
+   "new_approvals": 1,
+   "bypass": false
+  }
+ ],
+ "error": null,
+ "final_snapshot_count": 20
+}

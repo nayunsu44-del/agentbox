@@ -1,0 +1,176 @@
+{
+  "units": [
+    {
+      "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%20source_dir%20%2B%20agentbox%2Fweb.py%23POST%20%2Fui%2Fsandboxes::agentbox%2Fsandbox.py%23create%20source_dir%20overlap%20check%20%28filesystem%20identity%29%20%2B%20NonRecursive%20bind::agentbox%2Fsandbox.py%23create::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "agentbox/sandbox.py",
+        "agentbox/api.py",
+        "agentbox/web.py",
+        "agentbox/config.py",
+        "deploy/docker-compose.yml"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/sandbox.py",
+            "agentbox/config.py"
+          ],
+          "invariant": "create() rejects a source_dir that is, contains, or is contained by the agentbox data folder or the DB folder, judged by filesystem identity rather than path spelling.",
+          "method": "source",
+          "result": "overlaps() (sandbox.py:135-144) tests the resolved path and every ancestor of each side with os.path.samefile plus string equality, and create() (sandbox.py:274-282) applies it to settings.home.resolve() and settings.db_path.resolve().parent before any Docker call; src is the fully resolved path that is later bound (sandbox.py:292). settings.home defaults to ./data and holds human_token and agentbox.db (config.py:29, 84-100), so the prior run-3 root cause (string-only containment) no longer holds in source.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/sandbox.py"
+          ],
+          "invariant": "Nested host bind mounts under source_dir must not be reachable from /source when the container root copies it into /workspace.",
+          "method": "source",
+          "result": "_source_mount() (sandbox.py:127-132) emits a read-only Mount at /source with BindOptions={'NonRecursive': True}, and it is the only mount passed to containers.run (sandbox.py:243-265). The daemon therefore does not propagate submounts below source_dir and the root-side cp -a of /source/. (sandbox.py:297-301) can only copy the source directory's own tree; the run-3 v06 bind-mount-alias fix is still in force.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/web.py"
+          ],
+          "invariant": "No lower-trust principal can select source_dir; only the human administrator can.",
+          "method": "source",
+          "result": "POST /sandboxes depends on human_only (api.py:174-177, 126-129) and POST /ui/sandboxes depends on browser_human, which api.py:365 binds to screen_human (a human session with scope star, api.py:149-155). Agent tokens and per-sandbox desktop-link sessions cannot create a sandbox, so the remaining exposure of this unit is the administrator choosing a path, not a privilege boundary.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/sandbox.py",
+            "deploy/docker-compose.yml"
+          ],
+          "invariant": "The is_dir/overlaps checks must describe the same directory object that the Docker daemon will bind.",
+          "method": "source",
+          "result": "create() resolves and stats source_dir in the control-plane process (sandbox.py:275-282) and then sends that string to the host daemon (sandbox.py:243-265), which resolves it in the host mount namespace. The documented compose deployment mounts only ${AGENTBOX_HOME_DIR} at an identical path in both namespaces and states the requirement in a comment (deploy/docker-compose.yml:19-28), so any source_dir outside that root is validated against a control-plane path while the daemon copies a different host directory (for example the host /etc, /tmp or /root). Not a candidate because no lower-trust principal can supply source_dir; recorded under uncovered and hardening.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/sandbox.py"
+          ],
+          "invariant": "Prior run-3 record source_dir-overlap-guard-case-insensitive-bypass must not reproduce.",
+          "method": "local",
+          "result": "In the approved sandbox (python tools/sbx.py h-files /usr/bin/python3 /scratch/h.py; uid 65534, /target read-only, no network) the scratch filesystem proved case-insensitive: is_dir of the lowercase spelling of a CaseDir directory is true and both spellings share one inode. With data=/scratch/fixture/Users/Me/proj/data and the alias /scratch/fixture/users/me/proj, the path strings differ, os.path.samefile(alias, proj) is true, and overlaps(alias, data) returned true without any patching, so the guard now rejects exactly the spelling variant that bypassed run-3. The same run recorded overlaps()==false for an unstat-able alias (the OSError branch is fail-open, but create()'s is_dir() rejects such a source first) and the produced Mount dict with NonRecursive true.",
+          "artifact": "agents/h-files/artifacts/h.out"
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "agentbox%2Fapi.py%23tools%20read_file%2Fwrite_file%2Fdelete_file%2Flist_dir%20%2B%20POST%20files%20%2B%20GET%20outbox::agentbox%2Fsandbox.py%23safe_path%20%2B%20_workspace_path%20%2B%20clean_name%20%2B%20FIFO%20guard::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "agentbox/sandbox.py",
+        "agentbox/sandbox_common.py",
+        "agentbox/api.py",
+        "agentbox/service.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/sandbox.py"
+          ],
+          "invariant": "safe_path() confines every agent-supplied path to /workspace or /source after normalization and rejects prefix and traversal tricks.",
+          "method": "source",
+          "result": "safe_path() (sandbox.py:147-156) strips, prefixes relative paths with /workspace, applies posixpath.normpath, then accepts only exact root equality or root plus a slash. normpath is lexical and does not resolve symlinks, which is deliberate; the resulting path is later used only by execs that run as AGENT_UID, so a symlinked component can reach only paths the agent already reaches with exec inside its own container.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/sandbox.py"
+          ],
+          "invariant": "write_file()/delete_file() cannot target /source or /workspace itself, so the read-only source bind cannot be written or unlinked through the file tools.",
+          "method": "source",
+          "result": "_workspace_path() (sandbox.py:452-456) re-runs safe_path and rejects both /workspace itself and anything not under the workspace prefix; it is the only path gate for write_file (sandbox.py:466) and delete_file (sandbox.py:480), while read-only operations (read_file/list_dir/exists/is_dir) intentionally accept /source (sandbox.py:428-461).",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/sandbox.py",
+            "agentbox/sandbox_common.py"
+          ],
+          "invariant": "FIFO/symlink guards plus a container-side timeout keep untrusted container objects from pinning a control-plane thread on the read, outbox and listing paths.",
+          "method": "source",
+          "result": "read_file() requires the target to be a regular file and reads with head -c limit+1 under _timed(30s) with kill_after=2 (sandbox.py:434-450; _timed at sandbox_common.py:19-21). outbox_read() rejects a symlinked outbox and a symlink or non-regular target under the same timeout (sandbox.py:537-554); outbox_list() refuses a symlinked outbox and lists only -type f with a NUL-delimited printf format (sandbox.py:525-535); delete_file() refuses real directories while unlinking symlinks rather than their targets (sandbox.py:478-486). Residual noted in hardening: _write_chunks() writes with a shell redirect and has no container-side timeout (sandbox.py:489-501), but its tmp names carry 3-4 random bytes and must already exist as a FIFO before the open, so it is not a practical stall.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/sandbox.py"
+          ],
+          "invariant": "The file tools run with the same uid 1000 identity as agent exec and only against the sandbox that the presented token belongs to.",
+          "method": "source",
+          "result": "Every file exec passes user=AGENT_UID (1000:1000, sandbox.py:34, 428-546), exactly the capability the agent already has through exec, so the /workspace-or-/source rule is a usability guard and the container remains the isolation boundary. api.py:215-221 additionally rejects an agent token whose sandbox_id differs from the URL sid, so no file tool can reach another sandbox's /workspace or /source.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/sandbox.py",
+            "agentbox/service.py"
+          ],
+          "invariant": "clean_name() prevents traversal and shell/argument injection for human- and agent-supplied names on upload and outbox download.",
+          "method": "source",
+          "result": "clean_name() (sandbox.py:44-49) rejects empty, dot, dot-dot, any control character, slash, backslash and names over 200 bytes; it is applied at the human boundary (service.py:478-496) and again in sandbox.upload()/outbox_read() (sandbox.py:509, 539). Names are never interpolated into a command string: they are passed as separate argv elements (sandbox.py:497-498, 542-545 use positional $1/$2) or after an end-of-options marker (sandbox.py:472, 515), so quotes, leading dashes and bidi characters cannot alter the command line.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-files",
+          "reviewed_paths": [
+            "agentbox/sandbox.py"
+          ],
+          "invariant": "Observed behaviour of the path and name gates for traversal, double-slash, prefix, case and control-character inputs.",
+          "method": "local",
+          "result": "Sandboxed harness output (agents/h-files/artifacts/h.out): safe_path rejects /workspace/../etc/passwd, //workspace/x (normpath keeps the double slash), /workspaceevil, /WORKSPACE/x and x/../../etc/passwd; it maps a to /workspace/a, empty and spaces-only to /workspace, and /workspace/./a/../b to /workspace/b. _workspace_path rejects /source/x, /workspace and /workspace/../source/y. clean_name rejects dot, dot-dot, a/b, a backslash b, a-NUL-b, a-newline-b and a 201-byte name, accepts a 200-byte name, and accepts a name with U+202E, -rf, a pair of quotes, three dots and .hidden (display-only concern, see hardening). _source_mount returned Type=bind, Target=/source, ReadOnly=true, BindOptions={'NonRecursive': True}.",
+          "artifact": "agents/h-files/artifacts/h.out"
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [],
+  "hardening": [
+    "overlaps() (agentbox/sandbox.py:139-144) treats an OSError from os.path.samefile as not-the-same-directory, so an alias it cannot stat passes the guard. This is not reachable as a bypass today because create() has already required src.is_dir(), but the branch should fail closed (raise SandboxError) so the check cannot silently degrade.",
+    "In the compose deployment the copy source is resolved by the host daemon, not by the process that validated it: only ${AGENTBOX_HOME_DIR} is mounted at an identical path (deploy/docker-compose.yml:26-28). Recommend a configured, deliberately bind-mounted source root and rejecting any source_dir outside it, instead of validating arbitrary paths in the control-plane image namespace.",
+    "safe_path() (agentbox/sandbox.py:147-156) is lexical. Its safety rests on the file tools running as AGENT_UID, the same authority as agent exec; that invariant should be asserted or documented, because running any of these tools as container root would turn a /workspace symlink component into a host file read/write.",
+    "clean_name() accepts Unicode bidi/format characters and leading dots and dashes. Quotes and dashes are safe at the argv layer, but a name such as U+202E followed by an reversed extension renders deceptively in the outbox list and the audit timeline (display is peer-owned by h-webui); consider rejecting the Cf category for names shown back to humans.",
+    "_write_chunks() (agentbox/sandbox.py:489-501) opens its random tmp path with a shell redirect and no container-side timeout, unlike read_file/outbox_read. A pre-existing FIFO at that name would block the calling thread forever; the tmp suffix (token_hex(3) for write_file, token_hex(4) for upload) makes that impractical today, so wrapping the write in _timed() would close the class cheaply.",
+    "import_file() (agentbox/service.py:483-490) checks is_dir()/exists() and then uploads in a separate exec, so an agent that swaps a directory into place between the check and the move redirects the upload into that directory. The destination is the agent's own /workspace and the bytes still land, so impact is confined to the agent's own files; a single-exec test-and-move or an exclusive create would remove the gap.",
+    "list_dir()/exists()/is_dir()/outbox_list() (agentbox/sandbox.py:425-461, 525-535) still run exec_run with no container-side timeout and full buffering. That is acceptable here (those commands cannot block on container-controlled input) and the unbounded-buffering limit is owned by h-queue; only the FIFO-capable read paths needed the _timed() guard."
+  ],
+  "uncovered": [
+    {
+      "surface": "agentbox/api.py#POST /sandboxes and agentbox/web.py#POST /ui/sandboxes source_dir validation in compose mode",
+      "boundary": "control-plane mount namespace versus host mount namespace: create() stats source_dir inside the agentbox container while the Docker daemon binds the same string in the host namespace",
+      "subsystem": "agentbox/sandbox.py#create + deploy/docker-compose.yml",
+      "attack_class": "CLOUD-AND-DEPLOYMENT.md#Secret exposure across workload boundaries",
+      "starting_paths": [
+        "agentbox/sandbox.py",
+        "deploy/docker-compose.yml"
+      ],
+      "reason": "The is_dir()/overlaps() checks are only meaningful if the validated path denotes the same directory on the host. deploy/docker-compose.yml:19-28 mounts ${AGENTBOX_HOME_DIR} at an identical path and nothing else, so for any other source_dir the control plane validates a path inside its own image (for example /etc, /tmp or /root) and the daemon then copies the host's directory of that name into /workspace with a root-side cp -a under DAC_OVERRIDE, which can hand the agent host files the administrator never selected. Only the holder of the human token can supply source_dir, so this is not a privilege boundary crossing and is not a candidate here, but it is an unstated deployment precondition (host path equals control-plane path) that no assigned or peer-owned unit covers, and it needs its own unit with a rendered compose topology to settle."
+    }
+  ],
+  "artifacts_to_promote": [
+    "h.out",
+    "h.py"
+  ]
+}

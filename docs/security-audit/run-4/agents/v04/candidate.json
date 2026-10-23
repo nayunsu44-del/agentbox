@@ -1,0 +1,88 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+ "title": "list_dir, outbox listing, preview glob expansion and screenshots buffer unbounded container output in the control plane",
+ "description": "exec is bounded on purpose (_Head keeps 64 KiB) and read_file, outbox_read and workspace_manifest add caps or container-side timeouts, but four sibling readers take the whole stream: list_dir runs ls -la through exec_run with no timeout and no head -c, outbox_list runs an unbounded find -printf, the approval preview _expand materialises every glob match, and screenshot cats a container path and buffers everything before checking the PNG magic. Output size is chosen by code inside the sandbox, so control-plane memory grows with container-controlled data, and on the capture path those bytes are also written to host disk.",
+ "claimed_root_cause": "The _Head/_OUT_LIMIT discipline and the container-side _timed plus head -c discipline were applied reader by reader, and four readers that consume attacker-selected container output were left with an unbounded exec_run read (sandbox.py:428,534,560 and sandbox_desktop.py:86-88).",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 216,
+   "scope": "POST /sandboxes/{sid}/tools/{tool}",
+   "description": "Agent-token route; list_dir and screenshot are allowed by the default policy, so they run with no approval and no snapshot."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 350,
+   "scope": "AgentBox._run_tool",
+   "description": "Dispatches list_dir and screenshot to SandboxManager on a tool_pool thread."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 318,
+   "scope": "_preview for exec",
+   "description": "Runs sandboxes.preview before the approval exists, so _expand stream reading happens even if the human denies it."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox.py",
+   "line": 428,
+   "scope": "SandboxManager.list_dir exec_run",
+   "description": "The whole ls -la stream is read into the control plane with no byte cap and no timeout; _truncate only shortens the value after the peak has already been allocated."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 95,
+   "description": "_Head keeps only _OUT_LIMIT+1 bytes of exec output, the control these siblings do not use."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 428,
+   "description": "list_dir exec_run without _timed and without head -c."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 534,
+   "description": "outbox_list find -printf output is fully buffered and parsed afterwards."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 560,
+   "description": "_expand shell glob output is fully buffered; the caller materialises the entire match list."
+  },
+  {
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 86,
+   "description": "screenshot cats the shot path with a 15 s timeout but no byte cap."
+  },
+  {
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 89,
+   "description": "The PNG magic and exit-code checks run only after the full read."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 377,
+   "description": "Counter-example: workspace_manifest is wrapped in _timed and head -c."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 328,
+   "description": "Capture PNGs are written to the host captures directory with no size check."
+  }
+ ],
+ "blockers": [
+  "The decisive memory growth happens inside the Docker SDK exec stream reader; the approved audit sandbox has no Docker daemon or socket, so a real container output stream cannot be produced or measured locally.",
+  "The screenshot amplification additionally needs uid 1001 to replace /home/desktop/.cache/agentbox-shot.png with a symlink to /dev/zero, which requires the live agentbox-desktop image."
+ ],
+ "validation_plan": {
+  "local": "Parent Phase 3 with a disposable Docker-backed sandbox: create 200000 files under /workspace with allowlisted touch batches, call list_dir on /workspace with a dummy agent token, and record control-plane RSS before and after with the returned listing size; then send one rm /workspace/* exec request and record the preview expansion cost; then in a desktop sandbox symlink the shot path to /dev/zero and record RSS and the size of the file created under captures.",
+  "deployment": "Owner-observed on the compose stack: watch the agentbox container memory while a dummy agent lists a 200k-entry directory and compare the peak with the same agent running exec (stays at 64 KiB), then watch captures during a pending-approval burst."
+ },
+ "x_proposed_by": "h-queue"
+}

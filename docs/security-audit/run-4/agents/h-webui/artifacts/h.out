@@ -1,0 +1,164 @@
+{
+ "build": "ok",
+ "http_origin_matrix": {
+  "GET /login": {
+   "status": 200,
+   "xfo": [
+    "SAMEORIGIN"
+   ],
+   "csp": [
+    "frame-ancestors 'self'"
+   ],
+   "cache": [
+    "no-store"
+   ]
+  },
+  "GET /ui (no session)": {
+   "status": 303,
+   "xfo": [
+    "SAMEORIGIN"
+   ],
+   "csp": [
+    "frame-ancestors 'self'"
+   ],
+   "location": [
+    "/login"
+   ]
+  },
+  "GET /sandboxes/{sid}/desktop (no session)": {
+   "status": 401,
+   "xfo": [
+    "SAMEORIGIN"
+   ],
+   "csp": [
+    "frame-ancestors 'self'"
+   ]
+  },
+  "GET /ui/approvals (fragment, no session)": {
+   "status": 401,
+   "xfo": [
+    "SAMEORIGIN"
+   ]
+  },
+  "POST /login same scheme+netloc": {
+   "status": 200,
+   "rejected_403": false
+  },
+  "POST /login DIFFERENT scheme, same netloc": {
+   "status": 200,
+   "rejected_403": false
+  },
+  "POST /login different netloc": {
+   "status": 403,
+   "rejected_403": true
+  },
+  "POST /login Origin: null": {
+   "status": 403,
+   "rejected_403": true
+  },
+  "POST /login no Origin": {
+   "status": 200,
+   "rejected_403": false
+  },
+  "POST /login userinfo trick": {
+   "status": 403,
+   "rejected_403": true
+  }
+ },
+ "cross_scheme_cookie_cases": {
+  "GET /ui with valid cookie": {
+   "status": 200
+  },
+  "POST /ui/approvals/{aid}/approve CROSS-SCHEME origin + valid cookie": {
+   "status": 200,
+   "rejected_403": false,
+   "body_has_error_text": true
+  },
+  "POST /ui/approvals/{aid}/approve foreign origin + valid cookie": {
+   "status": 403,
+   "rejected_403": true
+  },
+  "POST /ui/sandboxes CROSS-SCHEME origin + valid cookie": {
+   "raised": "AttributeError",
+   "detail": "'FakeClient' object has no attribute 'images'",
+   "note": "reaching the handler means the origin gate passed; docker is stubbed"
+  },
+  "POST /logout CROSS-SCHEME origin + valid cookie": {
+   "status": 303,
+   "set_cookie": [
+    "agentbox_session=\"\"; expires=Fri, 23 Oct 2026 06:30:44 GMT; Max-Age=0; Path=/; SameSite=lax"
+   ]
+  },
+  "GET /ui after that logout (same cookie)": {
+   "status": 303,
+   "location": [
+    "/login"
+   ]
+  },
+  "POST /logout CROSS-SCHEME origin + NO cookie": {
+   "status": 303,
+   "set_cookie": [
+    "agentbox_session=\"\"; expires=Fri, 23 Oct 2026 06:30:44 GMT; Max-Age=0; Path=/; SameSite=lax"
+   ]
+  }
+ },
+ "render": {
+  "raw_RLO_present": false,
+  "escaped_RLO_present": true,
+  "raw_LRI_present": false,
+  "escaped_LRI_present": true,
+  "raw_LRM_present": false,
+  "escaped_LRM_present": true,
+  "raw_ALM_present": true,
+  "escaped_ALM_present": false,
+  "raw_ZWSP_present": true,
+  "raw_LS_present": true,
+  "html_autoescaped_script": true,
+  "raw_script_tag": false,
+  "command_cell": "될 명령 <span class=\"mut\">(작업 폴더 /workspace)</span>:</div><pre>echo SAFE\\u202ex\\u2066y\\u200ez؜Q​W &lt;script&gt;alert(1)&lt;/script&gt;</pre>\n  \n  \n  <div>시스템이 계산한 영향 (1건):</div>\n  <table><tr><td class=\"del\" style=\"width:40%\">삭제</td><td class=\"mono\">/workspace/؜out.txt</td></tr></table>\n  \n  \n  \n  <p class=\"mut\" style=\"fo"
+ },
+ "escape_table_web_keep_newlines": {
+  "U+0009_tab": "RAW",
+  "U+001B_ESC": "ESCAPED",
+  "U+007F_DEL": "ESCAPED",
+  "U+0085_NEL": "ESCAPED",
+  "U+00AD_SHY": "RAW",
+  "U+061C_ALM": "RAW",
+  "U+200B_ZWSP": "RAW",
+  "U+200C_ZWNJ": "RAW",
+  "U+200D_ZWJ": "RAW",
+  "U+200E_LRM": "ESCAPED",
+  "U+200F_RLM": "ESCAPED",
+  "U+2028_LS": "RAW",
+  "U+2029_PS": "RAW",
+  "U+202A_LRE": "ESCAPED",
+  "U+202C_PDF": "ESCAPED",
+  "U+202E_RLO": "ESCAPED",
+  "U+2060_WJ": "RAW",
+  "U+2066_LRI": "ESCAPED",
+  "U+2069_PDI": "ESCAPED",
+  "U+FEFF_BOM": "RAW"
+ },
+ "escape_table_terminal": {
+  "U+0009_tab": "ESCAPED",
+  "U+001B_ESC": "ESCAPED",
+  "U+007F_DEL": "ESCAPED",
+  "U+0085_NEL": "ESCAPED",
+  "U+00AD_SHY": "RAW",
+  "U+061C_ALM": "RAW",
+  "U+200B_ZWSP": "RAW",
+  "U+200C_ZWNJ": "RAW",
+  "U+200D_ZWJ": "RAW",
+  "U+200E_LRM": "ESCAPED",
+  "U+200F_RLM": "ESCAPED",
+  "U+2028_LS": "RAW",
+  "U+2029_PS": "RAW",
+  "U+202A_LRE": "ESCAPED",
+  "U+202C_PDF": "ESCAPED",
+  "U+202E_RLO": "ESCAPED",
+  "U+2060_WJ": "RAW",
+  "U+2066_LRI": "ESCAPED",
+  "U+2069_PDI": "ESCAPED",
+  "U+FEFF_BOM": "RAW"
+ }
+}

@@ -1,0 +1,4 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/service.py:snapshot-quota:toctou-between-quota-gate-and-pre-exec-snapshot"
+}

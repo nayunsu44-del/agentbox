@@ -1,0 +1,7 @@
+﻿head len: 16384 | head ends with dsn: True
+password in head: True
+password survives masking after truncation: True
+same dsn masked when not truncated: True
+dict keys masked: ['password=hunter2']
+log_best_effort swallowed AuditWriteError | append attempts: 1
+log_best_effort PROPAGATED RuntimeError (append attempts 1 )

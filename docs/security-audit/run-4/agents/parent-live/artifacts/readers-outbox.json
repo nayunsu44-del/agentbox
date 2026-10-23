@@ -1,0 +1,9 @@
+{
+ "mode": "outbox",
+ "rlimit_as_bytes": 3221225472,
+ "entries": 200000,
+ "seconds": 2.43,
+ "vmhwm_before_kib": 55788,
+ "vmhwm_after_kib": 148124,
+ "vmhwm_delta_mib": 90.2
+}

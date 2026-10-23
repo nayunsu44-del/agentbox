@@ -1,0 +1,109 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process",
+ "title": "GUI burst stray kill spares any uid-1001 process whose pid is named in the client-declared _NET_WM_PID window list",
+ "description": "When a GUI burst closes, GuiBursts stops the uid-1001 processes that appeared during the burst so that GUI-launched background work cannot keep changing /workspace outside the policy and outside any gui_changes record. Whether a process counts as a windowed app is decided from window_pids, which desktop_processes fills with the decimal output of xdotool getwindowpid. That is the _NET_WM_PID property, which the X client sets itself; nothing binds the spared pid to a window or to the client that owns it. A uid-1001 process in the desktop session can therefore map a one-pixel titled window and set its _NET_WM_PID to the pid of a second process that has no window at all, and that second process survives every burst close while continuing to write /workspace between bursts, where no manifest diff observes it.",
+ "claimed_root_cause": "The stray-kill exemption is derived from container-declared X window metadata instead of a control-plane-verifiable link. sandbox_desktop.desktop_processes (sandbox_desktop.py:59-61) turns every decimal token printed by xdotool getwindowpid into a window pid, gui_state.gui_strays (gui_state.py:85-86) spares a new uid-1001 process when its pid or a new ancestor pid is in that set, and gui_bursts._stop_strays (gui_bursts.py:83-85) then kills only the remaining pids. Because _NET_WM_PID is written by the X client and any desktop-session process can reach the display (images/desktop/agentbox-desktop-start:19-21,30,38), the attacker chooses which of its processes are treated as windowed apps, so the burst-end kill no longer bounds what keeps running.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 215,
+   "scope": "POST /sandboxes/{sid}/tools/{tool}",
+   "description": "The agent (agt_ token, prompt-injectable) sends click/type to a desktop sandbox. GUI input is policy-free by design and executes as uid 1001 in the desktop session (sandbox_desktop.py:45-47, 94-129)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 343,
+   "scope": "AgentBox._call_tool",
+   "description": "_needs_snapshot is true for GUI input, so _snapshot (250-265) takes the recovery snapshot and opens a burst whose baseline is the workspace manifest plus the current pid set (gui_bursts.py:65-77)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 148,
+   "scope": "AgentBox._run_tool (type)",
+   "description": "The typed command runs in the desktop session as uid 1001 and starts a background process that never opens a window, staying in the baseline session id."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/gui_bursts.py",
+   "line": 120,
+   "scope": "GuiBursts._finish",
+   "description": "When the burst closes (close_idle, gui_bursts.py:137-155) the strays are collected and killed before the closing manifest is read."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 59,
+   "scope": "DesktopTools.desktop_processes",
+   "description": "window_pids is the set of decimal tokens of xdotool getwindowpid for every visible named window, i.e. the client-declared _NET_WM_PID values; any integer is accepted and no window ownership is verified."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/gui_state.py",
+   "line": 85,
+   "scope": "gui_strays",
+   "description": "A new uid-1001 process is spared when its pid is in window_pids, or when a new ancestor pid is, regardless of which process actually owns that window."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/gui_bursts.py",
+   "line": 85,
+   "scope": "GuiBursts._stop_strays",
+   "description": "kill_processes receives only the unexempted pids, so the attacker's daemon survives the burst and keeps modifying /workspace between bursts, where no burst baseline or diff observes it."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/gui_state.py",
+   "line": 85,
+   "description": "The windowed test reads only window_pids (client-declared) plus a new-windowed-ancestor heuristic; there is no binding between the spared pid and the window's owning client."
+  },
+  {
+   "file": "agentbox/gui_state.py",
+   "line": 80,
+   "description": "The only other exemptions are baseline pids, pid 1, non-1001 uids and from_exec, so for a same-session process the window test is the sole gate."
+  },
+  {
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 53,
+   "description": "The docstring states the window set is the _NET_WM_PID of visible windows, which X clients write themselves."
+  },
+  {
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 59,
+   "description": "xdotool getwindowpid output is split and filtered by isdigit only; nothing checks that the pid owns a window or is the declaring client."
+  },
+  {
+   "file": "images/desktop/agentbox-desktop-start",
+   "line": 20,
+   "description": "Xvfb and the Xfce session are started as the desktop account (uid 1001) via setpriv, so any process in that session can connect to :0 and set window properties."
+  },
+  {
+   "file": "images/desktop/agentbox-desktop-start",
+   "line": 38,
+   "description": "startxfce4 runs as the desktop account, which is the identity the agent's typed GUI input inherits."
+  },
+  {
+   "file": "agentbox/gui_bursts.py",
+   "line": 80,
+   "description": "The stated purpose of the kill is to stop work that would otherwise keep changing files outside policy after the burst ends, which this exemption defeats."
+  },
+  {
+   "file": "agentbox/gui_bursts.py",
+   "line": 88,
+   "description": "Only the selected pids are logged as gui_processes_stopped, so a spared daemon leaves no failure record and the absent pid is the only hint."
+  }
+ ],
+ "blockers": [
+  "The decisive platform step - a uid-1001 X client setting _NET_WM_PID to another process's pid and xdotool getwindowpid reporting it - needs a live X server. The approved sandbox has no X server, no Xvfb and no X11 client library, so the property-trust step cannot be observed locally.",
+  "Observing the spared daemon after a real idle close needs the Docker-backed desktop container (docker exec for ps, xdotool, kill and the socat/x11vnc relay); the sandbox forbids the Docker daemon."
+ ],
+ "validation_plan": {
+  "local": "In a disposable desktop-image container with network none, start the desktop, then as the desktop account run a helper that maps a 1x1 titled window and sets _NET_WM_PID to the pid of a second 'sleep 300' process started with & (same session id, no window). With the audited tree, call SandboxManager.desktop_processes(sid) and gui_state.gui_strays(procs, wins, baseline=current pids minus the daemon) and assert the daemon pid is absent from the result while the same call with wins=set() contains it; then call kill_processes(sid, result) and assert the daemon is still running.",
+  "deployment": "Owner-observed on a disposable desktop sandbox with dummy files: drive the agent's type/click to start 'nohup sh -c \"sleep 300\" &' plus the window helper before AGENTBOX_GUI_SNAPSHOT_IDLE (60 s) elapses, then read GET /audit: the gui_processes_stopped record for that close must omit the daemon pid and an exec ps must still show it running, with no later gui_changes row for its writes. Audit reads only; the process and files are dummy."
+ },
+ "x_proposed_by": "h-gui-burst"
+}

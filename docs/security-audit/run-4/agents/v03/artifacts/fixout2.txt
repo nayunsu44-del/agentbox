@@ -1,0 +1,5 @@
+D0 verify full: True 10
+D1 after deleting ids 1..6: ok=False checked=0 broken_at=7 reason=id가 1 다음에 7로 건너뜀 (항목 삭제 의심)
+D2 rows left: 4
+D3 after deleting every row: ok=True checked=0 broken_at=None reason=None
+F NOT-RAISED (append still succeeded)

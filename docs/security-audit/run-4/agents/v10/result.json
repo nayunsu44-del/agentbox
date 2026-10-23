@@ -1,0 +1,209 @@
+{
+ "decision": "confirmed",
+ "record": {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/service.py:delete_sandbox:racing-restore_sandbox-resurrects-deleted-record-and-revives-agent-token",
+  "title": "A restore racing a delete resurrects the deleted sandbox row and re-authorizes the agent token the delete revoked",
+  "description": "DELETE /sandboxes/{sid} and POST /sandboxes/{sid}/restore each perform an unlocked read-modify-write on the same sandboxes row. If a DELETE completes between the restore's creation of the replacement container and the restore's final status write, the delete reports success and audits 'sandbox_delete', but the restore's last write puts status='running' and the new container_id back on the row. Neither operation rewrites token_hash, and revocation is expressed only as status!='deleted', so the agt_ token the delete revoked resolves to that sid again and its tool calls execute in the replacement container. The snapshots row also survives (delete removes only images), and the running replacement keeps the snapshot image in use, so the best-effort image removal raises and is swallowed. The control plane therefore reports a completed deletion while the sandbox, its /workspace and its agent authority are live again.",
+  "root_cause": "Lifecycle operations take no per-sandbox lock and re-read nothing. Service.restore_sandbox and Service.delete_sandbox (service.py:462-475) call SandboxManager.restore and SandboxManager.delete (sandbox.py:387-401, 320-332); each reads the row once with _rec, acts, and writes status/container_id unconditionally through _set, which is a bare UPDATE with no status predicate (sandbox.py:234-237). SandboxManager.restore never checks status=='deleted', so its final _set (sandbox.py:398) overwrites the delete's status write (sandbox.py:326) and reinstates the record. Revocation of the agent token is expressed only as status!='deleted' (sandbox.py:216, 221), so the overwritten status silently re-authorizes the original token hash.",
+  "intended_behavior": "_container (sandbox.py:225-232) and the token lookups (sandbox.py:211-223) treat status=='deleted' as final: a deleted sandbox is unusable and its agent token is invalid. DELETE is the revocation contract (service.py:471-475 logs sandbox_delete, ends the desktop, deletes the container, drops captures). No later or concurrent lifecycle call may reinstate the record, re-point it at a container, or make the revoked token valid again.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 206,
+    "scope": "POST /sandboxes/{sid}/restore",
+    "description": "sync human_only route hands the client-supplied snapshot_id to box.restore_sandbox and runs in the Starlette threadpool with no serialization against other lifecycle calls"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 465,
+    "scope": "AgentBox.restore_sandbox",
+    "description": "calls SandboxManager.restore outside any lock, after end_desktop has already run"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 388,
+    "scope": "SandboxManager.restore",
+    "description": "reads the row with _rec, which returns deleted rows too, and never checks status"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 393,
+    "scope": "SandboxManager.restore",
+    "description": "force-removes the row's old container (NotFound swallowed), so the row's stale container_id no longer exists"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 397,
+    "scope": "SandboxManager.restore",
+    "description": "starts the replacement container from the snapshot image; from this point the new container exists while no lock protects the row"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 211,
+    "scope": "DELETE /sandboxes/{sid}",
+    "description": "second human request for the same sid runs as a separate threadpool worker, so delete_sandbox executes concurrently with an in-flight restore"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 326,
+    "scope": "SandboxManager.delete",
+    "description": "marks the row deleted (unconditional UPDATE), after removing the old container_id the restore already removed"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 330,
+    "scope": "SandboxManager.delete",
+    "description": "snapshot image removal fails because the restore's new running container uses the image; APIError is swallowed, so the image and its snapshots row survive"
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 398,
+    "scope": "SandboxManager.restore",
+    "description": "final _set overwrites the deleted status with status='running' and the replacement container_id"
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 216,
+    "scope": "SandboxManager.token_matches",
+    "description": "only rejects status=='deleted', so the original agent token hash is accepted again"
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 221,
+    "scope": "SandboxManager.sandbox_for_token",
+    "description": "resolves the revoked token back to the sid, which api.principal turns into an agent principal (api.py:121-123)"
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 462,
+    "description": "restore_sandbox ordering: log, end_desktop, sandboxes.restore, bursts.reset_timers, log - no lock is acquired, unlike call_tool's _snap_locks (service.py:281-284)"
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 471,
+    "description": "delete_sandbox ordering: log, end_desktop, sandboxes.delete, drop_captures - no lock, so it can interleave with restore"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 185,
+    "description": "_rec returns the row for any sid including deleted ones, so restore's first read succeeds after a delete"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 234,
+    "description": "_set is a bare UPDATE with no status predicate, so the restore's write cannot tell that the row was deleted"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 225,
+    "description": "_container is the intended choke point that rejects status=='deleted' for every other operation; restore bypasses it by using _rec directly"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 320,
+    "description": "delete: read row, remove container, set status='deleted', then best-effort image removal with APIError and NotFound swallowed (327-332); the snapshots rows are never deleted"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 387,
+    "description": "restore: read row, remove old container, run new container, then unconditionally set container_id and status='running'"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 211,
+    "description": "token_matches expresses revocation only as status != 'deleted'"
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 218,
+    "description": "sandbox_for_token uses the same status filter, so the reauthorization reaches api.principal (api.py:121-123)"
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 126,
+    "description": "human_only requires kind=='human'; both restore (205-207) and delete (209-212) are human-only, so the agent cannot issue either request - it only benefits from their interleaving"
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authorization_role",
+    "description": "Both requests need the human token or a browser session with scope '*'; the agent never issues them, but it holds the agt_ token whose revocation DELETE implements and needs no new credential, so the failure is a revocation/TOCTOU defect rather than an attacker-triggered request."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "The DELETE must complete its row read, status write and image-removal attempt inside the window that opens when the restore's replacement container has been created (sandbox.py:397) and closes at the restore's status write (sandbox.py:398), and the restore must be preempted in that window. This window is a few milliseconds of SQLite/thread scheduling, not the whole restore: in the measured alternative schedule where the DELETE lands during the long container-start portion, the delete removes the snapshot image first, the restore then fails with ImageNotFound, and the row stays deleted with the token invalid. So the overlap is reachable but narrow."
+   },
+   {
+    "kind": "data_state",
+    "description": "The sandbox has at least one snapshot row; DELETE never removes snapshots rows (sandbox.py:327-332 only tries to remove images) and restore accepts any row of that sid."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "No special runtime or container capability is needed: the resurrection is decided entirely in the SQLite row and the token lookups. The daemon fact that matters (images.remove refusing while a running container holds the image) is what real Docker does; the harness models it, and even if the image were removed the running replacement and the surviving snapshots row would still leave the sandbox resurrected."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "Holder of the agt_ token whose authority the human tried to revoke with DELETE. It needs no new credential and takes no action: after the overlapping restore the same token maps to the sid again and its tool calls return 200. The overlap itself requires two human-issued requests (restore and delete) whose timing the agent cannot control, so this is a failed revocation contract rather than a directly attacker-triggered race.",
+   "payloads": [
+    "POST /sandboxes/sb_54e49093/restore {\"snapshot_id\": \"snap_b2f2d73f\"}  (started first)",
+    "DELETE /sandboxes/sb_54e49093  (issued while the restore is between its replacement container's creation and its final status write)",
+    "POST /sandboxes/sb_54e49093/tools/list_dir {\"args\": {\"path\": \"/workspace\"}} with Authorization: Bearer <the agt_ token DELETE was meant to revoke>"
+   ],
+   "instructions": [
+    "Bounded local harness in the approved sbx sandbox (no network, no Docker daemon): real agentbox.config.Settings, agentbox.audit.AuditLog, agentbox.approvals.ApprovalStore, agentbox.policy.Policy, agentbox.desktop.DesktopControl, agentbox.service.AgentBox and agentbox.sandbox.SandboxManager with SQLite files under /scratch, driven through AgentBox methods (no HTTP server needed; the route bodies are one-line guard calls).",
+    "Docker is replaced by a fake client that models only the daemon facts this check needs: containers.run registers name and image and refuses a duplicate container name, images.remove refuses while a running container uses the image (the real docker conflict), and running an absent image raises ImageNotFound.",
+    "Create a cli-template sandbox with an empty source dir, take one snapshot (docker commit is faked into the image set), then start box.restore_sandbox(sid, snap) on a thread whose containers.run hook parks it after the replacement container exists but before its status write. The main thread runs box.delete_sandbox(sid) to completion and then releases the restore.",
+    "Read back: sandboxes.get(sid)['status'] and container_id, sandboxes.token_matches(sid, old_token), sandboxes.sandbox_for_token(old_token) (the value api.principal turns into Principal('agent', sid)), box.call_tool(sid, 'list_dir', {'path': '/workspace'}), snapshot rows/images, and audit.list(sandbox_id=sid).",
+    "Sequential control in the same process: create, snapshot, delete, then restore - it fails with ImageNotFound and leaves status 'deleted' with the token invalid.",
+    "Alternative schedule: park the restore before the replacement container is created, then run the delete to completion and release it."
+   ],
+   "observed_result": "Race run (delete parked inside the post-create window): delete_sandbox returned without error after status had become 'deleted' and token_matches and sandbox_for_token reported the token invalid; the parked restore then returned normally. Read-back: status 'running', container_id c2 present and alive, sandboxes.token_matches(sid, old_token)=true, sandbox_for_token(old_token)=sid, snapshot rows still 1, the snapshot image still present (delete's image removal raised because c2 runs it), and box.call_tool(sid, 'list_dir', {'path': '/workspace'}) returned 200 {'status': 'executed', 'result': {'path': '/workspace', 'listing': '...'}}. Audit sequence: sandbox_created, snapshot_request, snapshot, restore_request, sandbox_delete, restored, tool_request, policy_decision, tool_result. Sequential control: ImageNotFound 'no such image: agentbox-snap:sb_9df2e832-snap_3e1280c2', final status 'deleted', token invalid. Alternative schedule (delete before the replacement container exists): delete removed the image, the restore raised ImageNotFound, final status 'deleted', token invalid - so this ordering does not resurrect and bounds the vulnerable window."
+  },
+  "remediation": {
+   "strategy": "Serialize all lifecycle transitions per sandbox and make deletion final at the point of the check. Take one per-sid lifecycle lock in AgentBox (reuse the _snap_locks map with a distinct key) around pause/resume/snapshot/restore/delete so delete and restore cannot interleave, and have SandboxManager.restore re-read the row under that lock and refuse status=='deleted' before it removes the old container or starts the replacement. The two methods below are the decisive pair for this race; the same lock should wrap pause_sandbox/resume_sandbox/snapshot_sandbox as well, since pause's unconditional _set(status='paused') has the same shape. Regression case: drive restore and delete concurrently with the harness and assert that the row is either deleted with the old token invalid and no replacement container, or still not deleted only when no delete was observed.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "    def _lifecycle_lock(self, sid: str) -> threading.Lock:\n        with self._busy_lock:\n            return self._snap_locks.setdefault(\"lifecycle:\" + sid, threading.Lock())\n\n    def restore_sandbox(self, sid: str, snap_id: str, session: str | None = _NO_SESSION) -> dict[str, Any]:\n        with self._lifecycle_lock(sid):\n            self.log_human(\"restore_request\", sid, _with_session({\"snapshot_id\": snap_id}, session))\n            self.end_desktop(sid, \"sandbox_restored\")\n            rec = self.sandboxes.restore(sid, snap_id)\n            self.bursts.reset_timers(sid)\n            self.log_human(\"restored\", sid, _with_session({\"snapshot_id\": snap_id, \"container_id\": rec[\"container_id\"]}, session))\n            return rec\n\n    def delete_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> None:\n        with self._lifecycle_lock(sid):\n            self.log_human(\"sandbox_delete\", sid, _with_session({}, session))\n            self.end_desktop(sid, \"sandbox_deleted\")\n            self.sandboxes.delete(sid)\n            self.drop_captures(sid)"
+    },
+    {
+     "file_name": "agentbox/sandbox.py",
+     "fixed_code": "    def restore(self, sid: str, snap_id: str) -> dict[str, Any]:\n        rec = self._rec(sid)\n        if rec[\"status\"] == \"deleted\":   # 삭제는 되돌릴 수 없다: 지운 샌드박스의 행·토큰은 되살리지 않는다\n            raise SandboxError(f\"삭제된 샌드박스는 되돌릴 수 없음: {sid}\")\n        snaps = {s[\"id\"]: s for s in self.list_snapshots(sid)}\n        if snap_id not in snaps:\n            raise SandboxError(f\"이 샌드박스의 스냅샷이 아님: {snap_id}\")\n        try:\n            self.client.containers.get(rec[\"container_id\"]).remove(force=True)\n        except NotFound:\n            pass\n        tpl = self.template_of(sid)\n        c = self._run_container(tpl, snaps[snap_id][\"image\"], rec[\"source_dir\"], f\"agentbox-{sid}\")\n        self._set(sid, container_id=c.id, status=\"running\")\n        if tpl.desktop:\n            self._wait_display(c)\n        return self.get(sid)"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Both endpoints are human-only (api.py:126, 205-212), so the agent cannot trigger the interleaving, and the vulnerable window is only the few milliseconds between the restore's replacement-container creation and its status write: a DELETE that lands earlier during the multi-second container start wins instead (measured: ImageNotFound, row stays deleted). It remains a real TOCTOU - the restore thread only has to be preempted once inside that window while the delete, whose slow audit write already happened at its start, finishes - but the schedule is narrow and the second human action is unusual."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Revocation is silently undone: the agt_ token invalidated by DELETE authorizes tool calls again in a replacement container started from the snapshot (workspace restored, network none, caps dropped), the snapshots row and image survive a deletion that was reported complete, and the audit log records sandbox_delete followed by restored. The authority regained is the same single-sandbox agent authority the token had before, so this is a failed revocation and retention violation rather than host compromise."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "medium",
+   "reason": "The control-plane lineage is certain and was reproduced deterministically with the real Settings/AuditLog/ApprovalStore/Policy/DesktopControl/AgentBox/SandboxManager code against SQLite: status, token, snapshot row, audit order and an executed tool call all matched. The remaining uncertainty is external: the harness models the Docker daemon, and the real width of the post-create window and the daemon's images.remove-conflict behavior were not measured on a real daemon."
+  }
+ },
+ "artifacts_to_promote": [
+  "harness_v10.py",
+  "harness2_v10.py"
+ ]
+}

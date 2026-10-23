@@ -1,0 +1,90 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized",
+ "title": "The approval card still renders U+061C (a Bidi_Control character) and other format/separator characters raw, so a prompt-injected agent can still make the displayed command differ from the executed one",
+ "description": "The run-3 fix routes every template output through web._shown -> display.escape_controls (web.py:33-37, 94), and that closes the reported RLO/LRO/PDF/LRI/PDI and LRM/RLM cases: rendering the real _approvals.html with a crafted command turns them into literal escapes while HTML markup is autoescaped. The filter itself is a hand-written character class (display.py:13-21) that misses U+061C ARABIC LETTER MARK - a member of Unicode's Bidi_Control class, the ALM sibling of the LRM/RLM it does cover - together with the format characters U+200B-200D, U+2060, U+FEFF, U+00AD and the separator characters U+2028/U+2029. A prompt-injected agent therefore still chooses characters that the browser's bidi algorithm may use to reorder a command or a container-derived path in the card, and that force a line break inside the same pre block, while the argv that box.decide executes keeps the original bytes. This is a display-integrity failure on the human approval surface, not XSS.",
+ "claimed_root_cause": "display.py:13/15 enumerate C0/C1 and the bidi controls by hand and omit U+061C (Bidi_Control=Yes) plus the Cf invisibles U+200B-200D, U+2060, U+FEFF, U+00AD and the line/paragraph separators U+2028-U+2029; web._shown applies that class to every str template output (web.py:35-36), so the residual characters reach the approval card verbatim and the terminal path (cli._safe, cli.py:33-35) has the identical gap.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 215,
+   "scope": "POST /sandboxes/{sid}/tools/{tool} (agent token)",
+   "description": "A prompt-injected agent supplies args.command for an exec call; policy.decide sends it to the approval queue and the string is stored verbatim."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/web.py",
+   "line": 208,
+   "scope": "approvals_view",
+   "description": "Pending approvals, including the agent's args and the system-computed preview paths, are rendered into _approvals.html."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/web.py",
+   "line": 94,
+   "scope": "tpl.env.finalize = _shown",
+   "description": "finalize applies _shown to each output expression, which calls escape_controls(value, keep_newlines=True) for str values only (web.py:33-37)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/templates/_approvals.html",
+   "line": 8,
+   "scope": "pre block with the agent's command",
+   "description": "The single sink that shows the human what will run; only autoescape and the finalize hook apply, and autoescape does not touch format characters."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/display.py",
+   "line": 13,
+   "scope": "UNSAFE / _UNSAFE_KEEP_NEWLINES",
+   "description": "The regex does not contain U+061C, U+200B-200D, U+2060, U+FEFF, U+00AD or U+2028-U+2029, so those code points are written into the HTML and handed to the renderer unchanged, while the executed argv carries the same bytes."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/display.py",
+   "line": 13,
+   "description": "UNSAFE covers x00-x1f, x7f-x9f, U+200E/U+200F, U+202A-202E, U+2066-2069; U+061C is absent although it has Bidi_Control=Yes and the same visual-reordering role as the U+200F it replaces."
+  },
+  {
+   "file": "agentbox/display.py",
+   "line": 15,
+   "description": "The keep_newlines variant used by the web UI omits exactly the same characters, so neither surface filters them."
+  },
+  {
+   "file": "agentbox/web.py",
+   "line": 35,
+   "description": "_shown returns non-str values unchanged; today every template output is a str or an int, so containers do not reach a sink, but the filter's coverage depends on that."
+  },
+  {
+   "file": "agentbox/templates/_approvals.html",
+   "line": 14,
+   "description": "Container-derived affected paths are rendered in the same card with the same unfiltered character class, so a reordered path is shown to the approver too."
+  },
+  {
+   "file": "agentbox/templates/base.html",
+   "line": 23,
+   "description": "The pre/pre-wrap styling makes U+2028/U+2029 render as a real line break inside the command box, so one argv can read as two shell lines."
+  },
+  {
+   "file": "agentbox/cli.py",
+   "line": 35,
+   "description": "cli._safe uses the same escape_controls class, so the terminal approval view agrees with the web view but carries the same omission."
+  },
+  {
+   "file": "docs/security-audit/run-4/agents/h-webui/artifacts/h.out",
+   "line": 1,
+   "description": "Local render of the real template plus the per-code-point coverage table: U+202E/U+2066/U+200E escaped, U+061C/U+200B/U+2028 present raw in both cells."
+  }
+ ],
+ "blockers": [
+  "Renderer behaviour is not observable in the sandbox: sbx has no browser, terminal renderer or network (only fastapi/jinja2/pyyaml plus the repo), so the claimed visual reordering from U+061C and the forced break from U+2028 are unverified; the local check proves only that the code points reach the HTML while the argv keeps the same bytes.",
+  "Which browser engine versions and terminal/font stacks the operator actually uses - the fact that decides whether ALM and the separator characters produce a visible difference between the approved view and the executed command."
+ ],
+ "validation_plan": {
+  "local": "Already executed (agents/h-webui/artifacts/h.out): render _approvals.html through web.py's exact Jinja wiring with a command containing U+202E, U+2066, U+200E, U+061C, U+200B, U+2028 and an inline script tag; confirm the first three and the markup are neutralised while U+061C/U+200B/U+2028 stay raw. Next: a loopback browser fixture that renders that fragment beside the intended argv and captures the rendered order (Playwright Chromium/Firefox/WebKit, dummy data). Regression: extend each regex in display.py to the full Bidi_Control and Cf classes (keeping tab/newline in the web variant) and assert escape_controls neutralises U+061C, U+200B and U+2028.",
+  "deployment": "Owner opens a real pending exec approval whose command contains U+061C and U+2028 in the operator's browser and terminal and compares the rendered order with the argv shown by agentbox approve; no probing of live endpoints."
+ },
+ "x_proposed_by": "h-webui"
+}

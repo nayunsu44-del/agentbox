@@ -1,0 +1,292 @@
+{
+ "checks": [
+  {
+   "runtime": "runc",
+   "home": "/scratch/ab6",
+   "python": "3.12.3",
+   "check": "build"
+  },
+  {
+   "path": "/sandboxes",
+   "status": 401,
+   "body_bytes": 4194308,
+   "bytes_consumed_before_response": 4194308,
+   "json_decodes_before_auth": [
+    16777220,
+    23
+   ],
+   "rss_kb_growth": 9000,
+   "check": "preauth_json_body"
+  },
+  {
+   "path": "/sandboxes/sid1/tools/exec",
+   "status": 401,
+   "body_bytes": 4194308,
+   "bytes_consumed_before_response": 4194308,
+   "json_decodes_before_auth": [
+    16777220,
+    23
+   ],
+   "rss_kb_growth": 12544,
+   "check": "preauth_json_body"
+  },
+  {
+   "path": "/sandboxes/sid1/restore",
+   "status": 401,
+   "body_bytes": 4194308,
+   "bytes_consumed_before_response": 4194308,
+   "json_decodes_before_auth": [
+    16777220,
+    23
+   ],
+   "rss_kb_growth": 8320,
+   "check": "preauth_json_body"
+  },
+  {
+   "path": "/approvals/apr1",
+   "status": 401,
+   "body_bytes": 4194308,
+   "bytes_consumed_before_response": 4194308,
+   "json_decodes_before_auth": [
+    16777220,
+    23
+   ],
+   "rss_kb_growth": 0,
+   "check": "preauth_json_body"
+  },
+  {
+   "path": "/sandboxes",
+   "status": 401,
+   "body_bytes": 16777220,
+   "bytes_consumed_before_response": 16777220,
+   "json_decodes_before_auth": [
+    16777220,
+    23
+   ],
+   "rss_kb_growth": 32768,
+   "check": "preauth_json_body"
+  },
+  {
+   "path": "/sandboxes/sid1/tools/exec",
+   "status": 401,
+   "body_bytes": 16777220,
+   "bytes_consumed_before_response": 16777220,
+   "json_decodes_before_auth": [
+    16777220,
+    23
+   ],
+   "rss_kb_growth": 32768,
+   "check": "preauth_json_body"
+  },
+  {
+   "path": "/sandboxes/sid1/restore",
+   "status": 401,
+   "body_bytes": 16777220,
+   "bytes_consumed_before_response": 16777220,
+   "json_decodes_before_auth": [
+    16777220,
+    23
+   ],
+   "rss_kb_growth": 32768,
+   "check": "preauth_json_body"
+  },
+  {
+   "path": "/approvals/apr1",
+   "status": 401,
+   "body_bytes": 16777220,
+   "bytes_consumed_before_response": 16777220,
+   "json_decodes_before_auth": [
+    16777220,
+    23
+   ],
+   "rss_kb_growth": 0,
+   "check": "preauth_json_body"
+  },
+  {
+   "path": "/sandboxes/sid1/files",
+   "status": 401,
+   "body_bytes": 4194442,
+   "bytes_consumed_before_response": 4194442,
+   "spooled_temp_file": [
+    {
+     "spool_max_size": 1048576,
+     "rolled_on_disk_bytes": 1113992,
+     "part_bytes_written": 4194304
+    }
+   ],
+   "endpoint_per_file_cap_bytes": 52428800,
+   "endpoint_body_ran": false,
+   "tmpdir": "/scratch",
+   "check": "preauth_multipart_spool"
+  },
+  {
+   "nonascii_status": 500,
+   "nonascii_error": "TypeError: comparing strings with non-ASCII characters is not supported",
+   "nonascii_rows_added": 0,
+   "ascii_wrong_status": 200,
+   "ascii_wrong_rows_added": 1,
+   "rows_after_50_more": 51,
+   "seconds_for_50": 0.498,
+   "audit_rows_total": 51,
+   "audit_db_bytes": 4096,
+   "check": "login_failed_audit"
+  },
+  {
+   "path": "/healthz",
+   "status": 200,
+   "check": "unauth_surface"
+  },
+  {
+   "path": "/openapi.json",
+   "status": 200,
+   "check": "unauth_surface"
+  },
+  {
+   "path": "/docs",
+   "status": 200,
+   "check": "unauth_surface"
+  },
+  {
+   "path": "/redoc",
+   "status": 200,
+   "check": "unauth_surface"
+  },
+  {
+   "path": "/static/htmx.min.js",
+   "status": 200,
+   "check": "unauth_surface"
+  },
+  {
+   "body": "{\"ok\":true,\"runtime\":\"runc\",\"image\":\"buildpack-deps:noble-curl\",\"templates\":[\"cli\",\"desktop\"],\"dev_only\":true}",
+   "check": "healthz_body"
+  },
+  {
+   "status": 500,
+   "docker_containers_created": 1,
+   "extracted": [],
+   "check": "novnc_first_unauth"
+  },
+  {
+   "status": 500,
+   "docker_containers_created": 1,
+   "check": "novnc_steady_state"
+  },
+  {
+   "statuses": [
+    500,
+    500,
+    500,
+    500,
+    500,
+    500
+   ],
+   "errors": [
+    "OSError: unexpected end of data",
+    "OSError: unexpected end of data",
+    "OSError: unexpected end of data",
+    "OSError: unexpected end of data",
+    "OSError: unexpected end of data",
+    "OSError: unexpected end of data"
+   ],
+   "docker_containers_created": 6,
+   "check": "novnc_six_concurrent_unauth"
+  },
+  {
+   "attempt": 0,
+   "status": 500,
+   "creates_so_far": 1,
+   "check": "novnc_missing_asset_unauth"
+  },
+  {
+   "attempt": 1,
+   "status": 500,
+   "creates_so_far": 2,
+   "check": "novnc_missing_asset_unauth"
+  },
+  {
+   "attempt": 2,
+   "status": 500,
+   "creates_so_far": 3,
+   "check": "novnc_missing_asset_unauth"
+  },
+  {
+   "path": "/ui/sandboxes/sb-B",
+   "status": 303,
+   "err": null,
+   "leaks_other_sid": false,
+   "check": "scoped_session_probe"
+  },
+  {
+   "path": "/ui/sandboxes/sb-A",
+   "status": 303,
+   "err": null,
+   "leaks_other_sid": null,
+   "check": "scoped_session_probe"
+  },
+  {
+   "path": "/ui",
+   "status": 303,
+   "err": null,
+   "leaks_other_sid": null,
+   "check": "scoped_session_probe"
+  },
+  {
+   "path": "/ui/sandboxes",
+   "status": 403,
+   "err": null,
+   "leaks_other_sid": null,
+   "check": "scoped_session_probe"
+  },
+  {
+   "path": "/ui/audit",
+   "status": 403,
+   "err": null,
+   "leaks_other_sid": null,
+   "check": "scoped_session_probe"
+  },
+  {
+   "path": "/sandboxes/sb-B/outbox",
+   "status": 403,
+   "err": null,
+   "leaks_other_sid": null,
+   "check": "scoped_session_probe"
+  },
+  {
+   "path": "/sandboxes/sb-B/desktop",
+   "status": 401,
+   "err": null,
+   "leaks_other_sid": null,
+   "check": "scoped_session_probe"
+  },
+  {
+   "path": "/sandboxes/sb-B/desktop/state",
+   "status": 403,
+   "err": null,
+   "leaks_other_sid": null,
+   "check": "scoped_session_probe"
+  },
+  {
+   "public": "hs_948e3c54",
+   "scope": "sb-A",
+   "check": "scoped_session"
+  },
+  {
+   "path": "/sandboxes",
+   "status": 500,
+   "error": "TypeError: comparing strings with non-ASCII characters is not supported",
+   "check": "nonascii_bearer"
+  },
+  {
+   "path": "/approvals/apr1",
+   "status": 500,
+   "error": "TypeError: comparing strings with non-ASCII characters is not supported",
+   "check": "nonascii_bearer"
+  },
+  {
+   "status": 500,
+   "error": "TypeError: comparing strings with non-ASCII characters is not supported",
+   "approval_forbidden_rows": 0,
+   "check": "nonascii_bearer_approval_post"
+  }
+ ]
+}

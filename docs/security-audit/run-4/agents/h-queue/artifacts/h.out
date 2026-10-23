@@ -1,0 +1,33 @@
+  0.57s limits LOGGED_ARGS_MAX=65536 LOGGED_ARGS_HEAD=16384 PENDING_APPROVALS_MAX=20
+  0.89s A1 input path bytes=262145
+  1.52s A1 delete_file bad-path status=202 approval=apr_4078bc28441f
+  1.55s A1 audit id=1 event=tool_request payload_bytes=16543
+  1.55s A1 audit id=2 event=policy_decision payload_bytes=119
+  1.55s A1 audit id=3 event=approval_requested payload_bytes=262343
+  1.58s A1 approval row preview_bytes=262245 args_bytes=262157
+  2.46s A2 exec huge-command status=202
+  2.49s A2 audit id=1 event=tool_request payload_bytes=16543
+  2.49s A2 audit id=2 event=policy_decision payload_bytes=119
+  2.49s A2 audit id=3 event=approval_requested payload_bytes=262343
+  2.49s A2 audit id=4 event=tool_request payload_bytes=16543
+  2.49s A2 audit id=5 event=policy_decision payload_bytes=146
+  2.49s A2 audit id=6 event=approval_requested payload_bytes=274733
+  2.50s A3 segments=2001 preview_notes=2001 affected=0 preview_bytes=88115
+  2.71s A4 read_file bad-path status=400 message_bytes=131148
+  2.76s A4 audit id=1 event=tool_request payload_bytes=16543
+  2.76s A4 audit id=2 event=policy_decision payload_bytes=119
+  2.76s A4 audit id=3 event=approval_requested payload_bytes=262343
+  2.76s A4 audit id=4 event=tool_request payload_bytes=16543
+  2.76s A4 audit id=5 event=policy_decision payload_bytes=146
+  2.76s A4 audit id=6 event=approval_requested payload_bytes=274733
+  2.76s A4 audit id=7 event=tool_request payload_bytes=16543
+  2.76s A4 audit id=8 event=policy_decision payload_bytes=81
+  2.76s A4 audit id=9 event=tool_error payload_bytes=131145
+  2.78s A5 _logged_args(exec,3MB) capped=True bytes=16534
+  3.83s B1 statuses=[202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 202, 'err429'] pngs=20 capture_bytes=20971520
+  3.87s B2 after decide(deny) pngs=19
+  4.62s B3 after expire_stale pngs=0
+  4.70s B4 delete_sandbox pngs_before=1 after=0 deleted=['sb_d']
+  4.70s B5 capture_path(non-alnum)=None capture_path(missing)=None
+  4.76s C1 screenshot accepted png_bytes=8388616 base64_bytes=11184824
+  4.76s C2 list_dir materialized_bytes=8388608 returned_listing_chars=65556

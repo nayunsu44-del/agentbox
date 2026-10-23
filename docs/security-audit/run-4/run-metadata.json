@@ -1,0 +1,77 @@
+{
+ "run_id": "agentbox-run-4",
+ "repo": "nayunsu44-del/agentbox",
+ "target": "/home/user/agentbox",
+ "source_ref": {
+  "commit": "9805d910",
+  "branch": "main",
+  "dirty": false,
+  "note": "Audited source is a detached git worktree of main at 9805d91 (after refactor PRs #11-#14) in the parent's scratchpad; agents read it and sbx mounts it read-only at /target. Only docs/security-audit/run-4/ (this run's output) is added on the working branch."
+ },
+ "profile": "standard",
+ "scope_paths": [
+  "."
+ ],
+ "budget": 50,
+ "budget_note": "Owner-set cap of 50 agent invocations (standard profile). 4 spent on reconnaissance; plan: 13 hunters in one wave (run in batches because the harness allows 8 concurrent children), one post-wave coverage critic, one distinct final-clean critic, and the remaining ~31 for Phase 3 candidate verifiers, material-replacement re-verifiers and Phase 5 record verifiers. Model split changed by the owner for the first-pass continuation: subagents were DeepSeek only (doph/doph-2, deepseek-ai/DeepSeek-V4.1-Flash). The 4 review-pass invocations ran on the Linux host where DeepSeek is unavailable; the owner approved Opus (verifiers, critic) and Sonnet (Phase 5).",
+ "execution_policy": "sandboxed-source-and-local-only",
+ "execution_note": "Continuation host is Windows 11 (not the Linux container of runs 1-3): Docker Desktop 4.96.3 with the WSL2 Linux engine 29.9.2, WSL 3.0.3 installed without a distribution. Agent-run target code goes only through tools/sbx.py, the Windows replacement for the bash tools/sbx: docker run --network none, no docker socket, --read-only, audited worktree bind-mounted read-only at /target, writes only to agents/<id>/scratch at /scratch, /dev/shm tmpfs 16 MiB, --pull never, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB, 1 CPU, 64 pids, 32 MiB file size, 120 s wall clock, explicit env allowlist, image agentbox-audit-sbx:1 (ubuntu 24.04 + python3.12 with the target's runtime dependencies). Two Linux-only properties could not be carried over: the host /usr mount (replaced by the image interpreter) and the 256 MiB loop-mounted scratch (replaced by a plain directory plus common.cap_scratch and the promote.py size caps). Checks that need the real Docker-backed control plane are run by the parent in a disposable container with dummy principals on loopback and labelled parent-live. Promotion uses tools/promote.py, likewise rewritten for the Windows API with the same no-follow, exclusive-create, double size-limit and identity-recheck properties.",
+ "companions_selected": [],
+ "prior_runs": [
+  {
+   "path": "docs/security-audit/run-1",
+   "source_ref": "7fc501f",
+   "files": [
+    "coverage-ledger.json",
+    "findings.json"
+   ]
+  },
+  {
+   "path": "docs/security-audit/run-2",
+   "source_ref": "7fc501f (validation run)",
+   "files": [
+    "findings.json"
+   ]
+  },
+  {
+   "path": "docs/security-audit/run-3",
+   "source_ref": "0e4b958 / 8e4db9e",
+   "files": [
+    "coverage-ledger.json",
+    "findings.json"
+   ],
+   "note": "run-3 ended incomplete (budget_exhausted); critic-3 proposed 3 units recorded deferred. Every confirmed run-3 record was fixed afterwards and the refactor (PRs #11-#14) moved the code, so all relevant source changed."
+  }
+ ],
+ "shared_file_owner": "parent",
+ "run_status": "incomplete",
+ "agents_spent": {
+  "recon": 4,
+  "hunters": 13,
+  "critic_post_wave": 1,
+  "phase3": 14,
+  "phase5": 13,
+  "phase5_retries": 3,
+  "material_reverify": 1,
+  "critic_final_clean": 1
+ },
+ "agents_spent_total": 50,
+ "phase": "phase6_reports",
+ "phase_note": "Phases 2-6 first pass ran on the Windows DeepSeek host; a review pass on the Linux cloud container (owner-approved, Opus/Sonnet because DeepSeek is unavailable there) validated the dropped candidate v11, ran its Phase 5 (r13), reproduced it parent-live on real Docker, had a fresh verifier (r14) verify the confirmed replacement, added critic-1's two units as deferred, ran the final-clean critic (critic-2) and rewrote the Korean reports.",
+ "status_note": "Partial pass: the 30 hunted units closed; 3 critic-proposed units are deferred (2 from post-wave critic-1, 1 from final-clean critic critic-2, which returned stop: false) because the 50-call budget was spent. No clean-coverage claim. Every ledger candidate has an independent final disposition and every retained record passed Phase 5 (13 records: 8 confirmed, 5 needs_validation).",
+ "budget_final": "Cap 50, spent 50. First pass (Windows) 46: recon 4, 13 hunters, post-wave critic critic-1, 13 Phase 3 verifiers (v11 produced no result), 12 Phase 5 verifiers, 3 retries. Review pass (Linux) 4: v11 Phase 3 rerun (Opus), r13 Phase 5 (Sonnet), r14 material-replacement verifier for the v11 promotion (Opus), final-clean critic critic-2 (Opus).",
+ "deviations": [
+  "Four hunters (h-policy, h-queue, h-gui-race, h-preauth) did not write result.json; the parent transcribed their closing messages and remapped coverage ids from the ledger, so those result.json files are parent-written.",
+  "v06 ran without its prompt.md (the generator failed first and was regenerated afterwards); it reconstructed the contract from the sibling v05 brief and said so in its record.",
+  "Phase 5 r03 and r09 returned replace with corrections they certified as non-material (path prefixes, ordering wording, one observation sentence). tools/apply5_nonmaterial.py applied them without a second verifier and this deviation is disclosed in REPORT.md section 7.",
+  "tools/sbx.py and tools/promote.py replace the Linux-only bash sbx and loop-mounted scratch; the enforcement boundary is the same, the 256 MiB scratch cap is replaced by common.cap_scratch plus the per-file and per-agent promotion caps.",
+  "v05 reported that an out-of-scope write instruction arrived in its turn and refused it; nothing outside its scratch was written. Recorded as evidence that the audit boundary held.",
+  "Review pass: candidate v11 had no Phase 3 result and no disclosure in the first-pass report; it was validated (v11 rerun, needs_validation), Phase-5 verified (r13), reproduced parent-live on real Docker (agents/parent-live/artifacts/snapquota-race.json, 18/21 unapproved over-quota commits), and the parent-drafted confirmed replacement was verified by fresh verifier r14.",
+  "Review pass: critic-1's two proposed units were missing from the ledger; added as deferred, reconstructed from the first-pass report summary because critic-1's raw output was not retained.",
+  "Review pass: tools/oneoff/_fix.py rewrote agents/h-policy/raw.txt and mapped units by position, so the approval-card unit carried the approval-binding check; its local_checks[0] was rebuilt from h-policy's retained artifact h_prev.out. Transcribed hunters with raw.txt are h-policy, h-queue, h-gui-race and h-pool (the first-pass list named h-preauth instead of h-pool).",
+  "Review pass: r03 and r09 non-material replacements cannot be re-checked because their result files stayed in scratch and were not retained.",
+  "Review pass: run_status 'complete_with_deferred_units' is not a skill value; set to incomplete/budget_exhausted.",
+  "After the run (owner request, no agent invocations): the parent ran parent-live checks for all five needs_validation records on real Docker, the desktop image and Playwright Chromium 141 (scripts and outputs under agents/parent-live/). Results are reported in NEEDS-VALIDATION.md and REPORT.md section 4; record verdicts were not changed because promotion needs a fresh verifier and the 50-call budget is spent."
+ ],
+ "incomplete_reason": "budget_exhausted"
+}

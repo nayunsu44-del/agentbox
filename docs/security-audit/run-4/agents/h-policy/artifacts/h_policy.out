@@ -1,0 +1,45 @@
+default: allow rules: ['rm-curl-needs-approval', 'delete-file-needs-approval', 'read-only-exec', 'exec-needs-approval']
+allow            read-only-exec             'ls -la /workspace'                                    progs=['ls']
+allow            read-only-exec             'cat notes.txt'                                        progs=['cat']
+allow            read-only-exec             'cd /workspace && ls'                                  progs=['cd', 'ls']
+allow            read-only-exec             'mkdir -p /workspace/d && touch /workspace/d/f'        progs=['mkdir', 'touch']
+require_approval rm-curl-needs-approval     'rm -rf /workspace/x'                                  progs=['rm']
+require_approval rm-curl-needs-approval     'ls; rm -rf /workspace/x'                              progs=['ls', 'rm']
+require_approval rm-curl-needs-approval     "sh -c 'rm -rf /workspace/x'"                          progs=['sh']
+require_approval rm-curl-needs-approval     'bash -c "rm -rf /workspace/x"'                        progs=['bash']
+require_approval exec-needs-approval        'find /workspace -delete'                              progs=['find']
+require_approval rm-curl-needs-approval     'xargs rm'                                             progs=['xargs']
+require_approval rm-curl-needs-approval     'cat notes.txt | rm -rf /workspace/y'                  progs=['cat', 'rm']
+require_approval rm-curl-needs-approval     '\\rm -rf /workspace/x'                                progs=['rm']
+require_approval rm-curl-needs-approval     "'rm' -rf /workspace/x"                                progs=['rm']
+require_approval rm-curl-needs-approval     '/bin/rm /workspace/x'                                 progs=['rm']
+require_approval exec-needs-approval        'cat notes.txt > /workspace/y'                         progs=None
+allow            read-only-exec             'cat notes.txt >/dev/null'                             progs=['cat']
+require_approval exec-needs-approval        'cat notes.txt >/dev/nullx'                            progs=None
+allow            read-only-exec             'cat notes.txt 1>&2'                                   progs=['cat']
+require_approval exec-needs-approval        'cat $(id)'                                            progs=None
+require_approval exec-needs-approval        'cat `id`'                                             progs=None
+require_approval rm-curl-needs-approval     'cat notes.txt\nrm -rf /workspace/x'                   progs=['cat', 'rm']
+require_approval rm-curl-needs-approval     'env FOO=1 rm /workspace/x'                            progs=['env']
+require_approval rm-curl-needs-approval     'timeout 5 rm /workspace/x'                            progs=['timeout']
+require_approval rm-curl-needs-approval     'cat < notes.txt; rm -rf /workspace/x'                 progs=['cat', 'rm']
+require_approval exec-needs-approval        'ls #comment'                                          progs=None
+require_approval exec-needs-approval        'ls#notacomment'                                       progs=['ls#notacomment']
+require_approval exec-needs-approval        'echo ${PATH}'                                         progs=None
+require_approval exec-needs-approval        'ls <(id)'                                             progs=None
+allow            read-only-exec             'grep -r x /workspace'                                 progs=['grep']
+allow            read-only-exec             'tail -f /dev/null'                                    progs=['tail']
+allow            read-only-exec             'printf %s abc'                                        progs=['printf']
+require_approval exec-needs-approval        'true'                                                 progs=['true']
+require_approval exec-needs-approval        'cat notes.txt; mv /workspace/a /tmp/b'                progs=['cat', 'mv']
+require_approval exec-needs-approval        'sed -i s/a/b/ notes.txt'                              progs=['sed']
+require_approval exec-needs-approval        "python3 -c 'print(1)'"                                progs=['python3']
+require_approval rm-curl-needs-approval     'cat /workspace/rm'                                    progs=['cat']
+require_approval rm-curl-needs-approval     'ls ; rm -rf /workspace/x'                             progs=['ls', 'rm']
+require_approval rm-curl-needs-approval     'cat notes.txt 2>/dev/null; rm -rf /workspace/x'       progs=['cat', 'rm']
+allow            read-only-exec             'ls >&2'                                               progs=['ls']
+require_approval exec-needs-approval        'dd if=/dev/zero of=/workspace/x'                      progs=['dd']
+ALLOW cases: [('ls -la /workspace', ['ls']), ('cat notes.txt', ['cat']), ('cd /workspace && ls', ['cd', 'ls']), ('mkdir -p /workspace/d && touch /workspace/d/f', ['mkdir', 'touch']), ('cat notes.txt >/dev/null', ['cat']), ('cat notes.txt 1>&2', ['cat']), ('grep -r x /workspace', ['grep']), ('tail -f /dev/null', ['tail']), ('printf %s abc', ['printf']), ('ls >&2', ['ls'])]
+ALLOW-with-dangerous-program: []
+simple_programs(cat a > b) = None
+command_names(cat /workspace/rm) = ['cat', 'rm']

@@ -1,0 +1,32 @@
+{
+ "alm_redirect": {
+  "command_repr": "'cat /workspace/notes.txt \\u061c>\\u061c /workspace/outbox/copy.txt'",
+  "status": 202,
+  "approval_id": "apr_e151ceb6f5ae",
+  "pre_innerText_repr": "'cat /workspace/notes.txt \\u061c>\\u061c /workspace/outbox/copy.txt'"
+ },
+ "alm_redirect_spaces": {
+  "command_repr": "'cat /workspace/notes.txt \\u061c > \\u061c /workspace/outbox/copy.txt'",
+  "status": 202,
+  "approval_id": "apr_4740a95c3f5e",
+  "pre_innerText_repr": "'cat /workspace/notes.txt \\u061c > \\u061c /workspace/outbox/copy.txt'"
+ },
+ "alm_pipe_args": {
+  "command_repr": "'sort /workspace/a.txt \\u061c-o\\u061c /workspace/b.txt'",
+  "status": 202,
+  "approval_id": "apr_1537bdbe40cf",
+  "pre_innerText_repr": "'sort /workspace/a.txt \\u061c-o\\u061c /workspace/b.txt'"
+ },
+ "line_separator": {
+  "command_repr": "'echo ok\\u2028; rm -rf /workspace/data'",
+  "status": 202,
+  "approval_id": "apr_a93f7155430a",
+  "pre_innerText_repr": "'echo ok\\u2028; rm -rf /workspace/data'"
+ },
+ "zwsp_in_flag": {
+  "command_repr": "'rm -r\\u200bf /workspace/tmp'",
+  "status": 202,
+  "approval_id": "apr_e1ee2c997621",
+  "pre_innerText_repr": "'rm -r\\u200bf /workspace/tmp'"
+ }
+}

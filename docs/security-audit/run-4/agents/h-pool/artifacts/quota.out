@@ -1,0 +1,103 @@
+{
+ "A_bypass": {
+  "quota": 2,
+  "snapshot_count_before": 2,
+  "results": [
+   [
+    200,
+    "executed"
+   ],
+   [
+    200,
+    "executed"
+   ],
+   [
+    200,
+    "executed"
+   ]
+  ],
+  "exists_calls": 6,
+  "commits_while_over_quota": 3,
+  "snapshot_reasons": [
+   "before write_file (request 1)",
+   "before write_file (request 5)",
+   "before write_file (request 9)"
+  ],
+  "snapshot_count_after": 5,
+  "pending_approvals": 0,
+  "audit": [
+   [
+    "tool_request",
+    null
+   ],
+   [
+    "policy_decision",
+    "allow"
+   ],
+   [
+    "snapshot",
+    null
+   ],
+   [
+    "tool_result",
+    null
+   ],
+   [
+    "tool_request",
+    null
+   ],
+   [
+    "policy_decision",
+    "allow"
+   ],
+   [
+    "snapshot",
+    null
+   ],
+   [
+    "tool_result",
+    null
+   ],
+   [
+    "tool_request",
+    null
+   ],
+   [
+    "policy_decision",
+    "allow"
+   ],
+   [
+    "snapshot",
+    null
+   ],
+   [
+    "tool_result",
+    null
+   ]
+  ]
+ },
+ "B_control": {
+  "status": 202,
+  "body_status": "pending",
+  "commits": 0,
+  "pending_approvals": 1,
+  "rule_id": "snapshot-quota",
+  "audit": [
+   [
+    "tool_request",
+    null
+   ],
+   [
+    "policy_decision",
+    "require_approval"
+   ],
+   [
+    "approval_requested",
+    null
+   ]
+  ]
+ },
+ "C_busy_after": {
+  "sb_q": 0
+ }
+}

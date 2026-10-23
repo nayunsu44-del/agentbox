@@ -1,0 +1,9 @@
+{
+ "mode": "screenshot_devzero",
+ "rlimit_as_bytes": 3221225472,
+ "error": "ServiceError: \ud654\uba74(X \uc11c\ubc84)\uc774 15\ucd08 \uc548\uc5d0 \uc751\ub2f5\ud558\uc9c0 \uc54a\uc74c",
+ "seconds": 16.58,
+ "vmhwm_before_kib": 55792,
+ "vmhwm_after_kib": 135428,
+ "vmhwm_delta_mib": 77.8
+}

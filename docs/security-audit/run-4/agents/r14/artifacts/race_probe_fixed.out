@@ -1,0 +1,129 @@
+{
+ "probe_latency_s": 0.02,
+ "policy": {
+  "write_file": {
+   "action": "allow",
+   "rule_id": null,
+   "reason": null,
+   "matched": []
+  },
+  "exec_touch": {
+   "action": "allow",
+   "rule_id": "read-only-exec",
+   "reason": "\uc77d\uae30 \uc804\uc6a9 \uba85\ub839",
+   "matched": [
+    "touch"
+   ]
+  }
+ },
+ "control_existing": {
+  "status": 202,
+  "rule": "pending",
+  "statuses": {
+   "202": 1
+  },
+  "commits_while_over_quota": 0,
+  "pending_approvals": 2,
+  "snapshot_rows_after": 2,
+  "audit_events": {
+   "tool_request": 2,
+   "policy_decision": 2,
+   "approval_requested": 2
+  }
+ },
+ "A_background_toggler_40_calls": {
+  "statuses": {
+   "202": 6,
+   "ServiceError:409": 9,
+   "200": 13,
+   "ServiceError:429": 12
+  },
+  "commits_while_over_quota": 0,
+  "pending_approvals": 20,
+  "snapshot_rows_after": 2,
+  "audit_events": {
+   "tool_request": 80,
+   "policy_decision": 80,
+   "tool_result": 39,
+   "approval_requested": 20,
+   "snapshot": 15,
+   "tool_blocked": 12
+  }
+ },
+ "B_exec_touch_offset_-15ms_20_pairs": {
+  "statuses": {
+   "202": 2,
+   "null": 18
+  },
+  "commits_while_over_quota": 0,
+  "pending_approvals": 20,
+  "snapshot_rows_after": 2,
+  "audit_events": {
+   "tool_request": 80,
+   "policy_decision": 80,
+   "tool_result": 42,
+   "snapshot": 2,
+   "approval_requested": 20,
+   "tool_blocked": 18
+  }
+ },
+ "B_exec_touch_offset_-10ms_20_pairs": {
+  "statuses": {
+   "null": 18,
+   "202": 2
+  },
+  "commits_while_over_quota": 0,
+  "pending_approvals": 3,
+  "snapshot_rows_after": 2,
+  "audit_events": {
+   "tool_request": 80,
+   "policy_decision": 80,
+   "tool_result": 59,
+   "snapshot": 19,
+   "approval_requested": 3
+  }
+ },
+ "B_exec_touch_offset_-5ms_20_pairs": {
+  "statuses": {
+   "null": 20
+  },
+  "commits_while_over_quota": 0,
+  "pending_approvals": 1,
+  "snapshot_rows_after": 2,
+  "audit_events": {
+   "tool_request": 80,
+   "policy_decision": 80,
+   "tool_result": 59,
+   "snapshot": 19,
+   "approval_requested": 1
+  }
+ },
+ "B_exec_touch_offset_0ms_20_pairs": {
+  "statuses": {
+   "null": 20
+  },
+  "commits_while_over_quota": 0,
+  "pending_approvals": 0,
+  "snapshot_rows_after": 2,
+  "audit_events": {
+   "tool_request": 80,
+   "policy_decision": 80,
+   "tool_result": 60,
+   "snapshot": 20
+  }
+ },
+ "B_exec_touch_offset_5ms_20_pairs": {
+  "statuses": {
+   "null": 20
+  },
+  "commits_while_over_quota": 0,
+  "pending_approvals": 0,
+  "snapshot_rows_after": 2,
+  "audit_events": {
+   "tool_request": 80,
+   "policy_decision": 80,
+   "tool_result": 60,
+   "snapshot": 20
+  }
+ }
+}

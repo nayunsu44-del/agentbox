@@ -1,0 +1,116 @@
+{
+ "proposed_verdict": "confirmed",
+ "fingerprint": "agentbox/sandbox_desktop.py:extract-novnc-unauthenticated-no-singleflight",
+ "title": "Unauthenticated GET /static/novnc/* runs docker create plus a full image tar extraction on every request while the marker file is missing, with no single-flight",
+ "description": "api.py:355-363 registers GET /static/novnc/{path:path} with no principal, session or ticket and calls box.sandboxes.extract_novnc(novnc_dir) on every request before it even validates the requested path. extract_novnc (sandbox_desktop.py:146-169) has one guard: it returns True if dest/core/rfb.js already exists. While that marker is absent, each request runs self.client.containers.create(desktop_image, ...), joins get_archive(\"/usr/share/novnc\") fully into memory and extractall()s it into the control plane's data directory, then removes the container. There is no lock, no in-flight marker and no negative cache, so concurrent requests all miss the guard, duplicate the daemon work and extract into the same destination; the losing extractions raise an uncaught FileExistsError/OSError, which extract_novnc does not handle because it catches only ImageNotFound, NotFound and APIError (153-159), and the request becomes a 500.",
+ "root_cause": "An unauthenticated static-asset route performs Docker-daemon work and an archive extraction behind a check-then-act test on a single marker file, with no lock or in-flight flag, and any non-docker exception escapes as a 500 that leaves the marker absent, so the work is repeatable by any anonymous client.",
+ "intended_behavior": "Static assets should not require per-request daemon work: the extraction should happen once (at startup or on the first authenticated desktop use) under a lock that lets one caller do it while others wait or observe the result, and a failed extraction should leave a bounded negative state instead of being retried by every request.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 355,
+   "scope": "GET /static/novnc/{path:path}",
+   "description": "The route has no Depends() at all and is exempt from the cookie/header principal used everywhere else, so it is reachable by any network client."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/api.py",
+   "line": 358,
+   "scope": "extract_novnc called on every request",
+   "description": "The handler calls box.sandboxes.extract_novnc(novnc_dir) before resolving or validating path, so the only thing that keeps a request cheap is the marker file the function itself is supposed to create."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 148,
+   "scope": "the sole guard is a marker-file existence check",
+   "description": "if (dest / \"core\" / \"rfb.js\").exists(): return True - a check-then-act test with no lock, no in-flight marker and no negative cache, so N concurrent callers all proceed."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 152,
+   "scope": "containers.create + get_archive + extractall",
+   "description": "Each request that finds no marker creates a container from the desktop image (152), pulls the whole /usr/share/novnc tar into memory with b\"\".join(stream) (156-157) and extracts it into settings.home (166), then removes the container (161)."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 153,
+   "description": "Only ImageNotFound/APIError are caught around create and only NotFound/APIError around get_archive (158-159); the tarfile extraction at 163-166 is outside any handler, so FileExistsError/OSError from a concurrent or partial extraction escapes as a 500."
+  },
+  {
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 167,
+   "description": "The final (dest.parent / \"novnc\").rename(dest) runs without checking whether the destination already exists."
+  },
+  {
+   "file": "agentbox/api.py",
+   "line": 361,
+   "description": "The path-safety check and the 404 for a missing asset happen only after the extraction attempt, so even a 404 can cost a container create."
+  },
+  {
+   "file": "agentbox/api.py",
+   "line": 100,
+   "description": "novnc_dir = settings.home / \"novnc\": the extraction writes into the control plane's persistent data directory."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "system_configuration",
+   "description": "The desktop image is present (otherwise create raises ImageNotFound and the route is cheap) and home/novnc/core/rfb.js is absent: a fresh install before anyone opened a desktop page, or a state left behind by a failed or partial extraction."
+  },
+  {
+   "kind": "timing_dependency",
+   "description": "Two or more requests must be in flight together to duplicate the daemon work and reach the destination race; a single request duplicates nothing."
+  },
+  {
+   "kind": "authentication_level",
+   "description": "None - the route requires no principal, cookie or ticket."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "An unauthenticated client issues GETs to /static/novnc/core/rfb.js (or any path under that prefix) instead of relying on a real user opening the desktop page, so the first-time extraction happens under its timing.",
+  "payloads": [
+   "GET /static/novnc/core/rfb.js  (no headers, no cookie) - six copies issued concurrently",
+   "GET /static/novnc/does-not-exist.js  (no headers, no cookie) after deleting the extracted tree"
+  ],
+  "instructions": [
+   "In the approved sandbox, build the app with the Docker client replaced by an in-process fake that counts containers.create calls and serves a fixed tar containing novnc/core/rfb.js (the sandbox has no daemon).",
+   "Delete home/novnc, issue one GET, then a second GET, then six GETs with asyncio.gather, recording status codes and the number of containers.create calls.",
+   "Delete home/novnc again and issue three sequential GETs for a non-existent asset, recording creates and status per request."
+  ],
+  "observed_result": "With home/novnc deleted, one unauthenticated GET returned 200 with 1 containers.create call and wrote novnc/core/rfb.js; the next GET made 0 create calls (marker hit). After deleting home/novnc again, six concurrent unauthenticated GETs made 6 containers.create calls: one returned 200 and five returned 500 with FileExistsError: [Errno 17] File exists: '<home>/novnc/core'. Three further unauthenticated GETs for a non-existent asset, each preceded by deleting the tree, made 3 more create calls and returned 404 each time while the marker stayed absent. In a separate consolidated run whose archive was deliberately truncated, every one of three unauthenticated GETs made another containers.create call and returned 500 OSError: unexpected end of data, showing that any extraction failure leaves the marker absent and the daemon work repeatable."
+ },
+ "remediation": {
+  "strategy": "Extract once, under a lock, outside the request path: do it at startup or on the first authenticated desktop route, guard it with a per-directory lock plus an in-flight event so concurrent callers wait, extract and only then publish the marker, and treat any failure as a bounded negative state. /static/novnc/* should answer 404/503 without creating containers when the marker is absent.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/sandbox.py",
+    "fixed_code": "        self.client = docker.from_env()\n        self._lock = threading.Lock()\n        self._novnc_lock = threading.Lock()   # single-flight for extract_novnc"
+   },
+   {
+    "file_name": "agentbox/sandbox_desktop.py",
+    "fixed_code": "    def extract_novnc(self, dest: Path) -> bool:\n        marker = dest / \"core\" / \"rfb.js\"\n        if marker.exists():\n            return True\n        with self._novnc_lock:            # one extraction per process\n            if marker.exists():           # a waiter re-checks after the winner finished\n                return True\n            try:\n                c = self.client.containers.create(self.settings.desktop_image, [\"true\"], network_mode=\"none\")\n            except (ImageNotFound, APIError):\n                return False\n            try:\n                stream, _ = c.get_archive(\"/usr/share/novnc\")\n                out = b\"\".join(stream)\n            except (NotFound, APIError):\n                return False\n            finally:\n                c.remove(force=True)\n            dest.parent.mkdir(parents=True, exist_ok=True)\n            try:\n                with tarfile.open(fileobj=io.BytesIO(out)) as tf:\n                    members = [m for m in tf.getmembers() if m.isfile() or m.isdir()]\n                    tf.extractall(dest.parent, members=members, filter=\"data\")\n            except (OSError, tarfile.TarError):\n                shutil.rmtree(dest, ignore_errors=True)   # never serve a half tree\n                return False\n            return marker.exists()"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "medium",
+   "reason": "The expensive state is the missing marker, which exists on a fresh install and after any failed extraction; once the marker exists the cost drops to zero, so the attacker has to arrive before the first legitimate desktop use or exploit a broken state."
+  },
+  "impact": {
+   "score": "low",
+   "reason": "Unauthenticated Docker-daemon work, control-plane threads and data-directory writes, plus 500s and a possibly half-written asset tree; no data disclosure or privilege gain and the cost per request is bounded by one container create plus one asset-tree tar."
+  },
+  "overall_severity": "low"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "The source trace is complete and the duplication and race were reproduced locally with the Docker client stubbed; only the daemon-side wall time of one containers.create is deployment-specific."
+ },
+ "x_proposed_by": "h-preauth"
+}

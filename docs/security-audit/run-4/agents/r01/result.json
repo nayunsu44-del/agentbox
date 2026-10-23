@@ -1,0 +1,4 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/api.py:preauth-request-body-read-before-principal"
+}
