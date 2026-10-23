@@ -308,10 +308,11 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     @app.post("/approvals/{aid}")
     def decide(aid: str, body: Decision, p: Principal = Depends(principal)):
         if p.kind != "human":
-            # 시도 자체도 기록한다.
+            # 시도 자체도 기록한다. 디스크가 모자라면 남기지 않는다 (에이전트가 늘리는 기록, 보안 검수 run-4 N2)
             try:
-                audit.append(actor="agent", event="approval_forbidden", sandbox_id=p.sandbox_id,
-                             payload={"approval_id": aid})
+                if not box.disk_low():
+                    audit.append(actor="agent", event="approval_forbidden", sandbox_id=p.sandbox_id,
+                                 payload={"approval_id": aid})
             except Exception:
                 pass
             raise HTTPException(403, "에이전트 토큰으로는 승인할 수 없음")

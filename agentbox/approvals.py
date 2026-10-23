@@ -88,11 +88,15 @@ class ApprovalStore:
             )
             return cur.rowcount == 1
 
-    def finish(self, aid: str, status: str, result: dict[str, Any], snapshot_id: str | None = None) -> None:
+    def finish(self, aid: str, status: str, result: dict[str, Any], snapshot_id: str | None = None,
+               args: dict[str, Any] | None = None, preview: dict[str, Any] | None = None) -> None:
+        """끝난 요청의 상태와 결과를 남긴다. args·preview를 주면 그것으로 바꾼다 (줄인 원본)."""
+        dump = (lambda v: None if v is None else json.dumps(v, ensure_ascii=False))
         with self._lock:
             self.conn.execute(
-                "UPDATE approvals SET status = ?, result = ?, snapshot_id = COALESCE(?, snapshot_id) WHERE id = ?",
-                (status, json.dumps(result, ensure_ascii=False), snapshot_id, aid),
+                "UPDATE approvals SET status = ?, result = ?, snapshot_id = COALESCE(?, snapshot_id),"
+                " args = COALESCE(?, args), preview = COALESCE(?, preview) WHERE id = ?",
+                (status, json.dumps(result, ensure_ascii=False), snapshot_id, dump(args), dump(preview), aid),
             )
 
     @staticmethod

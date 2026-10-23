@@ -51,6 +51,10 @@ class Settings:
     gui_snapshot_interval: int = field(default_factory=lambda: int(_env("AGENTBOX_GUI_SNAPSHOT_INTERVAL", "600")))
     # 샌드박스 하나가 동시에 돌릴 수 있는 도구 호출 수. 0이면 끔.
     tool_concurrency: int = field(default_factory=lambda: int(_env("AGENTBOX_TOOL_CONCURRENCY", "4")))
+    # 데이터 폴더(DB)가 있는 디스크의 남은 공간이 이만큼(바이트)보다 적으면 에이전트의 도구 호출을 받지 않는다(507).
+    # 감사 로그는 지울 수 없어서, 에이전트 하나가 호출을 쏟아 디스크를 채우면 모든 샌드박스의 호출과 사람의 삭제·승인까지
+    # 기록 실패로 멈춘다. 남겨 둔 공간은 사람이 문제의 샌드박스를 지우고 결정하는 데 쓴다 (보안 검수 run-4 N2). 0이면 끔.
+    min_free_bytes: int = field(default_factory=lambda: int(_env("AGENTBOX_MIN_FREE", str(256 * 1024 * 1024))))
     max_read_bytes: int = 256 * 1024
     max_write_bytes: int = 1024 * 1024
     # UX-3, UX-4 사람이 넣고 받는 파일 하나의 상한
