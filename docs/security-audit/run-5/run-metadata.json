@@ -1,0 +1,45 @@
+{
+ "run_id": "agentbox-run-5",
+ "repo": "nayunsu44-del/agentbox",
+ "target": "/home/user/agentbox",
+ "source_ref": {
+  "commit": "346df290",
+  "branch": "main",
+  "dirty": false,
+  "note": "Audited source is a detached git worktree of main at 346df29 (after fix PRs #16-#23) in the parent's scratchpad; agents read it and tools/sbx mounts it read-only at /target. Only docs/security-audit/run-5/ is added on the working branch."
+ },
+ "profile": "standard",
+ "scope_paths": [
+  "."
+ ],
+ "scope_note": "Focused follow-up: the three units run-4 left deferred plus four units for code changed by the run-4 fixes (PRs #16-#22). The LLM-provider data path is a documented owner-accepted limitation and is out of scope.",
+ "budget": 30,
+ "budget_note": "Owner-set cap of 30 agent invocations. Owner model split: hunters Opus; everything else (Phase 3 candidate verifiers, Phase 5 record verifiers, coverage critics, re-verifiers) Sonnet. Reconnaissance was done by the parent (no agent spent): run-4 architecture plus a delta for every file changed since 9805d91. Parent-live checks (real Docker, desktop image) are outside the budget. Plan: 6 hunters, ~8 Phase 3, ~8 Phase 5, 2 retries, 2 critics; ask the owner before exceeding 30.",
+ "execution_policy": "sandboxed-source-and-local-only",
+ "execution_note": "Linux cloud container. Agent-run target code goes only through tools/sbx: docker run --network none, no docker socket, --read-only, host /usr read-only, audited worktree read-only at /target, writes only to agents/<id>/scratch (256 MiB loop-mounted ext4) at /scratch, /dev/shm 16 MiB, --pull never, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB, 1 CPU, 64 pids, 32 MiB files, 120 s wall clock, explicit env allowlist. Checks needing the real control plane or the desktop image are run by the parent in disposable containers on loopback and labelled parent-live.",
+ "companions_selected": [],
+ "prior_runs": [
+  {
+   "path": "docs/security-audit/run-4",
+   "source_ref": "9805d91",
+   "files": [
+    "coverage-ledger.json",
+    "findings.json"
+   ],
+   "note": "run-4 ended incomplete (budget_exhausted) with 3 deferred units; confirmed F1-F8 and needs_validation N2/N4/N5 were fixed in PRs #16-#22."
+  }
+ ],
+ "shared_file_owner": "parent",
+ "run_status": "in_progress",
+ "agents_spent": {
+  "recon": 0,
+  "hunters": 0,
+  "phase3": 0,
+  "phase5": 0,
+  "retries": 0,
+  "critics": 0,
+  "reverify": 0
+ },
+ "agents_spent_total": 0,
+ "phase": "phase2_hunting"
+}
