@@ -274,9 +274,15 @@ def test_agent_input_cannot_grow_audit_rows(home):
     sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
     sid, A = sb["id"], {"Authorization": f"Bearer {sb['agent_token']}"}
     try:
+        # 16KiB를 넘는 인자는 이제 정책 판단 전에 413으로 막힌다 (보안 검수 run-5)
         r = c.post(f"/sandboxes/{sid}/tools/read_file", headers=A, json={"args": {"path": "/etc/" + "A" * 131072}})
-        assert r.status_code == 400
+        assert r.status_code == 413
         r = c.post(f"/sandboxes/{sid}/tools/delete_file", headers=A, json={"args": {"path": "/etc/" + "B" * 262144}})
+        assert r.status_code == 413
+        # 상한 아래에서도 오류 문자열과 미리보기(조각마다 붙는 메모)는 감사 행 크기를 넘지 않는다
+        r = c.post(f"/sandboxes/{sid}/tools/read_file", headers=A, json={"args": {"path": "/etc/" + "A" * 16000}})
+        assert r.status_code == 400
+        r = c.post(f"/sandboxes/{sid}/tools/delete_file", headers=A, json={"args": {"path": "/etc/" + "B" * 16000}})
         assert r.status_code == 202
         r = c.post(f"/sandboxes/{sid}/tools/exec", headers=A, json={"args": {"command": "; ".join(["mv a b"] * 2001)}})
         assert r.status_code == 202

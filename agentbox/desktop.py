@@ -87,7 +87,11 @@ class DesktopControl:
         self.session_ttl = session_ttl
         self.idle = idle
         self.recheck = 30.0   # 열린 화면 연결이 세션을 다시 확인하는 간격(초). 만료·로그아웃되면 끊는다
+        # _lock은 메모리 상태(인수·연결·GUI 잠금)만 지킨다. SQLite는 _db_lock으로 따로 지킨다. 화면 웹소켓이
+        # 이벤트 루프에서 touch·lease를 부르는데, 같은 잠금을 쥔 채 디스크가 바쁜 SQLite를 기다리면 서버 전체가
+        # 멈췄다 (보안 검수 run-5). 둘을 같이 쥘 때는 늘 _db_lock → _lock 순서다.
         self._lock = threading.Lock()
+        self._db_lock = threading.Lock()
         # 만료 시각은 재시작을 넘어가야 하므로 벽시계(time.time)로 둔다.
         self._db = sqlite3.connect(str(db_path) if db_path else ":memory:", check_same_thread=False,
                                    isolation_level=None)
@@ -110,14 +114,14 @@ class DesktopControl:
     # ---- 티켓과 세션 ---------------------------------------------------
     def issue_ticket(self, sid: str) -> str:
         t = "tkt_" + secrets.token_urlsafe(24)
-        with self._lock:
+        with self._db_lock:
             self._db.execute("INSERT INTO ui_tickets (hash, scope, expires, gen) VALUES (?, ?, ?, ?)",
                              (_h(t), sid, time.time() + self.ticket_ttl, self.gen))
         return t
 
     def redeem(self, ticket: str, sid: str) -> tuple[str, str] | None:
         """1회용. 맞으면 (쿠키 값, 공개 세션 id). 웹 UI 로그인 티켓은 sid가 '*'이다."""
-        with self._lock:
+        with self._db_lock:
             row = self._db.execute("SELECT scope, expires, gen FROM ui_tickets WHERE hash = ?",
                                    (_h(ticket),)).fetchone()
             if not row:
@@ -132,7 +136,7 @@ class DesktopControl:
         cookie = secrets.token_urlsafe(32)
         public = "hs_" + secrets.token_hex(4)
         now = time.time()
-        with self._lock:
+        with self._db_lock:
             self._db.execute("DELETE FROM ui_sessions WHERE expires < ?", (now,))
             self._db.execute("INSERT INTO ui_sessions (hash, public, created, expires, scope, gen)"
                              " VALUES (?, ?, ?, ?, ?, ?)",
@@ -140,7 +144,7 @@ class DesktopControl:
         return cookie, public
 
     def end_session(self, cookie: str | None) -> str | None:
-        with self._lock:
+        with self._db_lock:
             row = self._db.execute("SELECT public FROM ui_sessions WHERE hash = ?", (_h(cookie or ""),)).fetchone()
             self._db.execute("DELETE FROM ui_sessions WHERE hash = ?", (_h(cookie or ""),))
         return row[0] if row else None
@@ -149,7 +153,7 @@ class DesktopControl:
         """(공개 세션 id, 범위). 범위는 '*' 또는 샌드박스 id."""
         if not cookie:
             return None
-        with self._lock:
+        with self._db_lock:
             row = self._db.execute("SELECT public, expires, scope, gen FROM ui_sessions WHERE hash = ?",
                                    (_h(cookie),)).fetchone()
             if not row:
@@ -187,22 +191,24 @@ class DesktopControl:
             return time.monotonic() - lease.last_active > self.idle
 
     def take(self, sid: str, session: str) -> Lease:
-        with self._lock:
-            cur = self._leases.get(sid)
-            if cur and cur.session != session:
-                raise PermissionError(f"다른 사람 세션({cur.session})이 이미 조작 중")
-            if cur:
-                return cur
-            lease = self._leases[sid] = Lease(sid, session)
+        with self._db_lock:
+            with self._lock:
+                cur = self._leases.get(sid)
+                if cur and cur.session != session:
+                    raise PermissionError(f"다른 사람 세션({cur.session})이 이미 조작 중")
+                if cur:
+                    return cur
+                lease = self._leases[sid] = Lease(sid, session)
             self._db.execute("INSERT OR REPLACE INTO takeover_leases VALUES (?, ?, ?, ?)",
                              (sid, session, lease.since, time.time()))
             return lease
 
     def release(self, sid: str) -> Lease | None:
-        with self._lock:
-            lease = self._leases.pop(sid, None)
+        with self._db_lock:
+            with self._lock:
+                lease = self._leases.pop(sid, None)
+                conns = [c for c in self._conns.values() if c.sandbox_id == sid and c.mode == "control"]
             self._db.execute("DELETE FROM takeover_leases WHERE sandbox_id = ?", (sid,))
-            conns = [c for c in self._conns.values() if c.sandbox_id == sid and c.mode == "control"]
         for c in conns:
             c.close()
         return lease
@@ -217,18 +223,22 @@ class DesktopControl:
         return out
 
     def close(self) -> None:
-        self._db.close()
+        with self._db_lock:
+            self._db.close()
 
     def leftover_leases(self) -> list[dict[str, Any]]:
         """지난 실행에서 돌려주지 않은 인수 (이번 실행의 메모리에는 없는 것)."""
-        with self._lock:
+        with self._db_lock:
             rows = self._db.execute("SELECT sandbox_id, session, since, started FROM takeover_leases").fetchall()
-            return [{"sandbox_id": r[0], "session": r[1], "since": r[2], "started": r[3]}
-                    for r in rows if r[0] not in self._leases]
+            with self._lock:
+                return [{"sandbox_id": r[0], "session": r[1], "since": r[2], "started": r[3]}
+                        for r in rows if r[0] not in self._leases]
 
     def forget_lease(self, sid: str) -> None:
-        with self._lock:
-            if sid not in self._leases:
+        with self._db_lock:
+            with self._lock:
+                held = sid in self._leases
+            if not held:
                 self._db.execute("DELETE FROM takeover_leases WHERE sandbox_id = ?", (sid,))
 
     # ---- 화면 연결 -----------------------------------------------------
@@ -272,9 +282,10 @@ class DesktopControl:
             c.close()
 
     def close_all(self, sid: str) -> None:
-        with self._lock:
-            conns = [c for c in self._conns.values() if c.sandbox_id == sid]
-            self._leases.pop(sid, None)
+        with self._db_lock:
+            with self._lock:
+                conns = [c for c in self._conns.values() if c.sandbox_id == sid]
+                self._leases.pop(sid, None)
             self._db.execute("DELETE FROM takeover_leases WHERE sandbox_id = ?", (sid,))
         for c in conns:
             c.close()

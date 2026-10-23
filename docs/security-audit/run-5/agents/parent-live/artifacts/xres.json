@@ -1,0 +1,41 @@
+{
+ "window_owner_pids": {
+  "96": "xfwm4",
+  "121": "xfce4-panel",
+  "137": "xfdesktop",
+  "148": "/usr/lib/x86_64-linux-gnu/xfce4/panel/wrapper-2.0 /usr/lib/x86_64-linux-gnu/xfce4/panel/plugins/libsystray.so 6 12582924 systray Status Tray Plugin Provides status notifier items (application indicators) and legacy systray items",
+  "152": "/usr/lib/x86_64-linux-gnu/xfce4/panel/wrapper-2.0 /usr/lib/x86_64-linux-gnu/xfce4/panel/plugins/libactions.so 14 12582925 actions Action Buttons Log out, lock or other system actions"
+ },
+ "xdotool_net_wm_pid_view": [
+  "8388658 96 Xfwm4",
+  "14680104 137 Desktop",
+  "12582915 121 xfce4-panel",
+  "16777219 148 wrapper-2.0",
+  "23068675 152 wrapper-2.0",
+  "12582926 121 xfce4-panel",
+  "12582930 121 xfce4-panel"
+ ],
+ "all_owner_pids_are_desktop_user_processes": true,
+ "agent_click_status": 200,
+ "job_pids": [
+  265
+ ],
+ "job_alive_after_close": [],
+ "audit": [
+  {
+   "id": 7,
+   "event": "gui_processes_stopped",
+   "payload": {
+    "count": 1,
+    "processes": [
+     {
+      "args": "sleep 601",
+      "pid": 265
+     }
+    ],
+    "reason": "idle",
+    "snapshot_id": "snap_eb5bb7a6"
+   }
+  }
+ ]
+}

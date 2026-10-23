@@ -1,0 +1,127 @@
+{
+ "steps": [
+  {
+   "step": "desktop_ready",
+   "sid": "sb_7cd05982",
+   "window_pids": [
+    278
+   ]
+  },
+  {
+   "step": "takeover",
+   "lease": true
+  },
+  {
+   "step": "agent_click",
+   "status": 202,
+   "approval_id": "apr_d268afe7ea9b"
+  },
+  {
+   "step": "human_approves_during_lease",
+   "status": "failed",
+   "result": {
+    "error": "사람이 화면을 조작 중 (sess_human, 2026-10-23T18:00:28.184+00:00부터)"
+   },
+   "lease": true,
+   "burst_open": true,
+   "burst_baseline_size": 0
+  },
+  {
+   "step": "human_job_started",
+   "pids": [
+    400
+   ]
+  },
+  {
+   "step": "after_idle_close",
+   "lease_still_held": true,
+   "human_job_alive": [],
+   "burst_open": false
+  }
+ ],
+ "audit": [
+  {
+   "id": 3,
+   "actor": "human",
+   "event": "human_takeover",
+   "tool": null,
+   "payload": {
+    "session": "sess_human"
+   }
+  },
+  {
+   "id": 7,
+   "actor": "human",
+   "event": "approval_decision",
+   "tool": "click",
+   "payload": {
+    "approval_id": "apr_d268afe7ea9b",
+    "decision": "approved",
+    "session": "sess_human"
+   }
+  },
+  {
+   "id": 8,
+   "actor": "system",
+   "event": "snapshot",
+   "tool": "click",
+   "payload": {
+    "approval_id": "apr_d268afe7ea9b",
+    "image": "agentbox-snap:sb_7cd05982-snap_d7535529",
+    "snapshot_id": "snap_d7535529"
+   }
+  },
+  {
+   "id": 10,
+   "actor": "system",
+   "event": "tool_error",
+   "tool": "click",
+   "payload": {
+    "approval_id": "apr_d268afe7ea9b",
+    "error": "사람이 화면을 조작 중 (sess_human, 2026-10-23T18:00:28.184+00:00부터)"
+   }
+  },
+  {
+   "id": 11,
+   "actor": "system",
+   "event": "gui_processes_stopped",
+   "tool": null,
+   "payload": {
+    "count": 1,
+    "processes": [
+     {
+      "args": "sleep 600",
+      "pid": 400
+     }
+    ],
+    "reason": "idle",
+    "snapshot_id": "snap_d7535529"
+   }
+  },
+  {
+   "id": 12,
+   "actor": "system",
+   "event": "gui_processes_kept",
+   "tool": null,
+   "payload": {
+    "count": 2,
+    "processes": [
+     {
+      "args": "/usr/lib/x86_64-linux-gnu/xfce4/panel/wrapper-2.0 /usr/lib/x86_64-linux-gnu/xfce4/panel/plugins/libsystray.so 6 12582924 systray Status Tray Plugin Provides status notifier items (application indicato",
+      "pid": 382
+     },
+     {
+      "args": "/usr/lib/x86_64-linux-gnu/xfce4/panel/wrapper-2.0 /usr/lib/x86_64-linux-gnu/xfce4/panel/plugins/libactions.so 14 12582925 actions Action Buttons Log out, lock or other system actions",
+      "pid": 390
+     }
+    ],
+    "reason": "idle",
+    "snapshot_id": "snap_d7535529"
+   }
+  }
+ ],
+ "verdict": {
+  "burst_opened_during_lease": true,
+  "human_job_killed_during_lease": true
+ }
+}

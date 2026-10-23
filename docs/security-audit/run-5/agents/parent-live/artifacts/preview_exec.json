@@ -1,0 +1,35 @@
+{
+ "runs": [
+  {
+   "operands": 50,
+   "status": 202,
+   "seconds_to_response": 8.05,
+   "exec_start_events": 99,
+   "per_exec_ms": 81.28,
+   "other_sandbox_ls_s": {
+    "n": 29,
+    "median": 0.081,
+    "max": 0.118
+   }
+  },
+  {
+   "operands": 200,
+   "status": 202,
+   "seconds_to_response": 30.75,
+   "exec_start_events": 399,
+   "per_exec_ms": 77.08,
+   "other_sandbox_ls_s": {
+    "n": 108,
+    "median": 0.083,
+    "max": 0.122
+   }
+  }
+ ],
+ "other_sandbox_ls_baseline_s": [
+  0.08,
+  0.086,
+  0.074,
+  0.075,
+  0.078
+ ]
+}

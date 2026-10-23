@@ -1,0 +1,42 @@
+== control: burst finished before takeover (no race) ==
+click: 200
+burst open during lease: False lease: True
+agent list_dir: 200
+killed: []
+== (b) call_tool click races takeover; close_during_lease=True ==
+takeover ok, lease: True
+agent click status: 423 human_control clicks: []
+burst open during lease: True baseline pids: [1, 100, 101] snapshot: snap_1
+agent list_dir: 200 lease still held: True
+killed: [201, 202]
+   ('human_takeover', None, None, None)
+   ('snapshot', None, None, None)
+   ('tool_blocked', 'human_control', None, None)
+   ('gui_processes_stopped', 'idle', [{'pid': 201, 'args': 'bash'}, {'pid': 202, 'args': 'python3 -m http.server 8000'}], None)
+   ('gui_processes_kept', 'idle', [{'pid': 200, 'args': 'xfce4-terminal'}], None)
+   ('gui_changes', 'idle', None, {'added': ['human_notes.txt'], 'snapshot_id': 'snap_1'})
+== (b) call_tool click races takeover; close_during_lease=False ==
+takeover ok, lease: True
+agent click status: 423 human_control clicks: []
+burst open during lease: True baseline pids: [1, 100, 101] snapshot: snap_1
+handback done; human's shell/job still running; agent clicks again
+agent click: 200
+killed: [201, 202]
+   ('human_takeover', None, None, None)
+   ('snapshot', None, None, None)
+   ('tool_blocked', 'human_control', None, None)
+   ('human_handback', 'handback', None, None)
+   ('gui_processes_stopped', 'next_burst', [{'pid': 201, 'args': 'bash'}, {'pid': 202, 'args': 'python3 -m http.server 8000'}], None)
+   ('gui_processes_kept', 'next_burst', [{'pid': 200, 'args': 'xfce4-terminal'}], None)
+   ('gui_changes', 'next_burst', None, {'added': ['human_notes.txt'], 'snapshot_id': 'snap_1'})
+   ('snapshot', None, None, None)
+== (a) decide() approves a pending click while the lease is held ==
+agent click during lease: 202 pending
+decide -> failed snapshots: ['before apr_d4364655b5b2'] clicks: []
+burst open during lease: True baseline: [1, 100, 101]
+lease still held: True killed: [201, 202]
+   ('human_takeover', None, None, None)
+   ('snapshot', None, None, None)
+   ('gui_processes_stopped', 'idle', [{'pid': 201, 'args': 'bash'}, {'pid': 202, 'args': 'python3 -m http.server 8000'}], None)
+   ('gui_processes_kept', 'idle', [{'pid': 200, 'args': 'xfce4-terminal'}], None)
+   ('gui_changes', 'idle', None, {'added': ['human_notes.txt'], 'snapshot_id': 'snap_1'})

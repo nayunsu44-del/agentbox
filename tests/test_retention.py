@@ -144,3 +144,48 @@ def test_cli_prune_and_verify_with_archive(tmp_path, monkeypatch, capsys):
     time.sleep(0.01)
     with pytest.raises(SystemExit):                              # 있는 아카이브는 덮어쓰지 않는다
         main(["prune", "--before", _now(), "--archive", str(tmp_path / "1.jsonl.gz")])
+
+
+class _CommitThenInterrupt(sqlite3.Connection):
+    """COMMIT은 실제로 하고, 끝나자마자 Ctrl-C가 온 것처럼 KeyboardInterrupt를 던진다."""
+
+    def execute(self, sql, *a):
+        cur = super().execute(sql, *a)
+        if sql == "COMMIT":
+            raise KeyboardInterrupt
+        return cur
+
+
+def test_interrupt_after_commit_keeps_archive(tmp_path, monkeypatch):
+    # 보안 검수 run-5: 지운 뒤 COMMIT 직후의 Ctrl-C가 유일한 사본인 아카이브를 지웠다
+    import types
+
+    from agentbox import retention
+    db = tmp_path / "a.db"
+    log, cut = _cut(db, 5, 2)
+    shim = types.SimpleNamespace(connect=lambda *a, **k: sqlite3.connect(*a, factory=_CommitThenInterrupt, **k),
+                                 Error=sqlite3.Error, Connection=sqlite3.Connection)
+    monkeypatch.setattr(retention, "sqlite3", shim)
+    arc = tmp_path / "1.jsonl.gz"
+    with pytest.raises(KeyboardInterrupt):
+        prune(db, cut, arc)
+    assert arc.exists()
+    assert log.verify().ok
+    assert AuditLog(db).verify_archives([arc]).ok
+
+
+def test_failed_archive_write_leaves_no_partial_file(tmp_path, monkeypatch):
+    from agentbox import retention
+    db = tmp_path / "a.db"
+    log, cut = _cut(db, 5, 2)
+
+    def boom(path, *a):
+        path.write_bytes(b"partial")
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(retention, "_write_archive", boom)
+    arc = tmp_path / "1.jsonl.gz"
+    with pytest.raises(OSError):
+        prune(db, cut, arc)
+    assert not arc.exists()
+    assert len(log.list()) == 7

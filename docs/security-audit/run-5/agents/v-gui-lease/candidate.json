@@ -1,0 +1,116 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/service.py:_snapshot:gui-burst-opened-under-takeover-lease",
+ "title": "GUI burst opened during a human takeover lets the control plane kill the human's processes and charge human edits to the agent",
+ "description": "AgentBox._snapshot closes and opens an agent GUI burst without gui_lock and without checking the takeover lease. An approved GUI action decided while a lease is held (decide), or an agent click/type/key whose pre-input docker commit overlaps POST /desktop/takeover (call_tool), installs a new burst whose baseline is taken mid-takeover. _run_tool then raises HumanControl, but the burst stays open. When close_idle runs (triggered by any agent tool call or GET /approvals/{aid}) or the next agent burst closes it after handback, _stop_strays SIGKILLs, as the desktop user, every uid-1001 process the human started after that baseline in a new session (terminal shells and jobs started from them), and _finish records the human's /workspace edits as agent gui_changes. The takeover's own close at service.py:582 is meant to keep human activity out of agent bursts, and this path bypasses it. A prompt-injected agent can pick the moment of the kill, and with the default policy path (b) needs only that the takeover overlaps a commit.",
+ "claimed_root_cause": "Burst open/close in _snapshot (service.py:261-276) is not serialized with takeover (gui_lock) and is not conditioned on the lease. Only needs_snapshot (gui_bursts.py:61) checks the lease, before a multi-second commit, and decide does not check it at all. The HumanControl paths in call_tool (service.py:373-381) and decide (service.py:477-480) do not discard the burst they just opened, so a baseline taken during the lease is later used for stray kill and change attribution.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 273,
+   "scope": "POST /sandboxes/{sid}/tools/{tool}",
+   "description": "Agent token calls click/type/key; also POST /approvals/{aid} (api.py:308) and POST /ui/approvals/{aid}/approve (web.py:242) reach decide."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/gui_bursts.py",
+   "line": 61,
+   "scope": "GuiBursts.needs_snapshot",
+   "description": "Lease/takeover_pending checked here only, before the commit; no lease yet, so it returns True."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 367,
+   "scope": "AgentBox._call_tool",
+   "description": "Allow path calls _snapshot without gui_lock (decide does the same at service.py:467 with no lease check at all)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 582,
+   "scope": "AgentBox.takeover",
+   "description": "Human takeover gets gui_lock (free), closes the burst (none yet, the old one was closed at 263), then installs the lease at 584."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 268,
+   "scope": "AgentBox._snapshot",
+   "description": "After the commit returns, bursts.open records a baseline of processes/manifest taken during the lease."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 143,
+   "scope": "AgentBox._run_tool",
+   "description": "_check_control raises HumanControl; call_tool returns 423 / decide marks the approval failed; the burst is left in _gui_burst."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/gui_bursts.py",
+   "line": 161,
+   "scope": "GuiBursts.close_idle",
+   "description": "Run from any call_tool (service.py:285) or expire_stale (service.py:424, reached by GET /approvals/{aid}); submits close of the mid-lease burst while the lease is still held (or the next burst's close('next_burst') after handback)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/gui_state.py",
+   "line": 76,
+   "scope": "_new_processes",
+   "description": "Human-started uid-1001 processes in sessions absent from the mid-lease baseline are classified as strays."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 94,
+   "scope": "SandboxManager.kill_processes",
+   "description": "kill -KILL of the human's processes as the desktop user; _finish (gui_bursts.py:147) logs the human's edits as agent gui_changes."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/service.py",
+   "line": 261,
+   "description": "_snapshot closes (263) and opens (268) the burst with no gui_lock and no lease check."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 467,
+   "description": "decide calls _snapshot unconditionally for an approved GUI input, even while desktop.lease(sid) is set."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 373,
+   "description": "HumanControl handling returns 423 without discarding the burst opened by _snapshot; decide (477-480) likewise."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 582,
+   "description": "takeover closes the burst so human changes stay out of agent bursts. This intent is bypassed when the open happens after this close."
+  },
+  {
+   "file": "agentbox/gui_bursts.py",
+   "line": 95,
+   "description": "_stop_strays kills gui_strays computed against the burst baseline."
+  },
+  {
+   "file": "agentbox/gui_state.py",
+   "line": 87,
+   "description": "Docstring: processes in sessions absent at burst start (terminal shells, setsid jobs) are stopped."
+  },
+  {
+   "file": "agentbox/api.py",
+   "line": 290,
+   "description": "GET /approvals/{aid} (agent-callable) runs expire_stale -> close_idle, letting the agent choose when the kill happens."
+  }
+ ],
+ "blockers": [
+  "The sandboxed check used a fake Docker-facing SandboxManager (snapshot blocks on an event in place of docker commit, desktop_processes returns a fixed ps/window table). Still to be observed: real kill -KILL of human-started processes in the agentbox-desktop:0.1 container during a live lease, the real session layout of a terminal opened through noVNC, and the real docker commit duration that sets the race window for path (b)."
+ ],
+ "validation_plan": {
+  "local": "Already run in tools/sbx: agents/h-gui-lease/artifacts/h.out from h.py (real AgentBox/GuiBursts/gui_state/DesktopControl/ApprovalStore, fake SandboxManager). Shows killed [201,202] and gui_changes added [human_notes.txt] for (a) decide-under-lease, (b) call_tool/takeover race with close during lease, and (b') close via next_burst after handback; control without race shows killed []. Regression: same schedules must give killed == [] and no 'sb' in box.bursts._gui_burst while the lease is held.",
+  "deployment": "Parent-live, loopback, disposable desktop sandbox, dummy tokens. (a) Deterministic: policy file adds rule {id: gui-approval, tool: click, action: require_approval}; create desktop sandbox; human session POST /sandboxes/{sid}/desktop/takeover; agent token POST /sandboxes/{sid}/tools/click {x:1,y:1} -> 202 with approval_id; human POST /approvals/{aid} {decision: approve} -> status failed; audit shows human_takeover then a system 'snapshot' row for tool click. Do not keep the main UI tabs open (they poll /ui/notify). Then start a human-like job outside the exec exemption: docker exec -u desktop <c> setsid -f sleep 600 (reparented to PID 1, new session), or open a terminal through noVNC. Wait more than 60 s, then agent GET /approvals/{aid}; expect while the lease is still held an audit gui_processes_stopped row (reason idle) listing that pid and the pid gone from ps. (b) Race: leave the agent's GUI idle for more than 60 s, send agent click, and about 200 ms later (inside the docker commit) send POST /desktop/takeover; expect click 423 and audit order human_takeover -> snapshot(tool=click) -> tool_blocked(human_control), then repeat the setsid job + agent list_dir step and observe the kill. Variant: hand back instead, then agent click; expect gui_processes_stopped reason next_burst for the job started during the lease."
+ }
+}

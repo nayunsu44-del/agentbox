@@ -44,6 +44,9 @@ GUI_LOCK_WAIT = 30
 AUDIT_BURST_WAIT = 5   # 감사 로그 조회가 방금 닫기 시작한 구간 기록을 기다리는 최대 시간(초)
 # 샌드박스 하나가 동시에 걸어 둘 수 있는 승인 요청 수. 요청마다 화면 캡처 PNG가 호스트에 남는다 (보안 검수 run-3 v18).
 PENDING_APPROVALS_MAX = 20
+# write_file 본문을 뺀 문자열 인자 하나(exec 명령 등)의 최대 길이. 사람이 읽고 승인할 수 있는 명령보다 길고,
+# 정책 판단이 가장 느린 모양에서도 0.2초 안에 끝나는 크기 (보안 검수 run-5). 큰 내용은 write_file로 보낸다.
+TOOL_ARG_MAX = 16 * 1024
 
 
 _NO_SESSION: Any = ...   # "session을 넘기지 않음". None(세션 없는 사람 토큰)과 다르다
@@ -262,12 +265,23 @@ class AgentBox:
         if tool in GUI_INPUT:
             self.bursts.close(sid, "next_burst")
         snap = self.sandboxes.snapshot(sid, reason=reason)
-        opened = True
+        opened, human = True, None
         if tool in GUI_INPUT:
-            self.bursts.mark_snapshot(sid)
-            opened = self.bursts.open(sid, snap["id"])
+            # 커밋하는 동안 사람이 인수했으면 구간을 열지 않는다. 열면 인수 중에 잡은 기준으로 나중에 사람이 띄운
+            # 프로세스를 멈추고 사람의 편집을 에이전트 변경으로 남긴다 (보안 검수 run-5). 인수와 같은 gui_lock 아래에서 본다
+            with self._gui_locked(sid, "GUI 구간 열기"):
+                try:
+                    self._check_control(sid)
+                except HumanControl as h:
+                    human = h
+                else:
+                    self.bursts.mark_snapshot(sid)
+                    opened = self.bursts.open(sid, snap["id"])
         self.audit.append(actor="system", event="snapshot", sandbox_id=sid, tool=tool,
                           payload={**ref, "snapshot_id": snap["id"], "image": snap["image"]})
+        if human:
+            self.bursts.reset_timers(sid)
+            raise human
         if not opened:
             # 기준 없이 구간을 돌리면 그 동안 GUI로 바꾼 것이 기록되지 않는다. 에이전트가 pid 한도를 채워 일부러
             # 이 상태를 만들 수 있으니 이 입력은 실행하지 않고, 다음 입력이 다시 구간을 열게 한다 (보안 검수 run-3 v09)
@@ -305,6 +319,14 @@ class AgentBox:
         if tool not in TOOLS:
             raise ServiceError(404, f"알 수 없는 도구: {tool}")
         self.sandboxes.get(sid)  # 없으면 SandboxError
+        # 문자열이 아닌 값도 잰다: 정책은 str(args["command"])로 읽으므로 목록에 넣어도 같은 비용이 든다
+        long = [k for k, v in args.items()
+                if k != "content" and len(v if isinstance(v, str) else json.dumps(v, default=str)) > TOOL_ARG_MAX]
+        if long:
+            # 정책 판단과 승인 미리보기는 명령 길이에 비례해 CPU·exec를 쓴다. 판단 전에 길이부터 막는다 (보안 검수 run-5)
+            self.log_best_effort(sid, tool, "tool_blocked", {"reason": "argument_too_long", "args": long,
+                                                             "limit": TOOL_ARG_MAX}, actor="system")
+            raise ServiceError(413, f"도구 인자가 너무 김: {', '.join(long)} (최대 {TOOL_ARG_MAX}자). 나눠서 호출할 것")
         try:
             req_id = self.audit.append(actor=actor, event="tool_request", sandbox_id=sid, tool=tool,
                                        payload={"args": self._logged_args(tool, args)})
@@ -332,6 +354,12 @@ class AgentBox:
                 preview = self._preview(sid, tool, args)
             except Exception as e:  # 미리보기가 실패해도 승인은 사람에게 넘긴다
                 preview = {"command": args.get("command"), "affected": [], "notes": [f"미리보기 실패: {e}"]}
+            preview = bound_payload(preview)  # 대기 행도 감사 로그와 같은 크기로 (보안 검수 run-5)
+            if actor == "agent" and self.disk_low():
+                # 호출을 받을 때의 확인 뒤에 판단·미리보기가 오래 걸릴 수 있다. 행을 쓰기 직전에 다시 본다
+                self.log_best_effort(sid, tool, "tool_blocked", {"request": req_id, "reason": "disk_low"})
+                raise ServiceError(507, "컨트롤 플레인 디스크의 남은 공간이 부족해 승인 요청을 만들지 않음. "
+                                        "사람이 공간을 확보한 뒤 다시 호출할 것.")
             cap = self._capture(sid)
             if cap:
                 preview["capture"] = cap[1]
@@ -365,25 +393,30 @@ class AgentBox:
                                         "다시 호출하면 승인 요청으로 처리됨")
             try:
                 self._snapshot(sid, tool, f"before {tool} (request {req_id})", {"request": req_id})
+            except HumanControl as h:
+                return self._human_blocked(sid, tool, req_id, h)
             except (SandboxError, AuditWriteError, Exception) as e:
                 self.log_best_effort(sid, tool, "tool_error", {"request": req_id, "error": f"스냅샷 실패: {e}"})
                 raise ServiceError(503, f"스냅샷 또는 기록 실패, 실행하지 않음: {e}") from e
         try:
             result = self._run_tool(sid, tool, args)
         except HumanControl as h:
-            try:
-                self.audit.append(actor="system", event="tool_blocked", sandbox_id=sid, tool=tool,
-                                  payload={"request": req_id, "reason": "human_control", "session": h.lease.session})
-            except AuditWriteError as e:
-                raise ServiceError(503, f"{e}. 기록할 수 없어서 실행하지 않음.") from e
-            return ToolOutcome(423, {"status": "human_control", "since": h.lease.since,
-                                     "message": "사람이 화면을 조작 중이라 GUI 도구를 실행하지 않았다. "
-                                                "돌려받은 뒤 다시 호출할 것 (GET /sandboxes/{id}/desktop/state)."})
+            return self._human_blocked(sid, tool, req_id, h)
         except SandboxError as e:
             self.log_best_effort(sid, tool, "tool_error", {"request": req_id, "error": str(e)})
             raise ServiceError(400, str(e)) from e
         self.log_best_effort(sid, tool, "tool_result", {"request": req_id, **self._summary(tool, result)})
         return ToolOutcome(200, {"status": "executed", "result": result})
+
+    def _human_blocked(self, sid: str, tool: str, req_id: int, h: HumanControl) -> ToolOutcome:
+        try:
+            self.audit.append(actor="system", event="tool_blocked", sandbox_id=sid, tool=tool,
+                              payload={"request": req_id, "reason": "human_control", "session": h.lease.session})
+        except AuditWriteError as e:
+            raise ServiceError(503, f"{e}. 기록할 수 없어서 실행하지 않음.") from e
+        return ToolOutcome(423, {"status": "human_control", "since": h.lease.since,
+                                 "message": "사람이 화면을 조작 중이라 GUI 도구를 실행하지 않았다. "
+                                            "돌려받은 뒤 다시 호출할 것 (GET /sandboxes/{id}/desktop/state)."})
 
     def disk_low(self) -> bool:
         """DB가 있는 디스크의 남은 공간이 min_free_bytes보다 적은지. 에이전트가 늘리는 기록(도구 호출, 승인 시도)은
@@ -462,11 +495,23 @@ class AgentBox:
             self._finish(apr, A.DENIED, {"message": "사람이 거절함. 실행하지 않음."})
             return self.approvals.get(aid)  # type: ignore[return-value]
 
+        if tool in GUI_INPUT and ((self.desktop.lease(sid) and not self.desktop.is_stale(sid))
+                                  or self._takeover_pending(sid)):
+            # 사람이 화면을 조작 중이면 GUI 입력은 어차피 실행하지 않는다. 스냅샷·구간도 만들지 않는다 (보안 검수 run-5)
+            msg = "사람이 화면을 조작 중이라 승인된 GUI 입력을 실행하지 않음. 돌려받은 뒤 다시 요청할 것"
+            self._finish(apr, A.FAILED, {"error": msg})
+            self.log_best_effort(sid, tool, "tool_error", {"approval_id": aid, "error": msg})
+            return self.approvals.get(aid)  # type: ignore[return-value]
+
         # AP-2: 실행 직전 스냅샷
         try:
             snap = self._snapshot(sid, tool, f"before {aid}", {"approval_id": aid})
             self.audit.append(actor="system", event="tool_execute", sandbox_id=sid, tool=tool,
                               payload={"approval_id": aid, "args": self._logged_args(tool, args)})
+        except HumanControl as h:
+            self._finish(apr, A.FAILED, {"error": str(h)})
+            self.log_best_effort(sid, tool, "tool_error", {"approval_id": aid, "error": str(h)})
+            return self.approvals.get(aid)  # type: ignore[return-value]
         except (SandboxError, AuditWriteError, Exception) as e:
             self._finish(apr, A.FAILED, {"error": f"스냅샷 또는 기록 실패, 실행하지 않음: {e}"})
             self.log_best_effort(sid, tool, "tool_error", {"approval_id": aid, "error": str(e)})

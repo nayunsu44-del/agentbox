@@ -1,0 +1,1036 @@
+[
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/api.py:preauth-request-body-read-before-principal",
+  "title": "Unauthenticated JSON bodies are still decoded before principal(); one 8 MiB request costs about 200 MB of transient memory and roughly 0.3-0.8 s of request time before the 401, and four concurrent requests OOM-killed the server at a 512 MiB container limit",
+  "description": "The F1 fix (PR #16) caps request bodies before routing, at 8 MiB (AGENTBOX_MAX_BODY) for JSON routes. That cap is identical for unauthenticated and authenticated clients. FastAPI's get_request_handler (fastapi 0.161.1, routing.py:428-471) awaits request.body() and decodes the JSON in its async request handler before solve_dependencies (routing.py:511) runs principal()/human_only. Because the decode happens in that async handler, it runs on the event loop for every JSON-body route, including the sync create_sandbox, restore and decide routes as well as the async call_tool (api.py:274). A body of empty objects decodes at about 26x its size (hunter tracemalloc: 27.4 MB peak for 1.05 MB, 54.9 MB for 2.10 MB, both 401). Whole-process growth for an 8 MiB body is about 24x (RSS 59 MB to 260 MB). Parent-live check on a real uvicorn server (127.0.0.1, stub Docker client, dummy human token, no Authorization header, 8,388,580-byte body to POST /sandboxes/sb_x/tools/exec). At a 1 GiB container limit: idle RSS 59 MB; one request returned 401 after 0.69 s with RSS 260 MB afterwards and a high-water mark of 268 MB; four concurrent requests reached a 703 MB high-water mark and a human GET /healthz sent during the burst took 1.23 s against 0.003 s idle; eight concurrent requests reached 734 MB, all answered 401 in under 4 s, healthz 0.47 s; the server stayed alive. At a 512 MiB container limit: one request returned 401 (hwm 267 MB), but four concurrent unauthenticated 8 MiB requests got connection resets and the server process was OOM-killed (exit -9). Two later independent runs of the same script in 512 MiB no-swap sandboxes (r-preauth, then rv-preauth) reproduced the pattern: single request 401 in 0.28 s and 0.75 s with hwm 268 and 267 MB, then four concurrent requests were reset and the server exited -9. So the amplification, the missing authentication ordering, and process death under a memory limit are reproduced. Whether any real deployment is affected depends on its memory limit and host RAM, which the repository does not fix: deploy/docker-compose.yml sets no mem_limit, cli.py:127 passes no limit_concurrency, and the bundled Caddyfile allows 256MB per request by default. In the 512 MiB run the container supervisor policy in the repository (restart: unless-stopped) would restart the process. The attacker's cost in that case is about 32 MiB of upload (four 8 MiB bodies), with in-flight requests lost during the restart and the human approval UI and audit chain unavailable meanwhile. Pending approvals live in SQLite and are not shown to be lost. The run-4 finding (unbounded body size, multipart spooling) is fixed: bytes are now capped and the upload form is parsed only after screen_human. What remains is bounded per-request work, about 25x memory amplification, that is not tied to authentication.",
+  "claimed_root_cause": "Authentication dependencies run after FastAPI's body-reading and JSON-decoding stage. The only pre-auth bound is a byte cap (8 MiB) sized for the largest authenticated payload (an escaped 1 MiB write_file). It does not account for the roughly 26x object-graph amplification of JSON. There is no smaller cap or credential check for requests that carry no Authorization header, and no concurrency limit on pre-auth decodes (no uvicorn limit_concurrency, no container memory limit in the shipped compose file, no proxy JSON-route cap below 256MB).",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 274,
+    "scope": "POST /sandboxes/{sid}/tools/{tool} (async call_tool, body: ToolCall, Depends(principal)); same shape at create_sandbox api.py:233, restore api.py:264, decide api.py:309",
+    "description": "A client with no token sends a JSON body of up to 8 MiB to a route it knows answers 401."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 105,
+    "scope": "_BodyLimit.__call__ (installed at api.py:170)",
+    "description": "Content-Length is checked against the cap only (8 MiB for non-upload routes, cap from config.py:65). The check is independent of whether credentials are present."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 115,
+    "scope": "_BodyLimit.limited_receive",
+    "description": "Streamed bytes are counted up to the cap and handed to the app. Bodies at or under 8 MiB pass unchanged."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/api.py",
+    "line": 173,
+    "scope": "principal() dependency",
+    "description": "Runs only after FastAPI has buffered the body (await request.body()) and decoded the JSON into the full object graph (about 26x the body for empty objects), in the async request handler on the event loop. It then raises 401 at the missing Authorization header."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/api.py",
+    "line": 170,
+    "description": "_BodyLimit is installed with json_max=settings.max_body_bytes and applies to every non-upload route regardless of authentication. api.py:171 _NoFraming only adds response headers."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 65,
+    "description": "max_body_bytes defaults to 8 MiB, sized so an escaped 1 MiB write_file fits. This is a pre-auth ceiling of 8 MiB per request."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 127,
+    "description": "uvicorn.run passes no limit_concurrency, so concurrent pre-auth decodes are not bounded in source."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 8,
+    "description": "request_body max_size defaults to 256MB (AGENTBOX_PROXY_MAX_BODY) for every route, so the shipped proxy does not enforce the 8 MiB cap or anything smaller on JSON routes."
+   },
+   {
+    "file": "deploy/docker-compose.yml",
+    "line": 11,
+    "description": "The agentbox service block (lines 11-31) has no mem_limit or deploy.resources limits. Line 17 sets restart: unless-stopped. The same process serves the approval UI and the audit chain."
+   },
+   {
+    "file": "agents/parent-live/artifacts/preauth_json.json",
+    "line": 1,
+    "description": "Parent-live result at 1 GiB (real uvicorn, no auth): 8,388,580-byte body gives 401 in 0.69 s, RSS 59 to 260 MB (hwm 268). Four concurrent give hwm 703 MB and healthz 1.23 s. Eight concurrent give hwm 734 MB and healthz 0.47 s. No OOM at 1 GiB."
+   },
+   {
+    "file": "agents/parent-live/artifacts/preauth_json_512m.json",
+    "line": 1,
+    "description": "Parent-live result at --memory 512m: one request gives 401 (hwm 267 MB); four concurrent requests give connection resets, server_alive false, exit -9 (OOM-kill). Independent reruns of the same script in 512 MiB no-swap sandboxes (r-preauth scratch/out.json; rv-preauth scratch/out.json, single 401 in 0.75 s, hwm 267 MB) show the same pattern with exit -9."
+   },
+   {
+    "file": "agents/h-bodylimit/artifacts/h.out",
+    "line": 13,
+    "description": "Hunter-local check: tracemalloc peak 27.4 MB for a 1.05 MB body (line 13) and 54.9 MB for 2.10 MB (line 14), both 401 (T7 lines), confirming the linear ~26x amplification before the dependency runs."
+   }
+  ],
+  "blockers": [
+   "Deployed memory limit of the agentbox control-plane container or host is outside the repository. The compose file sets none. The 1 GiB test survived 8 concurrent 8 MiB requests (734 MB hwm) and the 512 MiB test was OOM-killed by 4, so whether a real deployment dies depends on a limit or host RAM that the owner sets.",
+   "Sustained-load behavior (event-loop starvation of the human UI and approvals under repeated pre-auth requests) and the actual restart and recovery time were not measured, because the audit rules forbid stress or saturation testing. The measured stall was about 1.2 s for a 4-request burst at 1 GiB. The repo's compose policy is restart: unless-stopped, but the owner's supervisor may differ.",
+   "The deployed edge may enforce a stricter body cap, connection or rate limit than the bundled Caddyfile (default 256MB, no rate limit). That is the owner's configuration."
+  ],
+  "validation_plan": {
+   "local": "Local OOM at 512 MiB is already reproduced three times (parent-live, r-preauth, rv-preauth). The remaining local check is the fix: after adding a smaller pre-auth cap, or a pre-body Authorization-present gate in _BodyLimit (reject JSON-route requests with no Authorization header or session cookie before reading the body), rerun agents/parent-live/parent_live_preauth_json.py in a disposable --network none container with --memory 512m and 4 concurrent 8 MiB bodies. Expect 401 or 413 for each request, no RSS growth beyond the baseline, and no exit -9.",
+   "deployment": "Owner checks the memory limit and swap of the agentbox control-plane container or host, and its restart policy (compose default restart: unless-stopped). The owner also checks whether the TLS proxy or edge applies a per-route or JSON body cap below 8 MiB (the bundled Caddyfile allows 256MB on every route) and any per-client rate or connection limit, and confirms that a stall of 1 s or more, or a process restart, on the single uvicorn process (which also serves the human approval queue and the audit chain) is acceptable. Suggested hardening: reject JSON-route requests without an Authorization header or session cookie before reading the body, set a lower AGENTBOX_PROXY_MAX_BODY for non-upload routes, add limit_concurrency, and set a container mem_limit sized for the cap."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention",
+  "title": "One agent exec call writes a pending approval row about 45x its body size, getting past the PR #20 disk guard in a single step",
+  "description": "PR #20 added AgentBox.disk_low(), a free-space pre-check at the top of call_tool, and compaction of finished approval rows. Pending approval rows are still written raw and without a size bound, and the preview is amplified from the agent's command. preview_command emits one fixed Korean note (about 90 bytes) for every shell segment it cannot classify, so a command made of 2-byte 'x;' segments (default policy rule exec-needs-approval) produces a preview about 45x the request. approvals.create stores that preview plus the raw args in the shared SQLite file, which is in WAL mode, so the data is written to both agentbox.db and the -wal file. The guard is evaluated once before the call. Reproduced independently in the sandbox: one 131097-byte agent request, made with 1 MiB of headroom above min_free_bytes, returned 202, grew agentbox.db from 4096 to 6004736 bytes (45.8x) and the -wal file to 6089392 bytes, and disk_low() was True afterwards. The pending row held args of 131087 bytes and a preview of 5832767 bytes (65536 notes), while the audit approval_requested row was bounded to 83141 bytes. Cost scales linearly: policy.decide took about 80 microseconds per segment (0.31 s at 4096 segments, 5.27 s at 65536) and preview_command about 4 microseconds per segment, with a stable preview-to-command size ratio. A body at the 8 MiB AGENTBOX_MAX_BODY cap would therefore take roughly 5-6 minutes of CPU in a tool_pool thread and write on the order of 366 MiB of row data plus a similar amount of WAL, which exceeds the 256 MiB default margin on its own. That 8 MiB figure is extrapolated, not run. Each sandbox can run 4 such calls concurrently (tool_concurrency), and because the slow decide step runs after the single pre-check, concurrent calls all pass it. Up to 20 pending rows are allowed per sandbox. Expiry compaction shrinks the row (16533/83045 bytes) but not the file: the database grew from 6.0 to 12.1 MB with 2890 free pages and nothing runs VACUUM. When the volume fills, human audit-logged writes fail closed (log_human 503, decide claim 503, expire_stale stops), and the human approval fragment renders every note of the pending row (7.47 MB of HTML for this one row). This is the part of the run-4 N2 root cause (agent-grown approval rows without an effective bound) that PR #20 did not cover. Note: the finding is a per-call overshoot of the guard, not unbounded sustained growth. Once free space drops below the margin, further agent calls are refused with 507.",
+  "root_cause": "The disk guard is only a threshold check at call entry (service.py:282). The REQUIRE_APPROVAL branch then calls _preview (service.py:332), and preview_command appends one note per unrecognised segment with no count bound (preview.py:125). The 200-item cap at preview.py:127-128 applies only to 'affected'. approvals.create (approvals.py:56-57) stores json.dumps(args) and json.dumps(preview) unbounded. bound_payload is applied only to the audit copy (AuditLog.append) and to finished rows (_finish, service.py:406-411), never when the pending row is created. The agent request body is capped only by the global 8 MiB AGENTBOX_MAX_BODY, and there is no per-argument size limit before policy and preview.",
+  "intended_behavior": "No single agent request can make the control plane persist more than a small, fixed bound of approval data. Pending rows hold the same bounded shape as the audit log (capped args and a capped preview with a bounded notes list), so the 256 MiB guard margin cannot be crossed by one admitted call.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 274,
+    "scope": "call_tool route (POST /sandboxes/{sid}/tools/{tool})",
+    "description": "An agent token posts {\"args\": {\"command\": \"x;x;...\"}}. The ToolCall args dict has no per-value cap, and _BodyLimit allows up to AGENTBOX_MAX_BODY (8 MiB)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 282,
+    "scope": "AgentBox.call_tool",
+    "description": "disk_low() is evaluated once, at entry. Free space is still above min_free_bytes, so the call is admitted."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 311,
+    "scope": "AgentBox._call_tool",
+    "description": "policy.decide returns exec-needs-approval, because 'x' is not in the read-only allowlist (default_policy.yaml, rule exec-needs-approval). Reproduced: decision=exec-needs-approval."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 332,
+    "scope": "AgentBox._call_tool",
+    "description": "_preview calls sandboxes.preview, which calls preview_command on the raw command. On exception, the fallback preview copies the raw command (service.py:334)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/preview.py",
+    "line": 125,
+    "scope": "preview_command",
+    "description": "One note is appended per unclassified segment with no count bound: 65536 notes for 65536 'x;' segments."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/approvals.py",
+    "line": 56,
+    "scope": "ApprovalStore.create",
+    "description": "json.dumps(args) and json.dumps(preview) are inserted raw into the shared SQLite file, which is in WAL mode, so the bytes are written to both the database and the WAL."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/preview.py",
+    "line": 125,
+    "description": "notes.append(f\"'{_short_seg(seg)}' 부분의 영향은 ...\") runs once per segment. Only 'affected' is truncated, at lines 127-128."
+   },
+   {
+    "file": "agentbox/approvals.py",
+    "line": 56,
+    "description": "create stores args and preview with json.dumps and no size check (lines 56-57)."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 282,
+    "description": "The only disk guard on this route is the pre-check at call entry."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 338,
+    "description": "approvals.create is called with the uncapped preview after the guard, with no re-check of free space."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 406,
+    "description": "_finish applies _logged_args and bound_payload only when an approval finishes, so compaction never limits the pending row."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 260,
+    "description": "The shared DB is put in WAL mode, so the large insert is also written to agentbox.db-wal."
+   },
+   {
+    "file": "agentbox/templates/_approvals.html",
+    "line": 16,
+    "description": "The human approval card renders every note of every pending row (measured 7472223 bytes of HTML for one row)."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 57,
+    "description": "The default min_free_bytes margin is 256 MiB."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Requires an agent token for a running sandbox, the lowest-trust principal. The threat model assumes it may be prompt-injected."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "Default policy (or any policy that sends an exec to require_approval) and AGENTBOX_MIN_FREE greater than 0. The body must fit AGENTBOX_MAX_BODY (8 MiB default). A larger body costs about 80 microseconds of policy CPU per 2-byte segment."
+   },
+   {
+    "kind": "data_state",
+    "description": "Fewer than PENDING_APPROVALS_MAX (20) pending approvals for the sandbox, and free space above min_free_bytes when the call starts."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent holding only its own sandbox's agent token calls the exec tool with a long command made of trivial unrecognised segments.",
+   "payloads": [
+    "POST /sandboxes/{sid}/tools/exec  {\"args\": {\"command\": \"x;\" * 65536}}  (131097-byte JSON body; scale toward the 8 MiB cap for the deployed limit)"
+   ],
+   "instructions": [
+    "In tools/sbx (no network, no Docker, 512 MiB, 120 s), build AgentBox with the real AuditLog, ApprovalStore, DesktopControl and default_policy.yaml, plus a fake SandboxManager whose preview() calls the real preview_command with empty glob and walk callbacks.",
+    "Set settings.min_free_bytes = shutil.disk_usage(home).free - 1 MiB so that disk_low() is False.",
+    "Call box.call_tool('sb_x', 'exec', {'command': 'x;'*65536}, actor='agent') once, then measure agentbox.db and agentbox.db-wal, the approvals row lengths, disk_low() and the audit row sizes.",
+    "Time policy.decide and preview_command for n = 4096..65536 segments to confirm linear scaling."
+   ],
+   "observed_result": "Independent re-run: decision=exec-needs-approval, call_tool status 202, disk_low before=False and after=True, agentbox.db 4096 -> 6004736 bytes (45.8x the 131097-byte body), -wal 6089392 bytes, pending row args 131087 bytes and preview 5832767 bytes (65536 notes), audit approval_requested payload only 83141 bytes. Scaling run: policy.decide 0.31/0.69/1.26/2.45/5.27 s at 4096/8192/16384/32768/65536 segments and preview_command 0.02-0.26 s, so the cost is linear and an 8 MiB body is feasible, taking minutes of CPU. The expiry-compaction file growth (6.0 to 12.1 MB) and the 7.47 MB HTML fragment come from the hunter's run (agents/h-approvals/artifacts/h.out). The jinja2 rendering step was not reproduced because the module is unavailable under python -I in the sandbox. Filling a real disk and the 8 MiB case were not run."
+  },
+  "remediation": {
+   "strategy": "Bound pending rows at creation. (1) Reject agent string args above a fixed size (for example LOGGED_ARGS_MAX) with 413 before policy and preview, which also removes the policy.decide CPU cost. (2) In preview_command, cap the notes (keep the first 50 plus one 'and N more segments' summary). (3) Store bound-shaped args/preview in approvals.create, or keep the raw args elsewhere with a hard cap. (4) Re-check disk_low() immediately before approvals.create and treat sqlite3.Error from create or _finish as 503. (5) Optionally run PRAGMA wal_checkpoint(TRUNCATE) and VACUUM after prune and expiry so that compaction returns space.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/preview.py",
+     "fixed_code": "NOTES_MAX = 50\n...\n    if len(notes) > NOTES_MAX:\n        extra = len(notes) - NOTES_MAX\n        notes = notes[:NOTES_MAX] + [f\"... 외 {extra}개 조각의 영향도 자동 계산하지 못함. 명령 원문을 확인할 것.\"]\n    return {\"command\": command, \"cwd\": WORKSPACE, \"affected\": affected, \"notes\": notes}"
+    },
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "            preview = bound_payload(preview)\n            if actor == \"agent\" and self.disk_low():\n                raise ServiceError(507, \"컨트롤 플레인 디스크의 남은 공간이 부족해 승인 요청을 만들지 않음.\")\n            apr = self.approvals.create(sandbox_id=sid, tool=tool, args=args, ...)"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "Any agent token can do it with one ordinary-looking request under the default policy, and the threat model assumes a prompt-injected agent. Crossing the full 256 MiB margin in one call needs a multi-MiB body, which takes minutes of server CPU. Smaller bodies still overshoot the guard by about 45x their size per call."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Shared control-plane disk and availability. An admitted call can overshoot the free-space margin by far more than its own size, after which human audit-logged actions (decide, delete, pause) fail closed with 503 and the approval UI bloats. Growth stops once the guard refuses further agent calls, and recovery needs the operator to free disk out of band because compaction does not shrink the file. No integrity or confidentiality loss."
+   },
+   "overall_severity": "medium"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "The full call_tool path ran locally with the real policy, preview, approval store and audit code, and the byte counts reproduced exactly. Linear scaling was measured with timing runs. The 8 MiB figure and a real disk-full state are extrapolated and were deliberately not run."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/desktop_ws.py:relay+agentbox/api.py:desktop_ws:blocking-sqlite-audit-docker-on-event-loop",
+  "title": "Desktop WebSocket handler blocks the shared event loop on SQLite and audit locks, so one desktop connect stalls every HTTP route",
+  "description": "The async route /sandboxes/{sid}/desktop/ws (api.py:408-418) and desktop_ws.relay make synchronous SQLite, threading.Lock and Docker SDK calls directly on the asyncio event loop. These are the session lookup, vnc_command (_rec plus containers.get), the log_human audit write, add_conn, the per-message touch() in control mode, the 30 s session re-check and the log_best_effort audit write on disconnect. While another SQLite connection holds the write lock (for example retention.prune's BEGIN IMMEDIATE, run by the host operator) or a worker holds AuditLog._lock, one authenticated desktop WS connect or disconnect freezes the whole control plane for up to the 5 s default sqlite busy timeout or the remaining lock hold. That covers every HTTP route, including human approvals and deletes, agent tool responses and /healthz. A desktop-link session scoped to one sandbox, or a desktop page that auto-reconnects, can repeat the stall while the condition lasts. An unauthenticated upgrade with a junk cookie stalls the loop only in a narrower case: a human desktop write (login, ticket, takeover or handback) is itself waiting on the SQLite write lock while holding DesktopControl._lock, and the loop then waits on that lock in session_scope. This undoes the design intent at api.py:158-160, which keeps blocking tool work off the human API's executor. The attacker cannot create the long lock hold, only trigger the WS event while one exists.",
+  "root_cause": "desktop_ws (api.py:409-418) and relay (desktop_ws.py:20-21,41,57,72,91) call blocking functions without run_in_threadpool. The calls are DesktopControl.session_scope (desktop.py:152-160), AgentBox.log_human and log_best_effort, which reach AuditLog.append (BEGIN IMMEDIATE under AuditLog._lock, default 5 s busy timeout; audit.py:293-294), SandboxManager._rec and containers.get (sandbox.py:185-186,230), and DesktopControl.touch and add_conn. DesktopControl also holds its in-memory threading.Lock across SQLite writes (desktop.py:135-139, plus issue_ticket, redeem, take and release), so the event loop inherits any SQLite write wait that a worker thread is in.",
+  "intended_behavior": "The event loop never waits on SQLite, on threading locks held across I/O, or on the Docker daemon. A slow or locked database, or a slow audit read, should delay only the request that needs it and never unrelated HTTP and WebSocket traffic for other sandboxes.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 409,
+    "scope": "desktop_ws",
+    "description": "Async WebSocket route; the session cookie comes from the upgrade request, so any desktop-link holder (or any cookie value, for the narrow unauthenticated case) reaches it."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 411,
+    "scope": "desktop_ws",
+    "description": "box.desktop.session(cookie, sid) is called synchronously on the event loop."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/desktop.py",
+    "line": 152,
+    "scope": "DesktopControl.session_scope",
+    "description": "Takes the threading.Lock _lock, which worker threads hold across SQLite writes (new_session at desktop.py:135-139, take, release). It blocks the loop thread while it waits."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/desktop_ws.py",
+    "line": 20,
+    "scope": "relay",
+    "description": "vnc_command runs on the loop: _rec takes SandboxManager._lock plus a SQLite read (sandbox.py:185-186), then containers.get makes a blocking Docker HTTP call (sandbox.py:230)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/desktop_ws.py",
+    "line": 21,
+    "scope": "relay",
+    "description": "box.log_human (service.py:658-662) runs on the loop and calls AuditLog.append."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/audit.py",
+    "line": 294,
+    "scope": "AuditLog.append",
+    "description": "Under AuditLog._lock, BEGIN IMMEDIATE waits up to the default 5 s sqlite busy timeout for the write lock. The whole event loop is blocked for the wait, then the connect fails with close code 1011."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/desktop_ws.py",
+    "line": 91,
+    "description": "The disconnect audit write (log_best_effort) also runs inline on the loop in finally, so closing a tab can stall the loop too."
+   },
+   {
+    "file": "agentbox/desktop_ws.py",
+    "line": 57,
+    "description": "touch() takes DesktopControl._lock on the loop for every client message in control mode."
+   },
+   {
+    "file": "agentbox/desktop_ws.py",
+    "line": 72,
+    "description": "The 30 s session re-check calls box.desktop.session synchronously on the loop, while the handback just below it correctly uses run_in_threadpool."
+   },
+   {
+    "file": "agentbox/retention.py",
+    "line": 106,
+    "description": "prune holds the SQLite write lock (BEGIN IMMEDIATE, connection timeout 30) for its whole delete transaction. It is a host CLI operation."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 338,
+    "description": "verify() reads the whole audit table under AuditLog._lock. recent() (audit.py:321-326) does an unindexed COUNT(*) under the same lock. Both are human-triggered reads whose duration grows with the agent-grown audit table."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 158,
+    "description": "The comment at api.py:158-160 states the design intent: keep blocking tool work off the shared executor so the agent cannot freeze the human API."
+   },
+   {
+    "file": "agentbox/desktop.py",
+    "line": 135,
+    "description": "new_session holds _lock across DELETE and INSERT, so it can wait out the busy timeout while holding the lock the loop needs."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "For the 5 s audit-write stall: a valid desktop-link session (scope one sandbox) or a full UI session. For the DesktopControl._lock stall: no valid session is needed (any cookie value reaches session_scope), but see the timing condition."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "A concurrent long holder must exist: retention.prune's BEGIN IMMEDIATE on the same DB (operator maintenance), a worker inside AuditLog._lock (verify or recent over a large table), or a human desktop write that is waiting on the SQLite write lock while holding DesktopControl._lock. The requester cannot create the hold itself."
+   },
+   {
+    "kind": "data_state",
+    "description": "The stall is bounded by the 5 s default sqlite busy timeout for each write attempt, or by the remaining audit-lock hold, which grows with the number of audit rows (measured 0.77-0.84 s for verify() over 100k rows). Docker daemon latency in containers.get was not measured."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A holder of a desktop link (scoped human session), or just an open desktop tab that auto-reconnects 1.5 s after a server close, connects to the desktop WebSocket while another SQLite connection holds the write lock or a worker holds the audit lock.",
+   "payloads": [
+    "/home/user/agentbox/docs/security-audit/run-5/tools/sbx v-ws /usr/bin/python3.13 /scratch/h.py (the hunter's h-ws harness copied unchanged: real agentbox.api.build() app, docker.from_env replaced by an in-process fake, dummy human token hum_ddd..., sandbox sb_x template desktop, desktop-link session from box.desktop.new_session('sb_x'))"
+   ],
+   "instructions": [
+    "Ran in the approved sandbox (no network, no Docker, uid 65534) with AGENTBOX_HOME=/scratch/home, AGENTBOX_DOCKER_CLI=/bin/false and AGENTBOX_MIN_FREE=0 against the audited tree at 346df29.",
+    "In each scenario a holder thread keeps a contention in place: a second sqlite3 connection in BEGIN IMMEDIATE for 7 s, a worker inside AuditLog._lock for 4 s, or BEGIN IMMEDIATE plus a worker calling box.desktop.new_session().",
+    "Open TestClient.websocket_connect('/sandboxes/sb_x/desktop/ws?mode=view') with the link-session cookie, a junk cookie or no cookie, then 0.3 s later time GET /healthz on the same app."
+   ],
+   "observed_result": "Reproduced independently. Baseline healthz 0.0 s. Link-session WS under the SQLite write lock: healthz 4.71 s and WS closed 1011 after 5.02 s. Junk or no cookie under the same write lock: 0.0 s. Junk cookie while new_session waited on the write lock (holding DesktopControl._lock): healthz 4.41 s. Link-session WS while AuditLog._lock was held 4 s: healthz 3.51 s. Junk cookie under the audit lock: 0.0 s. audit.verify() over 100k rows in a loop: healthz 0.2 s (a short stall)."
+  },
+  "remediation": {
+   "strategy": "Move every blocking call in desktop_ws and relay off the event loop with run_in_threadpool, or the dedicated pool for audit writes. Stop holding DesktopControl._lock across SQLite I/O by guarding the DB with a separate lock, so touch(), lease() and add_conn() never wait on a database. Add a regression test: while a second connection holds BEGIN IMMEDIATE, or a thread holds AuditLog._lock, a desktop WS connect must leave GET /healthz latency under 0.5 s.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/api.py",
+     "fixed_code": "    @app.websocket(\"/sandboxes/{sid}/desktop/ws\")\n    async def desktop_ws(ws: WebSocket, sid: str, mode: str = \"view\"):\n        cookie = ws.cookies.get(D.COOKIE)\n        session = await run_in_threadpool(box.desktop.session, cookie, sid)\n        if not session or not same_origin(ws.headers) or mode not in (\"view\", \"control\"):\n            await ws.close(code=4401)\n            return\n        if not await run_in_threadpool(box.desktop.may_connect, sid, session, mode):\n            await ws.close(code=4403)\n            return\n        await relay(ws, box, sid, session, mode, cookie)"
+    },
+    {
+     "file_name": "agentbox/desktop_ws.py",
+     "fixed_code": "    try:\n        argv = await run_in_threadpool(box.sandboxes.vnc_command, sid, mode == \"view\")\n        await run_in_threadpool(box.log_human, \"desktop_connect\", sid, {\"session\": session, \"mode\": mode})\n    except (SandboxError, ServiceError):\n        await ws.close(code=1011)\n        return\n    # also: await run_in_threadpool for box.desktop.add_conn / touch / session in session_watch,\n    # and run the log_best_effort call in finally on a worker thread instead of inline"
+    },
+    {
+     "file_name": "agentbox/desktop.py",
+     "fixed_code": "# keep self._lock for the in-memory dicts only; guard self._db with a separate self._db_lock,\n# and never take self._db_lock while holding self._lock, so touch()/lease()/add_conn() never wait on SQLite"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Needs a long SQLite or audit lock holder to coincide with a desktop WS event. The holders are the operator's prune, a human audit view over a large table, or a human desktop write blocked behind such a hold. A desktop-link holder or an auto-reconnecting tab can repeat the trigger but cannot create the hold."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "Temporary freeze of all control-plane HTTP and WS traffic, observed at 3.5-4.7 s per event and repeatable while the condition lasts. No data or authority gain, and no persistent denial."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "medium",
+   "reason": "The event-loop stall was reproduced independently with the real handler, audit and SQLite code (healthz 4.71 s, 4.41 s and 3.51 s, matching the hunter's figures). Real prune durations and Docker daemon latency in containers.get were not measured, because Docker is faked offline."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/policy.py:_words:per-token-shlex-relex-without-command-length-cap",
+  "title": "Agent exec command of up to 8 MiB drives minutes of GIL-holding policy parsing per call, slowing the shared control plane",
+  "description": "An agent token can POST /sandboxes/{sid}/tools/exec with a command made of shell-punctuation tokens (for example 'x;x;x;...') up to the 8 MiB AGENTBOX_MAX_BODY. No per-command or per-argument length cap exists before Policy.decide. With the default policy, the first rule (rm-curl-needs-approval) calls command_names, which calls _words. _words builds a new shlex.shlex for every token that contains a shell punctuation character, including each bare ';'. That costs about 40 us per token and is linear: 0.76/1.20/2.39/5.54 s for 16/32/64/128 KiB in this verifier's rerun, so roughly 300 s of CPU for one 8 MiB call (extrapolated, not run). The work runs on the shared 32-thread tool_pool and holds the GIL. One agent can keep 4 such calls running (tool_concurrency). The evaluation happens before the pending-approval cap, so that cap does not stop it. A stand-in asyncio loop on the main thread slowed from 1.6 ms median / 1.9 ms max (idle) to 6.9/12.2 ms with 1 decide thread and 7.4/60 ms with 4 decide threads. This is degradation of the shared control plane (human API, other sandboxes) for as long as the agent re-issues calls, not a freeze.",
+  "root_cause": "Policy evaluation has no input-size bound. AgentBox._call_tool passes args['command'] of any length to Policy.decide (service.py:311). The only limit is the 8 MiB HTTP body cap. _words (policy.py:40-62) re-lexes every token that contains whitespace or a shell punctuation character with a fresh shlex.shlex instance (policy.py:45, 60-61), even a token that is only ';'. shlex construction is expensive, so cost is about 40 us per punctuation token, and an 8 MiB command holds about 4M such tokens.",
+  "intended_behavior": "An agent-supplied command or argument longer than a small fixed bound (for example 64 KiB) is rejected (400/413) or sent straight to REQUIRE_APPROVAL with a fixed 'too long to analyse' preview, before Policy.decide and preview run. _words does not re-lex tokens made only of punctuation, so evaluation costs at most milliseconds and human requests keep their normal latency.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 274,
+    "scope": "call_tool route",
+    "description": "An agent token posts {\"args\":{\"command\":\"x;\"*N}}. ToolCall.args is an unbounded dict (api.py:54-55), limited only by the _BodyLimit middleware at 8 MiB (config.py:65)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 277,
+    "scope": "call_tool route",
+    "description": "Dispatched to the shared 32-thread tool_pool (api.py:160) via run_in_executor (api.py:277-278). A client disconnect does not cancel the running job."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 288,
+    "scope": "AgentBox.call_tool",
+    "description": "Admits up to tool_concurrency (default 4, config.py:53) concurrent calls per sandbox (service.py:286-290), with no size check on args."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 311,
+    "scope": "AgentBox._call_tool",
+    "description": "policy.decide(tool, args) runs with the raw args after the tool_request audit row and before the pending-approval cap (service.py:326)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/policy.py",
+    "line": 211,
+    "scope": "Policy.decide",
+    "description": "The first default rule (rm-curl-needs-approval, default_policy.yaml:11-17) has match.commands, so decide calls command_names(cmd) on the whole command, then _raw_hits."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/policy.py",
+    "line": 61,
+    "scope": "_words",
+    "description": "Each token containing a punctuation char (every ';') is recursively re-lexed with a new shlex.shlex instance (policy.py:45) while holding the GIL, about 40 us per token."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/policy.py",
+    "line": 60,
+    "description": "Recursion condition: any token with whitespace or a char in _SHELL_PUNCT (policy.py:26), including a bare ';' token, calls _words(t, depth+1), which builds a new shlex at line 45."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 311,
+    "description": "decide is called with the raw command. No length check exists in call_tool/_call_tool (service.py:279-311). The only size constants are LOGGED_ARGS_MAX (audit logging only, service.py:39) and AUDIT_STR_MAX (audit.py:120)."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 65,
+    "description": "max_body_bytes defaults to 8 MiB and is the only bound on the command length."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 286,
+    "description": "Per-sandbox tool_concurrency allows 4 concurrent evaluations per agent; tool_pool has 32 workers across sandboxes (api.py:160)."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Requires a sandbox agent token, the lowest-trust principal, which the threat model assumes can be prompt-injected."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "Default AGENTBOX_MAX_BODY (8 MiB), the default policy with an exec 'commands' rule (rm-curl-needs-approval), and the default tool_concurrency of 4. A policy with no exec commands rule would skip command_names."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent holding its own sandbox's agent token repeatedly sends exec tool calls whose command is a long run of 'x;' tokens. Each call ends as an approval request (or a 429 from the pending cap), but only after Policy.decide has consumed GIL-holding CPU in proportion to the command length. Up to 4 calls per sandbox run at once.",
+   "payloads": [
+    "{\"args\":{\"command\":\"x;x;x;...\"}} with 'x;' repeated 65536 times (131072-byte command)",
+    "Policy.load('agentbox/default_policy.yaml').decide('exec', {'command': 'x;' * 65536})"
+   ],
+   "instructions": [
+    "In the sandbox (no network, uid 65534, 1 CPU), load the default policy with agentbox.policy.Policy.load and time Policy.decide('exec', {'command': 'x;'*n}) for n = 8192, 16384, 32768, 65536 (16-128 KiB).",
+    "In the same process run an asyncio probe on the main thread (30 iterations of a 20000-step Python loop plus await asyncio.sleep(0.001)) alone, with 1 thread, and with 4 threads each running decide on a 32 KiB 'x;' command. Record median and max iteration latency."
+   ],
+   "observed_result": "Verifier rerun, decide('x;'*n): 16 KiB 0.757 s, 32 KiB 1.204 s, 64 KiB 2.392 s, 128 KiB 5.539 s, all returning require_approval via rule exec-needs-approval; growth is linear. Probe (32 KiB command per thread): idle median 1.6 ms / max 1.9 ms; 1 decide thread 6.9 / 12.2 ms; 4 decide threads 7.4 / 60.0 ms. This matches the hunter's figures (4.85 s at 128 KiB, 8.6 / 88.8 ms with 4 threads) within run-to-run variance. The 8 MiB figure of about 300 s is a linear extrapolation and was not run, and no live uvicorn server was measured."
+  },
+  "remediation": {
+   "strategy": "Bound the input before any parsing. In AgentBox._call_tool, before the tool_request audit row and policy.decide, refuse an exec command or any string argument over a fixed TOOL_ARG_MAX (for example 64 KiB, excluding write_file content which has its own size handling) with 413 and a tool_blocked audit row, or route it straight to REQUIRE_APPROVAL with a fixed 'too long to analyse' preview that skips command_names and preview_command. Also in _words, do not re-lex tokens made only of punctuation; recurse only on tokens that contain whitespace, '$(' or a backtick. Add a regression test asserting decide on a 64 KiB 'x;' command finishes in under about 100 ms and that a 1 MiB command is rejected or approval-routed without calling command_names.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "TOOL_ARG_MAX = 64 * 1024\n...\n    def _call_tool(self, sid, tool, args, actor):\n        if tool not in TOOLS:\n            raise ServiceError(404, ...)\n        self.sandboxes.get(sid)\n        if any(isinstance(v, str) and len(v) > TOOL_ARG_MAX for k, v in args.items() if k != \"content\"):\n            self.log_best_effort(sid, tool, \"tool_blocked\", {\"reason\": \"argument_too_long\", \"limit\": TOOL_ARG_MAX})\n            raise ServiceError(413, f\"tool argument too long (max {TOOL_ARG_MAX})\")\n        ..."
+    },
+    {
+     "file_name": "agentbox/policy.py",
+     "fixed_code": "    for t in tokens:\n        if not t:\n            continue\n        cleaned = ...\n        out.extend(cleaned.split())\n        if all(c in _SHELL_PUNCT for c in t):\n            continue  # pure separator tokens are not re-lexed\n        if any(c.isspace() for c in t) or any(c in _SHELL_PUNCT for c in t):\n            out.extend(_words(t, depth + 1))"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "A single agent-token request under the default configuration triggers it, and a prompt-injected agent can repeat it indefinitely. No approval or human action is needed first."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "Measured effect is slowdown, not denial: about 4x median and up to 30x max latency for a same-process stand-in loop with one agent's 4 concurrent calls, lasting minutes per call at the body cap. The control plane keeps answering and the effect ends when the calls finish. Several hostile sandboxes would worsen it but that was not measured. Other availability costs from the same input (unbounded preview notes, per-operand container execs) are tracked under other findings."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "medium",
+   "reason": "The source path, the linear CPU cost and the GIL contention were independently reproduced on the audited code with the default policy. The latency under a real uvicorn server with a Docker-backed sandbox, and the full 8 MiB figure, are extrapolated rather than observed."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/preview.py:preview_command:per-operand-container-exec-without-count-or-time-bound",
+  "title": "Approval preview runs two untimed docker execs per rm operand, with no count or deadline, on a tool_pool thread before the approval exists",
+  "description": "For an agent exec command that needs approval and contains an rm segment, preview_command calls expand(op) once per operand and, with -r, walk(m, limit) once per match. Each call is a synchronous docker exec_run in SandboxManager._expand/_walk with no container-side timeout. The display limit (200) truncates only the 'affected' list after every exec has run. Neither the API nor the service caps the operand count; the only bound is the 8 MiB body cap. One tool_pool thread is therefore held for a time proportional to the operand count (about 80 ms per exec, 2 execs per operand) before the 202 is returned. The pending-approval cap (service.py:326) is checked before the preview, so it does not throttle this. The parent-live run on the real Docker engine measured 399 exec_start events and 30.75 s to the 202 for a 200-operand command (about 1.6 KiB). Cost is linear: 50 operands took 8.05 s and 99 execs. Extrapolated, a 64 KiB command (32765 operands) holds the thread for about 87 minutes, and an 8 MiB command for days. This is a worker-occupancy and amplification problem. The live run saw no measurable delay of an allowed exec on a second sandbox (median 0.081-0.083 s against a 0.074-0.086 s baseline), so a Docker-daemon-wide slowdown is not established. The realistic impact is that a hostile agent pins its per-sandbox concurrency slots (4) and the same number of the shared 32 tool_pool threads for as long as it likes, from a single small request.",
+  "root_cause": "preview_command loops over every rm operand and every glob match and calls the container callbacks with no call budget, total deadline, or early stop once 'limit' affected entries exist. _expand and _walk use plain c.exec_run without the _timed wrapper used by the manifest and read execs, so a single exec also has no container-side time bound. Neither call_tool nor _call_tool caps the operand count or the command length.",
+  "intended_behavior": "Building the approval preview should cost a small bounded number of container execs and a bounded amount of time, then degrade to a note such as 'preview truncated, check the command text' and hand the approval to the human. A hostile command should not be able to hold a shared tool worker for an unbounded time before any approval exists.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 274,
+    "scope": "call_tool route (POST /sandboxes/{sid}/tools/{tool})",
+    "description": "An agent token posts {\"args\":{\"command\":\"rm -r d d d ...\"}}, bounded only by the 8 MiB body cap. The route runs box.call_tool on the shared 32-thread tool_pool (api.py:160, 277-278). A client disconnect does not cancel the executor job."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 332,
+    "scope": "AgentBox._call_tool",
+    "description": "policy.decide (line 311) returns REQUIRE_APPROVAL (rm-curl-needs-approval, default_policy.yaml:12). After the pending cap check (line 326), self._preview (line 332, defined at 224-226) calls sandboxes.preview synchronously, before approvals.create. The per-sandbox concurrency limit in call_tool (lines 286-290) allows 4 such calls at once."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 586,
+    "scope": "SandboxManager.preview",
+    "description": "preview_command is called with lambdas bound to _expand and _walk on the live container."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/preview.py",
+    "line": 89,
+    "scope": "preview_command",
+    "description": "expand(op) runs for every operand (line 89). For every match with -r, walk(m, limit) runs (line 96). There is no budget, and the limit is applied only to the displayed list at lines 126-128."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 572,
+    "scope": "SandboxManager._expand / _walk",
+    "description": "Each call is c.exec_run(['sh','-c',...], user=AGENT_UID) with no _timed wrapper or timeout (_expand at 572, _walk at 577). That is one docker exec_create/start/inspect round trip per operand and per match, and the thread blocks until each returns."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/preview.py",
+    "line": 96,
+    "description": "walk(m, limit) runs once per match inside the per-operand loop. 'limit' bounds only each walk's output, not the number of walks."
+   },
+   {
+    "file": "agentbox/preview.py",
+    "line": 126,
+    "description": "Truncation to 'limit' happens after all expand and walk execs have completed."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 376,
+    "description": "The manifest exec uses _timed(_MANIFEST_TIMEOUT, ...), and the read execs at 449 and 553 use _timed(_READ_TIMEOUT, ...). _expand (572) and _walk (577) do not, so the preview execs have no timeout."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 326,
+    "description": "The pending-approval cap runs before the preview. The preview runs before approvals.create (line 337 onward), so the cap cannot throttle previews."
+   },
+   {
+    "file": "agentbox/default_policy.yaml",
+    "line": 27,
+    "description": "touch and mkdir are in the allow-listed exec set, so an agent can also create many workspace entries without approval and send 'rm -r *' (one walk exec per entry)."
+   },
+   {
+    "file": "agents/parent-live/artifacts/preview_exec.json",
+    "line": 1,
+    "description": "Real Docker engine, runc, ubuntu:24.04. 50 operands gave status 202 in 8.05 s with 99 exec_start events (81.28 ms per exec). 200 operands gave status 202 in 30.75 s with 399 exec_start events (77.08 ms per exec). A concurrent allowed 'ls' on a second sandbox had median 0.081-0.083 s and max 0.122 s, against a baseline of 0.074-0.086 s."
+   },
+   {
+    "file": "agents/v-preview/scratch/count.py",
+    "line": 1,
+    "description": "Independent stub-callback check in the sandbox, run on the audited tree. 200 operands gave 200 expand and 200 walk calls, and 4000 operands gave 4000 and 4000, while the returned 'affected' list was truncated to 200."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "A valid agent token for the sandbox (the lowest-trust network principal in the threat model, assumed prompt-injected)."
+   },
+   {
+    "kind": "data_state",
+    "description": "The sandbox is running and has fewer than 20 pending approvals. The command must be classified REQUIRE_APPROVAL by the default policy, for example an rm segment with the operands repeated. The operand 'd' needs to exist (an allowed 'mkdir d' creates it) for walk to run per operand."
+   },
+   {
+    "kind": "environmental_dependency",
+    "description": "The impact on other principals depends on tool_pool saturation (32 threads, 4 per sandbox). One hostile sandbox pins at most 4 threads, so starving other sandboxes needs several hostile sandboxes. The human API runs on the Starlette threadpool, not tool_pool."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent holding its own sandbox's agent token and using the normal tool API.",
+   "payloads": [
+    "POST /sandboxes/{sid}/tools/exec {\"args\":{\"command\":\"mkdir d\"}} (allowed), then POST /sandboxes/{sid}/tools/exec {\"args\":{\"command\":\"rm -r d d d ... d\"}} with N repeated operands (N=200 was measured, about 1.6 KiB)",
+    "Alternative: create many files with allowed 'touch', then send 'rm -r *'"
+   ],
+   "instructions": [
+    "In a disposable loopback control plane (dummy tokens, default policy, one runc sandbox from ubuntu:24.04), have the agent run the allowed 'mkdir d'.",
+    "Send the exec call with command 'rm -r ' followed by N copies of 'd'. Time the request until the 202 and count exec_start events with docker events.",
+    "Repeat with N=50 and N=200 and compare. Do not run large inputs; extrapolate linearly."
+   ],
+   "observed_result": "Parent-live run on the real Docker engine: N=50 took 8.05 s to the 202 with 99 exec_start events, and N=200 took 30.75 s with 399 events, about 77-81 ms per exec and 2 execs per operand. The response time is linear in the operand count and the thread is held for the whole time. Another sandbox's allowed 'ls' showed no measurable delay in that run. Larger sizes (64 KiB, 8 MiB) were not run, and the durations quoted for them are linear extrapolations."
+  },
+  "remediation": {
+   "strategy": "Bound the preview work in preview_command. Cap the total number of expand and walk calls (for example 20-50) and the operand count. Stop once 'limit' affected entries exist. Deduplicate repeated operands and matches. Add an overall deadline, and on exceeding any bound append a note that the preview is incomplete and hand the approval to the human. Also use the _timed wrapper (or exec_run with a timeout) for _expand and _walk. Optionally reject or truncate exec commands over a few KiB before policy and preview.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/preview.py",
+     "fixed_code": "MAX_CALLS = 40\n# inside preview_command: calls = 0; deadline = time.monotonic() + 10\n# before each expand(op) / walk(m, limit):\n#   if calls >= MAX_CALLS or time.monotonic() > deadline or len(affected) >= limit:\n#       notes.append('operand/match count exceeds the preview budget; remaining items not checked')\n#       break\n#   calls += 1"
+    },
+    {
+     "file_name": "agentbox/sandbox.py",
+     "fixed_code": "# use c.exec_run(_timed(_READ_TIMEOUT, \"sh\", \"-c\", script, \"_\", pattern), user=AGENT_UID, demux=True) in _expand and _walk, treating exit 124/137 as a preview failure note"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "Any agent token can trigger it with one small ordinary request (no tooling beyond rm and repeated operands), and the policy does not stop it. The intended threat model assumes a prompt-injected agent."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "Observed: roughly 77-81 ms per exec, about 31 s of thread occupancy for 200 operands, growing linearly without a bound. The effect is pinning up to 4 of the 32 shared tool_pool threads per hostile sandbox, plus about 12 docker execs per second on the daemon per thread. The live run showed no measurable slowdown of another sandbox, and the human API does not use tool_pool. Starving other tenants needs several hostile sandboxes, and the host is not compromised."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "medium",
+   "reason": "The unbounded call count and missing timeout are directly visible in source, and were reproduced with stub callbacks. The real-engine run confirms linear scaling with 2 execs per operand and the held request time up to 200 operands. The 64 KiB and 8 MiB durations and the multi-sandbox saturation are extrapolated, not observed. The no-impact result for a second sandbox is from one small run."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/retention.py:prune:archive-unlinked-after-committed-prune-on-interrupt",
+  "title": "Interrupted prune deletes the only archive of audit rows it has already committed as pruned",
+  "description": "retention.prune writes the archive, then deletes the audit and approval rows and records an audit_anchor holding the archive's sha256, all in one transaction. The inner handler issues ROLLBACK on any exception, and the outer handler unlinks the archive on any BaseException. Neither handler checks whether COMMIT already succeeded. If a KeyboardInterrupt surfaces right after COMMIT returns (Ctrl-C during the fsync-bound COMMIT), the inner ROLLBACK raises OperationalError('cannot rollback - no transaction is active'). The outer handler then deletes the archive. The database says rows 1..N were pruned into an archive with a recorded sha256, and that archive no longer exists. verify() still reports ok with 'pruned through #N'. verify_archives can no longer pass, and a re-run finds nothing to prune. The pruned audit history and its tamper evidence are lost, which contradicts the invariant that a failed prune leaves the database and archive consistent.",
+  "root_cause": "The archive cleanup at retention.py:130-131 runs on any exception rather than only when the prune transaction did not commit. The inner handler (retention.py:127-129) runs ROLLBACK unconditionally, even when the transaction has already committed at retention.py:126. Any exception that surfaces after COMMIT therefore both masks itself with a ROLLBACK error and triggers the unlink of the archive that the durable anchor row refers to.",
+  "intended_behavior": "The archive is removed only if the prune transaction did not commit. Once the anchor row referencing the archive's sha256 is durable, the archive must be kept whatever exception follows. The failure should be reported as 'pruned; archive kept at <path>'. ROLLBACK should be issued only while a transaction is active.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/cli.py",
+    "line": 319,
+    "scope": "cmd_prune",
+    "description": "Host operator runs `agentbox prune --before ... --archive ...`. It calls retention.prune on Settings().db_path and catches only ValueError, FileExistsError and RuntimeError (cli.py:323-324)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/retention.py",
+    "line": 104,
+    "scope": "prune",
+    "description": "The archive is written, fsynced and hashed before the transaction starts."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/retention.py",
+    "line": 118,
+    "scope": "prune",
+    "description": "Inside BEGIN IMMEDIATE, audit rows are deleted and an audit_anchor row with the archive name and sha256 is inserted."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/retention.py",
+    "line": 126,
+    "scope": "prune",
+    "description": "COMMIT makes the deletion and anchor durable. A SIGINT arriving during this call is raised as KeyboardInterrupt right after it returns, still inside the inner try."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/retention.py",
+    "line": 128,
+    "scope": "prune inner except",
+    "description": "Unconditional ROLLBACK raises OperationalError('cannot rollback - no transaction is active'), chained on the KeyboardInterrupt."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/retention.py",
+    "line": 131,
+    "scope": "prune outer except",
+    "description": "archive.unlink deletes the only copy of the rows the committed anchor says were archived."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/retention.py",
+    "line": 131,
+    "description": "The archive is unlinked on any BaseException with no check of commit state."
+   },
+   {
+    "file": "agentbox/retention.py",
+    "line": 128,
+    "description": "ROLLBACK is issued without checking conn.in_transaction, so it raises after a successful COMMIT."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 341,
+    "description": "verify() starts at the latest anchor, so it keeps passing after the archive is lost and hides the loss."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 362,
+    "description": "verify_archives reads the archive and compares its sha256 to the anchor. With the archive deleted it raises FileNotFoundError, and with an empty archive list it fails on the anchor/archive count mismatch (audit.py:358-359)."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 323,
+    "description": "cmd_prune catches only ValueError, FileExistsError and RuntimeError. The OperationalError surfaces as a traceback."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Host operator running the prune CLI with direct DB file access. No remote or agent principal is involved."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "SIGINT (Ctrl-C or a supervisor sending SIGINT) must arrive while COMMIT executes or in the few bytecodes after it inside the inner try. COMMIT of a large prune is fsync-bound, so the window is real for the large prunes the command is meant for."
+   },
+   {
+    "kind": "data_state",
+    "description": "At least one audit or terminal approval row is older than the cutoff, so prune reaches the transaction."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "No adversary is needed. This is an operator interrupt of a command whose interrupted-prune handling is supposed to be safe. The effect is permanent loss of the archived audit rows and their tamper evidence for the pruned range.",
+   "payloads": [
+    "v-prune p.py: AuditLog fixture with 5 rows before the cutoff and 2 after. retention.sqlite3 is shimmed with a Connection subclass whose execute('COMMIT') performs the real COMMIT and then calls signal.raise_signal(SIGINT). Then prune(db, cut, archive) is called and verify() and verify_archives([archive]) are run."
+   ],
+   "instructions": [
+    "Run tools/sbx v-prune /usr/bin/python3.13 /scratch/p.py (no network, read-only /target, uid 65534).",
+    "Read the exception, whether the archive exists, the audit/anchor rows, and the verify() and verify_archives() results.",
+    "The hunter's artifacts agents/h-retention/artifacts/h.out and h2.out show the same with the full harness. h2 uses a real asynchronous SIGINT during a real 20k-row COMMIT and hit the inner except in 5 of 5 attempts."
+   ],
+   "observed_result": "Independent run (repeated by the final verifier with the same shim): prune raised OperationalError('cannot rollback - no transaction is active') with __context__ KeyboardInterrupt. The archive no longer exists. The audit table holds 3 rows starting at id 6, with anchor (seq 1, last_id 5, 'x.jsonl.gz'). verify() returned ok=True, pruned_through=5. verify_archives([archive]) raised FileNotFoundError. Hunter's h2.out confirms a real asynchronous SIGINT during a real COMMIT reaches the inner except with the 20000 rows committed."
+  },
+  "remediation": {
+   "strategy": "Make archive cleanup depend on commit state, not on whether an exception was raised. Roll back only while conn.in_transaction is true. In the outer handler, check whether an audit_anchor row with this archive's name and sha256 exists, and unlink only if it does not. If the check itself fails, keep the archive. Report a post-commit interruption as 'pruned; archive kept at <path>' rather than a raw OperationalError. Optionally fsync the archive's parent directory after creating it. Add a regression test where a Connection factory raises KeyboardInterrupt after a successful COMMIT, and assert the archive remains and verify_archives([archive]) passes.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/retention.py",
+     "fixed_code": "        try:\n            conn.execute(\"BEGIN IMMEDIATE\")\n            try:\n                ...  # unchanged body\n                conn.execute(\"COMMIT\")\n            except BaseException:\n                if conn.in_transaction:\n                    conn.execute(\"ROLLBACK\")\n                raise\n        except BaseException:\n            committed = True   # unknown state: never destroy a possibly referenced archive\n            try:\n                committed = conn.execute(\"SELECT 1 FROM audit_anchor WHERE archive_sha256 = ? AND archive = ?\",\n                                         (sha, archive.name)).fetchone() is not None\n            except sqlite3.Error:\n                pass\n            if not committed:\n                archive.unlink(missing_ok=True)\n            raise"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Needs a SIGINT to land during or just after COMMIT of a host-only CLI command run by the operator. The window is short but real for large, fsync-bound prunes, and Ctrl-C on a slow-looking command is a common operator action."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "The only remaining copy of the pruned audit rows and finished approvals is permanently destroyed, while the in-DB anchor and verify() report the history as cleanly archived. Full-history verification becomes impossible from then on. There is no confidentiality impact and no remote attacker."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "The source lines match at 346df29 (two line references corrected). The final verifier reproduced the outcome independently in the sandbox with a COMMIT-then-SIGINT shim, and the hunter's real-timing harness produced the same behaviour in 5 of 5 attempts. The synthetic shim models the timing: a signal delivered during COMMIT is raised as KeyboardInterrupt on return from the C call."
+  }
+ },
+ {
+  "verdict": "rejected",
+  "fingerprint": "agentbox/sandbox.py:SandboxManager.snapshot:delete-race-orphaned-snapshot-image",
+  "title": "Agent pre-write snapshot still committing when the human deletes the sandbox does not leave an orphaned snapshot image or snapshot row on real Docker 29.9.1",
+  "description": "The candidate claimed that a DELETE during an agent's pre-destructive docker commit would let the commit finish and leave a snapshot row, an untracked image and a late 'snapshot' audit event for a deleted sandbox. The source race is real: delete_sandbox takes only _lifecycle, and call_tool, decide and import_file take only _snap_locks. SandboxManager.snapshot also checks status once and inserts the row without re-checking. The one fact the hunter could not establish was how a real dockerd handles a container remove during an in-flight commit. The parent-live run on a real Docker engine 29.9.1 answered it: across five delete delays (0.5, 1.5, 5.0, 7.0 and 8.5 s into a commit of about 600 MiB that ran about 9.5-10.5 s) the commit always failed with HTTP 404 'failed to apply diff: NotFound: snapshot <container id>'. SandboxManager.snapshot therefore raised before its INSERT, and _snapshot raised before its audit append. In every run DELETE returned OK in 1.1-1.7 s and the sandbox status was 'deleted'. No snapshot row existed, no image carried the agentbox.sandbox label, no agentbox-snap:<sid>-* tag was present (also after a second DELETE), and the audit log held no 'snapshot' event after 'sandbox_delete', only a system 'tool_error'. The agent got a 503 'snapshot or record failed, not executed' and the tool did not run. The hunter's fake-Docker schedule assumed the commit completes after the remove, and the real daemon contradicts that. A residual orphan would need the remove to land after the commit's layer apply finished but before the INSERT, or in the last roughly 1-2 s of the commit that the five delays did not probe. That is a sub-second window against a remove that itself takes about 1 s. Even then the impact is one leftover image on the host, with the sandbox already deleted by the human and no confidentiality, integrity or approval-gate effect. This is at most a hardening note: re-check status after the commit and remove the image if the sandbox is deleted, or take _lifecycle (or a per-sandbox snapshot lock) in delete_sandbox.",
+  "claimed_root_cause": "Snapshot creation is check-then-act on the sandbox status (sandbox.py:351 _container check, :355 commit, :359-362 unconditional INSERT) and is not serialised with delete_sandbox (service.py:538-543, _lifecycle only). SandboxManager.delete (sandbox.py:320-332) removes only the snapshot images that exist when list_snapshots runs, so a commit completing later would be orphaned. Real Docker 29.9.1 refutes the premise: the in-flight commit of a force-removed container fails with 404 and never completes.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 273,
+    "scope": "POST /sandboxes/{sid}/tools/{tool} (agent token)",
+    "description": "Agent calls write_file on an existing path (or another SNAPSHOT_TOOLS tool); runs on tool_pool via box.call_tool (route at api.py:273-278)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 296,
+    "scope": "AgentBox.call_tool",
+    "description": "Takes the per-sandbox _snap_locks lock (not _lifecycle) and enters _call_tool."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 367,
+    "scope": "AgentBox._call_tool",
+    "description": "Allow path with a snapshot needed calls _snapshot before the tool (decide at service.py:467 and import_file at :555 reach the same call). A failure here becomes ServiceError 503 at :370 and the tool is not run."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 351,
+    "scope": "SandboxManager.snapshot",
+    "description": "_container checks status != deleted once and returns the container handle."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 355,
+    "scope": "SandboxManager.snapshot",
+    "description": "Multi-second docker commit with pause=True. If DELETE runs here (delete at sandbox.py:323 removes the container with force, :326 sets deleted, :328-332 removes listed images), real dockerd fails this commit with 404 'failed to apply diff: NotFound: snapshot' and the call raises."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 359,
+    "scope": "SandboxManager.snapshot",
+    "description": "Claimed sink: the snapshot INSERT after the commit with no status re-check. Not reached when the container was removed mid-commit on Docker 29.9.1, so no row, image or later 'snapshot' audit record (service.py:269) is created."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agents/parent-live/artifacts/delete_commit.json",
+    "line": 1,
+    "description": "Real Docker 29.9.1, delays 0.5 s and 1.5 s: commit failed with 404 'failed to apply diff: NotFound: snapshot'; status deleted; snapshot_rows_after, images_after and images_by_name all empty; audit ends with human sandbox_delete then system tool_error."
+   },
+   {
+    "file": "agents/parent-live/artifacts/delete_commit_late.json",
+    "line": 1,
+    "description": "Real Docker 29.9.1, delays 5.0, 7.0 and 8.5 s (commit took 9.5-10.4 s): the same 404 failure and no orphan row or image in all three runs, including a delete landing within about 1.5 s of the commit's end."
+   },
+   {
+    "file": "agents/parent-live/parent_live_delete_commit.py",
+    "line": 1,
+    "description": "Harness uses the real engine and in-process audited code, writes 600 MiB into the writable layer so the commit takes seconds, and checks the snapshots table, label-filtered images, agentbox-snap:<sid>-* tags and the audit trail, then deletes a second time to catch orphans (images_after_second_delete is empty)."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 359,
+    "description": "The INSERT is unguarded in source (hunter's source observation is accurate), but it is only reached if c.commit (sandbox.py:355) returns successfully."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 367,
+    "description": "The snapshot exception is converted to ServiceError 503 at service.py:370, and the audit append at service.py:269 is skipped because the exception propagates first."
+   }
+  ],
+  "reason": "The decisive missing fact was real dockerd behaviour for a container force-removed during an in-flight commit. Five real-engine runs show the commit fails with 404 and the snapshot INSERT and 'snapshot' audit record never happen, so there is no orphaned row or image and no snapshot audit event after sandbox_delete. The remaining window (remove landing after the commit's apply but before the Python INSERT, or in the last 1-2 s of the commit) is sub-second, unobserved and of negligible impact, so it is recorded as hardening, not a candidate. The hunter's fake-Docker harness modelled a commit that completes after the remove, which the real daemon contradicts."
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/service.py:_snapshot:gui-burst-opened-under-takeover-lease",
+  "title": "GUI burst opened during a human takeover lets the control plane kill the human's processes and charge human edits to the agent",
+  "description": "AgentBox._snapshot closes and opens an agent GUI burst without taking gui_lock and without checking the takeover lease. If an approved GUI click/type/key is decided while a lease is held, or if an agent click/type/key whose pre-input docker commit overlaps POST /desktop/takeover, a new burst is installed with a baseline taken mid-takeover. _run_tool then raises HumanControl (call_tool returns 423, decide marks the approval failed) but nothing discards the burst. When close_idle runs, or the next agent burst closes it after handback, _stop_strays SIGKILLs as the desktop user every uid-1001 process the human started after that baseline in a session absent from it (terminal shells and jobs started from them). _finish also records the human's /workspace edits as agent gui_changes under the agent burst's snapshot_id. Takeover closes the burst at service.py:582 precisely so that human activity stays out of agent bursts, and this path bypasses that. The agent can choose when the kill happens, because any agent tool call or GET /approvals/{aid} runs close_idle. Path (a) is demonstrated against the real Docker engine and desktop image. Path (b) rests on source plus a local deterministic schedule: the race window is the docker commit duration, which was not timed live, and the agent cannot force a takeover into it. Impact is bounded: lost human background work (windowed apps are kept) and misattributed audit rows, not agent escalation.",
+  "root_cause": "Burst open/close in _snapshot (service.py:261-276) is not serialized with takeover (gui_lock) and is not conditioned on the lease. GuiBursts.needs_snapshot (gui_bursts.py:61) checks the lease only before a multi-second commit, and decide (service.py:467) does not check it at all. The HumanControl handlers in call_tool (service.py:373-381) and decide (service.py:477-480) leave the burst that _snapshot just opened in _gui_burst. A baseline taken during the lease is later used for stray kill and change attribution.",
+  "intended_behavior": "No agent GUI burst (baseline, later stray kill, gui_changes attribution) exists while a human takeover lease is held. Takeover closes the agent burst under gui_lock (service.py:582) so that human processes and edits are never judged against an agent baseline, and every later burst open is serialized against the lease.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 273,
+    "scope": "POST /sandboxes/{sid}/tools/{tool}",
+    "description": "The agent token calls click/type/key (api.py:278 calls box.call_tool with actor=agent). A pending GUI approval is decided via POST /approvals/{aid} (api.py:308) or POST /ui/approvals/{aid}/{decision} (web.py:242), both reaching AgentBox.decide."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/gui_bursts.py",
+    "line": 61,
+    "scope": "GuiBursts.needs_snapshot",
+    "description": "The lease and takeover_pending check happens only here, before the docker commit. With no lease yet it returns True and the commit starts."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 367,
+    "scope": "AgentBox._call_tool",
+    "description": "The allow path calls _snapshot without gui_lock. decide calls _snapshot at service.py:467 with no lease check at all."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 582,
+    "scope": "AgentBox.takeover",
+    "description": "Takeover takes gui_lock, which is free because _snapshot does not hold it. It closes the burst (none open yet) and installs the lease at service.py:584."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 268,
+    "scope": "AgentBox._snapshot",
+    "description": "After the commit returns, bursts.open records a baseline of desktop-user pids and a /workspace manifest taken while the lease is held (gui_bursts.py:73-87)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 143,
+    "scope": "AgentBox._run_tool",
+    "description": "_check_control raises HumanControl. call_tool returns 423 (service.py:373-381) and decide marks the approval failed (service.py:477-480). The burst stays in _gui_burst and no input time is marked (mark_input is never reached), so it already counts as idle."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/gui_bursts.py",
+    "line": 154,
+    "scope": "GuiBursts.close_idle",
+    "description": "Run from any call_tool (service.py:285) or expire_stale (service.py:424, reached by GET /approvals/{aid}, api.py:288-290). It submits close() of the mid-lease burst while the lease is still held. Alternatively _snapshot's close('next_burst') (service.py:263) closes it after handback."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/gui_state.py",
+    "line": 53,
+    "scope": "_new_processes",
+    "description": "Human-started desktop-user processes in sessions absent from the mid-lease baseline are classified as strays (line 78). Windowed ones go to kept."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 92,
+    "scope": "SandboxManager.kill_processes",
+    "description": "kill -KILL of the human's processes as the desktop user (via GuiBursts._stop_strays, gui_bursts.py:95). _finish (gui_bursts.py:147) logs the human's /workspace edits as agent gui_changes."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 263,
+    "description": "_snapshot closes (263) and opens (268) the burst with no gui_lock and no lease or takeover_pending check."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 467,
+    "description": "decide calls _snapshot unconditionally for an approved GUI input, even while desktop.lease(sid) is set."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 373,
+    "description": "The HumanControl handler returns 423 without discarding the burst opened by _snapshot. decide (477-480) likewise only marks the approval failed."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 582,
+    "description": "takeover closes the burst so that human changes stay out of agent bursts. The open in _snapshot can happen after this close, so the intent is bypassed."
+   },
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 95,
+    "description": "_stop_strays computes gui_strays against the burst baseline and kills them."
+   },
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 161,
+    "description": "close_idle treats a burst with no recorded input time as idle (_gui_input_at.get(sid, 0.0)). A burst opened by a blocked input therefore closes on the next close_idle even though the lease is held."
+   },
+   {
+    "file": "agentbox/gui_state.py",
+    "line": 86,
+    "description": "Docstring of gui_strays: processes in sessions absent at burst start (terminal shells, nohup/setsid jobs) are stopped."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 288,
+    "description": "GET /approvals/{aid} is callable by the agent token and runs expire_stale -> close_idle, so the agent chooses when the close happens."
+   },
+   {
+    "file": "agents/parent-live/artifacts/gui_lease_a.json",
+    "line": 1,
+    "description": "Live run against the real Docker engine and agentbox-desktop:0.1: with click gated by policy, takeover, agent click returned 202, human approve returned status failed (HumanControl) with burst_open true. A desktop-user setsid job (pid 400) started during the lease was then SIGKILLed at close_idle with the lease still held. Audit shows human_takeover, snapshot(click), tool_error, then gui_processes_stopped reason idle for 'sleep 600'. (The artifact's burst_baseline_size 0 is a script key mismatch, 'procs' versus the burst's 'pids', and does not affect the kill.)"
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Agent token for its own desktop sandbox (lowest-trust network principal). Path (a) also needs the human to take over and decide the approval."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "Desktop-template sandbox with gui_snapshot_interval > 0 (default). Path (a) needs a GUI click/type/key to be gated by policy or by the snapshot quota so a pending approval exists. Path (b) works under the default policy, which allows GUI tools."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "Path (a): a human takes over the desktop and approves, or is approved on their behalf from the UI, a pending GUI approval while the lease is held. Path (b): a human takeover starts inside the agent's docker commit."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "Path (b) needs the takeover to land inside the pre-input docker commit window. Path (a) is deterministic. The human must also start a non-windowed or new-session desktop-user process after the baseline, such as a terminal shell or a setsid/nohup job, before the burst closes."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "Prompt-injected agent holding the sandbox's agent token. It places or waits for a GUI click/type/key, which is sent so that it ends up as a pending approval or its docker commit overlaps a takeover, and later makes any tool call or GET /approvals/{aid} to trigger close_idle.",
+   "payloads": [
+    "POST /sandboxes/{sid}/tools/click {\"args\":{\"x\":1,\"y\":1}} with a policy rule {id: gui-approval, tool: click, action: require_approval}",
+    "POST /approvals/{aid} {\"decision\":\"approve\"} by the human during the lease",
+    "GET /approvals/{aid} with the agent token after the idle window",
+    "docker exec -u desktop <container> setsid -f sleep 600 (stand-in for a human-opened terminal job)"
+   ],
+   "instructions": [
+    "Create a desktop sandbox with a policy rule gating click behind approval.",
+    "Human takes over: POST /sandboxes/{sid}/desktop/takeover.",
+    "Agent sends click and receives 202 with an approval_id.",
+    "Human approves during the lease. The approval ends status failed (HumanControl) after a snapshot row is logged, and the burst stays open with a baseline taken during the lease.",
+    "Human starts a job in a new session, for example setsid sleep 600 as the desktop user or a terminal opened through noVNC.",
+    "After the idle window, the agent calls any tool or GET /approvals/{aid}. While the lease is still held, the audit log gets gui_processes_stopped (reason idle) listing the human's pid, and the process is gone.",
+    "Path (b): the same end state is reached when the agent's click commit overlaps a takeover (click returns 423, burst left open). Handing back and having the agent click again closes it with reason next_burst."
+   ],
+   "observed_result": "Real Docker plus agentbox-desktop:0.1 (parent-live, path a): the burst was opened during the lease. The human's setsid sleep 600 (pid 400) was killed by the idle close with the lease still held and the burst closed, and gui_processes_stopped was audited. Independent local rerun (fake Docker-facing SandboxManager, real AgentBox, GuiBursts, gui_state, DesktopControl and ApprovalStore) via tools/sbx: the control with no race killed []. Path (b) with close during the lease killed [201, 202]. Path (b) with the close via next_burst after handback killed [201, 202]. Path (a) decide-under-lease killed [201, 202] with the lease held. The windowed xfce4-terminal was kept, and the human's file was logged as agent gui_changes under snap_1."
+  },
+  "remediation": {
+   "strategy": "Never let a burst exist while the human holds or is about to hold the screen. Serialize _snapshot's close, commit and open with the same gui_lock that takeover uses. Re-check lease(sid), is_stale and _takeover_pending after the commit and before bursts.open. If the lease or a pending takeover is present, skip opening, or discard the snapshot's burst. Also discard or close the burst without stray kill when HumanControl is raised in call_tool and decide. Make decide check the lease before snapshotting. As defense in depth, have _finish skip _stop_strays and gui_changes for a burst whose open time overlapped a lease, and reject close or kill while desktop.lease(sid) is set.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "# in _snapshot, after the commit and before bursts.open, with self.desktop.gui_lock(sid) held around close+open:\nif tool in GUI_INPUT:\n    with self.desktop.gui_lock(sid):\n        if self.desktop.lease(sid) or self._takeover_pending(sid):\n            self.bursts.reset_timers(sid)\n            raise HumanControl(self.desktop.lease(sid) or Lease(sid, self._takeover_pending(sid)))\n        self.bursts.mark_snapshot(sid)\n        opened = self.bursts.open(sid, snap['id'])\n# and in call_tool/decide HumanControl handlers: self.bursts.close_discard(sid)  # drop burst without stray kill"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Path (a) is deterministic once a GUI approval is pending and a human approves during their own takeover, a plausible UI flow. It needs a policy gate or snapshot quota on GUI tools, and the human has to start a new-session or non-windowed process in the window. Path (b) needs the takeover to land inside the commit window under the default policy, and the agent cannot force it. The agent does control when the kill fires."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "The human's non-windowed desktop-user processes (terminal shells and jobs, setsid/nohup jobs) started after a mid-lease baseline are SIGKILLed, and the human's /workspace edits are logged as agent changes under an agent snapshot. This loses the human's background work and degrades audit attribution. It does not give the agent code execution, data access or approval bypass. Windowed apps are kept, and the snapshot is available for recovery."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Source shows no lock or lease check between needs_snapshot and bursts.open and no discard on HumanControl. Path (a) was observed end to end against the real Docker engine and desktop image (parent-live). I independently reran the local deterministic schedules (control killed [], races killed [201, 202]). Unobserved: the real docker commit duration for path (b) and a terminal opened through noVNC in place of the setsid stand-in. Neither changes the source-visible root cause."
+  }
+ }
+]

@@ -1,0 +1,37 @@
+{
+ "body_bytes": 8388580,
+ "rss_idle_mb": 58,
+ "healthz_idle_s": 0.002,
+ "single": {
+  "result": {
+   "status": 401,
+   "s": 0.28
+  },
+  "rss_after_mb": 260,
+  "hwm_mb": 268
+ },
+ "concurrent_4": {
+  "results": [
+   {
+    "error": "RemoteDisconnected('Remote end closed connection without response')",
+    "s": 0.57
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.57
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.57
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.57
+   }
+  ],
+  "healthz_during_s": "ConnectionResetError(104, 'Connection reset by peer')",
+  "server_alive": false,
+  "hwm_mb": null,
+  "exit": -9
+ }
+}

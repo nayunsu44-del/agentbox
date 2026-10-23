@@ -262,3 +262,19 @@ pytest                                                 # 160 passed
    - 보고서: `gen6.py`(`ko_text.py`의 한국어 문장과 `report_notes.py`를 씀)
    - 1차 때 쓴 일회용 스크립트는 `tools/oneoff/`에 설명과 함께 모았다.
 5. 검증기: `node <skill>/skills/security-audit/validate-findings.cjs run-4/findings.json`, `validate-coverage-ledger.cjs run-4/coverage-ledger.json`.
+
+## 5차 감사(run-5) 결과 — 2026-10-23~24 (집중 후속 감사, 확정 6건 수정)
+
+- **기준과 브랜치:** 감사 기준 `main` `346df29`(PR #16~#23 뒤), 작업 브랜치 `ccr-534dd824-2jgcsj`. 보고서는 `run-5/REPORT.md`(한국어), 상세는 `FINDINGS-DETAIL.md`·`NEEDS-VALIDATION.md`.
+- **프로필·예산:** `standard`, 소유자 상한 30을 모두 썼다. 헌터 8(Opus), 나머지 Sonnet. 정찰은 부모가 했고(0회), 실제 Docker 확인 7건은 부모가 예산 밖에서 했다(`run-5/agents/parent-live/`).
+- **결과(`run-5/findings.json` 8건, 두 검증기 PASS):** 확정 6(중간 1, 낮음 5), 검증 필요 1, 기각 1.
+  - 중간: 에이전트 exec 한 번이 요청의 약 45배인 승인 대기 행을 써서 디스크 보호선을 한 번에 넘음(run-4 N2의 남은 부분).
+  - 낮음: 인수 중 GUI 구간이 사람 프로세스를 멈춤(실제 데스크톱 재현), 정리 명령이 COMMIT 직후 중단되면 아카이브 삭제, 화면 웹소켓이 이벤트 루프에서 SQLite 대기, 긴 명령의 정책 파싱 CPU, 미리보기의 피연산자별 docker exec.
+  - 검증 필요: 인증 없는 8MiB JSON이 401 전에 약 200MB를 씀. 512MiB 제한에서 동시 4건에 OOM(세 번 재현). 배포 메모리 제한에 달려 있다.
+  - 기각: 삭제 중 커밋의 고아 이미지(실제 dockerd에서 커밋이 실패).
+- **수정:** 소유자 지시로 확정 6건을 같은 PR에서 고쳤다. 새 회귀 테스트는 `tests/test_m5_unit.py`(9개)와 `tests/test_retention.py`(2개)이고 수정 전 코드에서 실패한다.
+- **남은 일:**
+  1. 검증 필요 N1의 수정 방향 결정(자격 증명 없는 요청은 본문 전에 401 / 작은 상한 / 배포 쪽 메모리·엣지 상한). `run-5/REPORT.md` 8절.
+  2. 도구 인자 길이 상한 16KiB가 사용 방식에 맞는지 확인.
+  3. 보류 7단위(critic-1 1, critic-2 6). `same_origin` scheme(run-4 N1)과 컨테이너 출력 판독기 상한(run-4 N3)도 이 안에 있다. 다음 run의 1순위다.
+- **실행 환경:** run-4와 같다. 도구는 `run-5/tools/`(seed5, gen_hunt, gen3, gen5, gen_critic, apply, ingest_hunt, promote_linux, apply_reverify, apply5_nonmaterial, intake_critic1/2, settle_xres, gen6). `common.py`의 스크래치패드 기본값과 `tools/sbx`의 `TARGET`·`LOG`를 새 세션 값으로 바꾼다.

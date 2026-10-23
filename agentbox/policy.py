@@ -24,6 +24,7 @@ REQUIRE_APPROVAL = "require_approval"
 _ACTIONS = {ALLOW, DENY, REQUIRE_APPROVAL}
 
 _SHELL_PUNCT = set(";&|()<>`$")
+_LEX_PUNCT = set(";&|()<>")   # shlex가 단어를 끊는 문자 (_words의 punctuation_chars)
 
 
 @dataclass
@@ -35,6 +36,18 @@ class Decision:
 
     def as_dict(self) -> dict[str, Any]:
         return {"action": self.action, "rule_id": self.rule_id, "reason": self.reason, "matched": self.matched}
+
+
+def _relex_changes(t: str) -> bool:
+    """t를 다시 렉싱하면 [t]와 다른 결과가 나올 수 있는가. 예전 조건(공백이나 셸 구분 문자가 있으면 다시 렉싱)에서
+    결과가 같을 수밖에 없는 경우만 뺀다: 구분자(;&|()<>)만으로 된 토큰, 그리고 공백·구분자·따옴표·역슬래시가
+    하나도 없는 토큰(예: 'x$'). 그런 토큰을 깊이 한도까지 되풀이해 렉싱해, 'x;x;x;…' 같은 명령 하나가 수 초씩
+    CPU를 썼다 (보안 검수 run-5). sh -c 'a`r""m`'처럼 따옴표가 남은 토큰은 계속 다시 본다."""
+    if all(c in _LEX_PUNCT for c in t):
+        return False
+    if not any(c.isspace() or c in _SHELL_PUNCT for c in t):
+        return False
+    return any(c.isspace() or c in _LEX_PUNCT or c in "'\"\\" for c in t)
 
 
 def _words(command: str, depth: int = 0) -> list[str]:
@@ -57,7 +70,7 @@ def _words(command: str, depth: int = 0) -> list[str]:
         cleaned = t.replace("$(", " ").replace("`", " ").replace("${", " ").replace("}", " ")
         for piece in cleaned.split():
             out.append(piece)
-        if any(c.isspace() for c in t) or any(c in _SHELL_PUNCT for c in t):
+        if _relex_changes(t):
             out.extend(_words(t, depth + 1))
     return out
 

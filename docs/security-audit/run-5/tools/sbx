@@ -1,0 +1,67 @@
+#!/bin/bash
+# sbx <agent-id> <cmd...>
+# Run target-controlled code for audit agent <agent-id> inside an OS-enforced sandbox:
+#   no network, no Docker socket, read-only root, read-only host /usr and target,
+#   writes only to agents/<id>/scratch (a 256 MiB loop-mounted ext4, mounted at /scratch), /dev/shm capped at 16 MiB,
+#   jinja2/markupsafe from /root/.local mounted read-only (agentbox.web imports them), --pull never, uid 65534, all caps dropped,
+#   no-new-privileges, 512 MiB RAM (no swap), 1 CPU, 64 pids, 32 MiB max file size, 120 s wall clock,
+#   empty environment populated from an explicit allowlist.
+# Parent-side tool: agents never get the docker CLI through this script, only the command's output.
+set -u
+TARGET=/tmp/claude-0/-home-user-agentbox/fcd2f048-3e17-52e2-9d78-d39b755653f3/scratchpad/src-audited
+RUN=/home/user/agentbox/docs/security-audit/run-5
+LOG=/tmp/claude-0/-home-user-agentbox/fcd2f048-3e17-52e2-9d78-d39b755653f3/scratchpad/sbx.log
+IMAGE=ubuntu:24.04
+
+id="${1:-}"; shift || true
+if ! [[ "$id" =~ ^[a-z0-9][a-z0-9_-]{0,63}$ ]] || [ "$#" -eq 0 ]; then
+  echo "usage: sbx <agent-id> <cmd...>" >&2; exit 2
+fi
+scratch="$RUN/agents/$id/scratch"
+# scratch must be a real directory (not a symlink) prepared by the parent for uid 65534
+if [ -L "$scratch" ] || [ ! -d "$scratch" ]; then
+  echo "sbx: $scratch is missing or a symlink" >&2; exit 2
+fi
+if ! mountpoint -q "$scratch"; then
+  echo "sbx: $scratch is not a size-capped loop mount (run common.make_scratch)" >&2; exit 2
+fi
+if [ "$(stat -c %u "$scratch")" != "65534" ]; then
+  echo "sbx: $scratch is not owned by uid 65534" >&2; exit 2
+fi
+
+printf '%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$id" "$*" >> "$LOG"
+
+timeout -k 10 140 docker run --rm -i --pull never \
+  --name "sbx-$id-$$" \
+  --network none \
+  --read-only \
+  --user 65534:65534 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges \
+  --memory 512m --memory-swap 512m \
+  --cpus 1 \
+  --pids-limit 64 \
+  --ulimit fsize=33554432:33554432 \
+  --ulimit nofile=256:256 \
+  --ulimit core=0 \
+  -v /usr:/usr:ro \
+  -v /etc/alternatives:/etc/alternatives:ro \
+  -v /root/.local/lib/python3.13/site-packages/jinja2:/opt/userpy/jinja2:ro \
+  -v /root/.local/lib/python3.13/site-packages/markupsafe:/opt/userpy/markupsafe:ro \
+  --tmpfs /dev/shm:rw,nosuid,nodev,noexec,size=16m \
+  -v "$TARGET:/target:ro" \
+  -v "$scratch:/scratch:rw" \
+  -w /scratch \
+  -e HOME=/scratch \
+  -e TMPDIR=/scratch \
+  -e PATH=/usr/local/bin:/usr/bin:/bin \
+  -e PYTHONPATH=/target:/opt/userpy \
+  -e PYTHONDONTWRITEBYTECODE=1 \
+  -e PYTHONNOUSERSITE=1 \
+  --entrypoint /usr/bin/timeout \
+  "$IMAGE" -k 5 120 "$@"
+rc=$?
+printf '%s\t%s\trc=%s\n' "$(date -u +%FT%TZ)" "$id" "$rc" >> "$LOG"
+# make sure nothing outlives the wrapper (timeout on the docker client does not stop the container)
+docker rm -f "sbx-$id-$$" >/dev/null 2>&1 || true
+exit $rc

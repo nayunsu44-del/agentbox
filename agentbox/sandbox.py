@@ -36,6 +36,7 @@ AGENT_UID = "1000:1000"
 _READ_TIMEOUT = 30
 # GUI 구간 기록용 파일 목록 exec의 제한 시간(초). 화면(X) 쪽 제한은 sandbox_desktop._X_TIMEOUT.
 _MANIFEST_TIMEOUT = 30
+_PREVIEW_TIMEOUT = 10   # 승인 미리보기의 glob 펼치기·find 한 번. 넘으면 미리보기 실패로 사람에게 넘긴다
 _WRITE_CHUNK = 64 * 1024     # 인자 하나의 커널 상한(128KB)보다 작게, base64 뒤 기준
 OUTBOX = WORKSPACE + "/outbox"
 _BAD_NAME = re.compile(r"[\x00-\x1f\x7f/\\]")
@@ -98,6 +99,11 @@ class _Head:
 
     def text(self) -> str:
         return _truncate(bytes(self.buf), self.total)
+
+
+def _preview_ok(res) -> None:
+    if res.exit_code in (124, 137):
+        raise SandboxError(f"미리보기 확인 시간 초과 ({_PREVIEW_TIMEOUT}초)")
 
 
 def _parse_outbox(raw: bytes) -> list[dict[str, Any]]:
@@ -569,15 +575,18 @@ class SandboxManager(DesktopTools):
         """컨테이너 안에서 glob만 펼친다. 명령 치환은 일어나지 않는다."""
         script = ('cd /workspace; IFS=; for p in $1; do if [ -e "$p" ] || [ -L "$p" ]; then printf "%s\\000" "$p"; '
                   'fi; done')
-        res = c.exec_run(["sh", "-c", script, "_", pattern], user=AGENT_UID, demux=True)
+        res = c.exec_run(_timed(_PREVIEW_TIMEOUT, "sh", "-c", script, "_", pattern), user=AGENT_UID, demux=True)
+        _preview_ok(res)
         out = (res.output[0] or b"").decode("utf-8", errors="replace")
         return [p for p in out.split("\0") if p]
 
     def _walk(self, c, path: str, limit: int) -> list[str]:
-        res = c.exec_run(["sh", "-c", 'cd /workspace; case "$1" in -*) set -- "./$1" "$2";; esac; '
-                                      'find "$1" -print0 2>/dev/null | head -z -n "$2"',
-                          "_", path, str(limit)],
+        res = c.exec_run(_timed(_PREVIEW_TIMEOUT, "sh", "-c",
+                                'cd /workspace; case "$1" in -*) set -- "./$1" "$2";; esac; '
+                                'find "$1" -print0 2>/dev/null | head -z -n "$2"',
+                                "_", path, str(limit)),
                          user=AGENT_UID, demux=True)
+        _preview_ok(res)
         out = (res.output[0] or b"").decode("utf-8", errors="replace")
         return [p for p in out.split("\0") if p]
 

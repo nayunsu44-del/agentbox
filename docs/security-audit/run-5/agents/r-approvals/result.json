@@ -1,0 +1,4 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention"
+}

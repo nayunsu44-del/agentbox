@@ -16,9 +16,11 @@ from .service import AgentBox, ServiceError
 
 
 async def relay(ws: WebSocket, box: AgentBox, sid: str, session: str, mode: str, cookie: str | None) -> None:
+    # SQLite·감사 기록·Docker 호출은 이벤트 루프에서 하지 않는다. DB 쓰기 잠금을 다른 연결이 쥐고 있으면(정리 명령,
+    # 큰 감사 조회 등) 기다리는 동안 모든 HTTP 요청이 멈췄다 (보안 검수 run-5)
     try:
-        argv = box.sandboxes.vnc_command(sid, view_only=mode == "view")
-        box.log_human("desktop_connect", sid, {"session": session, "mode": mode})
+        argv = await run_in_threadpool(box.sandboxes.vnc_command, sid, view_only=mode == "view")
+        await run_in_threadpool(box.log_human, "desktop_connect", sid, {"session": session, "mode": mode})
     except (SandboxError, ServiceError):
         await ws.close(code=1011)
         return
@@ -69,7 +71,7 @@ async def relay(ws: WebSocket, box: AgentBox, sid: str, session: str, mode: str,
         nonlocal ended
         while True:
             await asyncio.sleep(box.desktop.recheck)
-            if not box.desktop.session(cookie, sid):
+            if not await run_in_threadpool(box.desktop.session, cookie, sid):
                 ended = "session_ended"
                 lease = box.desktop.lease(sid)
                 if lease and lease.session == session:
@@ -86,16 +88,21 @@ async def relay(ws: WebSocket, box: AgentBox, sid: str, session: str, mode: str,
     try:
         await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
     finally:
-        # 정리 중에 await가 취소될 수 있으니 등록 해제와 기록을 먼저 한다.
-        box.desktop.drop_conn(conn)
-        box.log_best_effort(sid, None, "desktop_disconnect", {
-            "session": session, "mode": mode, "conn": conn.id, "seconds": round(loop.time() - started, 1),
-            "client_bytes": up, "server_bytes": down, **({"reason": ended} if ended else {})}, actor="human")
-        for t in tasks:
-            t.cancel()
-        kill()
+        # 감사 기록은 스레드에서 한다(이벤트 루프를 막지 않게). 정리 중의 await는 취소될 수 있으니 shield로 감싸고,
+        # 취소되더라도 아래 등록 해제와 정리는 한다. 기록이 끝난 뒤에 등록을 지워, 연결이 사라졌으면 기록도 있다.
+        payload = {"session": session, "mode": mode, "conn": conn.id, "seconds": round(loop.time() - started, 1),
+                   "client_bytes": up, "server_bytes": down, **({"reason": ended} if ended else {})}
+        logged = loop.run_in_executor(None, lambda: box.log_best_effort(sid, None, "desktop_disconnect", payload,
+                                                                        actor="human"))
         try:
-            await asyncio.wait_for(proc.wait(), 5)
-            await ws.close(code=4000)
-        except Exception:
-            pass
+            await asyncio.shield(logged)
+        finally:
+            box.desktop.drop_conn(conn)
+            for t in tasks:
+                t.cancel()
+            kill()
+            try:
+                await asyncio.wait_for(proc.wait(), 5)
+                await ws.close(code=4000)
+            except Exception:
+                pass
