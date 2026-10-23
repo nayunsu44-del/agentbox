@@ -174,7 +174,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         if not authorization.lower().startswith("bearer "):
             raise HTTPException(401, "Authorization: Bearer <token> 필요")
         token = authorization.split(" ", 1)[1].strip()
-        if secrets.compare_digest(token, human_token):
+        if secrets.compare_digest(token.encode(), human_token.encode()):  # str 비교는 ASCII 밖에서 500 (run-4 F8)
             return Principal("human")
         sid = box.sandboxes.sandbox_for_token(token)
         if sid:

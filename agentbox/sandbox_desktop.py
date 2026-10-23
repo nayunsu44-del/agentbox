@@ -12,6 +12,7 @@ import io
 import re
 import struct
 import tarfile
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,9 @@ from docker.errors import APIError, ImageNotFound, NotFound
 
 from .gui_state import _parse_ps
 from .sandbox_common import SandboxError, _timed, _truncate
+
+_NOVNC_LOCK = threading.Lock()
+_NOVNC_RETRY = 60   # noVNC 꺼내기에 실패한 뒤 다시 시도하기까지(초)
 
 # 화면(X)과 구간 기록용 exec의 제한 시간(초). X 서버가 멈추면 xdotool·scrot은 끝없이 기다리고, 그동안 gui_lock과
 # 부른 스레드가 묶인다. 컨테이너 안에서 끊어야 exec가 돌아온다 (클라이언트 쪽 시간 제한으로는 풀리지 않았다).
@@ -144,9 +148,25 @@ class DesktopTools:
         return argv + [c.id, "socat", "-", "EXEC:" + " ".join(vnc)]
 
     def extract_novnc(self, dest: Path) -> bool:
-        """noVNC 정적 파일을 데스크톱 이미지에서 꺼낸다. 인터넷 없이 설치하기 위해 따로 받지 않는다."""
+        """noVNC 정적 파일을 데스크톱 이미지에서 꺼낸다. 인터넷 없이 설치하기 위해 따로 받지 않는다.
+        인증 없는 정적 파일 요청에서 불리므로 꺼내기는 한 번에 하나만 하고, 실패하면 한동안 다시 하지 않는다.
+        그러지 않으면 요청마다 docker create와 전체 tar 추출이 돈다 (보안 검수 run-4 F5)."""
         if (dest / "core" / "rfb.js").exists():
             return True
+        with _NOVNC_LOCK:   # 동시 요청은 먼저 온 하나가 꺼내기를 끝낼 때까지 기다렸다가 그 결과를 본다
+            if (dest / "core" / "rfb.js").exists():
+                return True
+            if time.monotonic() - getattr(self, "_novnc_failed_at", float("-inf")) < _NOVNC_RETRY:
+                return False
+            try:
+                ok = self._extract_novnc(dest)
+            except Exception:   # 망가진 아카이브 등. 500 대신 '없음'으로 답하고 잠시 뒤 다시 해 본다
+                ok = False
+            if not ok:
+                self._novnc_failed_at = time.monotonic()
+            return ok
+
+    def _extract_novnc(self, dest: Path) -> bool:
         # 컨테이너 로그로 tar를 받으면 바이너리가 잘린다. 실행하지 않은 컨테이너에서 복사 API로 꺼낸다.
         try:
             c = self.client.containers.create(self.settings.desktop_image, ["true"], network_mode="none")

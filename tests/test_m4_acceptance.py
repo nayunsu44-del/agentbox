@@ -286,3 +286,137 @@ def test_agent_input_cannot_grow_audit_rows(home):
         assert c.get("/audit/verify", headers=H).json()["ok"]
     finally:
         c.delete(f"/sandboxes/{sid}", headers=H)
+
+
+def _race_restore(box, sid, snap_id, do_delete):
+    """복원이 새 컨테이너를 만든 직후에 멈춰 있는 동안 do_delete를 다른 스레드에서 부른다."""
+    import threading
+    import time
+    real = box.sandboxes._run_container
+    started, go = threading.Event(), threading.Event()
+
+    def paused(*a, **kw):
+        cont = real(*a, **kw)
+        started.set()
+        go.wait(20)
+        return cont
+
+    box.sandboxes._run_container = paused
+    out = {}
+
+    def restore():
+        try:
+            out["restore"] = box.restore_sandbox(sid, snap_id)
+        except Exception as e:
+            out["restore"] = e
+
+    def delete():
+        try:
+            do_delete()
+            out["delete"] = "ok"
+        except Exception as e:
+            out["delete"] = e
+
+    t = threading.Thread(target=restore)
+    t.start()
+    assert started.wait(60)
+    d = threading.Thread(target=delete)
+    d.start()
+    time.sleep(1.0)            # 잠금이 없으면 삭제가 이 사이에 끝난다
+    go.set()
+    t.join(120)
+    d.join(120)
+    box.sandboxes._run_container = real
+    return out
+
+
+def _live(box, sid):
+    return [c for c in box.sandboxes.client.containers.list(all=True) if c.name == f"agentbox-{sid}"]
+
+
+def test_restore_racing_delete_does_not_resurrect(home):
+    """보안 검수 run-4 F6: 복원과 삭제가 겹쳐도 지운 샌드박스와 그 에이전트 토큰이 되살아나지 않는다."""
+    c, box, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid, tok = sb["id"], sb["agent_token"]
+    snap = box.snapshot_sandbox(sid)
+    out = _race_restore(box, sid, snap["id"], lambda: box.delete_sandbox(sid))
+    assert out["delete"] == "ok"
+    assert box.sandboxes.get(sid)["status"] == "deleted"
+    assert not box.sandboxes.token_matches(sid, tok) and box.sandboxes.sandbox_for_token(tok) is None
+    assert not _live(box, sid)
+
+
+def test_restore_refuses_a_deleted_sandbox(home):
+    """F6 다층 방어: 서비스 잠금을 거치지 않은 삭제가 끼어도 복원의 마지막 쓰기가 행을 되살리지 않는다."""
+    from agentbox.sandbox import SandboxError
+    c, box, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid, tok = sb["id"], sb["agent_token"]
+    snap = box.snapshot_sandbox(sid)
+    out = _race_restore(box, sid, snap["id"], lambda: box.sandboxes.delete(sid))
+    assert isinstance(out["restore"], SandboxError)
+    assert box.sandboxes.get(sid)["status"] == "deleted" and not box.sandboxes.token_matches(sid, tok)
+    assert not _live(box, sid)
+    with pytest.raises(SandboxError):
+        box.sandboxes.restore(sid, snap["id"])
+
+
+def test_preview_paths_with_spaces_and_newlines(home):
+    """보안 검수 run-4 F4: 영향 표가 공백·줄바꿈이 든 경로를 한 경로로 보이고, 있는 파일을 '없음'으로 보이지 않는다."""
+    c, box, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid = sb["id"]
+    try:
+        box.sandboxes._container(sid).exec_run(
+            ["sh", "-c", 'cd /workspace && touch "final report.docx" final report.docx "$(printf "a\\nb")" && '
+                         'mkdir "dir with space" && touch "dir with space/inner"'], user="1000")
+        p = box.sandboxes.preview(sid, 'rm "final report.docx"')
+        assert p["affected"] == [{"path": "final report.docx", "effect": "삭제"}]
+        p = box.sandboxes.preview(sid, "rm *")
+        assert {"path": "a\nb", "effect": "삭제"} in p["affected"]
+        assert {a["path"] for a in p["affected"]} >= {"final report.docx", "final", "report.docx"}
+        p = box.sandboxes.preview(sid, 'rm -r "dir with space"')
+        assert [a["path"] for a in p["affected"]] == ["dir with space", "dir with space/inner"]
+    finally:
+        c.delete(f"/sandboxes/{sid}", headers=H)
+
+
+@needs_desktop
+def test_novnc_extracted_once_under_concurrency(home, monkeypatch):
+    """보안 검수 run-4 F5: 인증 없는 정적 파일 요청이 동시에 와도 noVNC 꺼내기는 한 번이고, 실패하면 한동안 다시 하지 않는다."""
+    from concurrent.futures import ThreadPoolExecutor
+    from docker.models.containers import ContainerCollection
+    created = []
+    real = ContainerCollection.create
+    monkeypatch.setattr(ContainerCollection, "create", lambda self, *a, **kw: (created.append(1), real(self, *a, **kw))[1])
+    c, box, H, _ = _build()
+    box.sandboxes.settings.desktop_image = "agentbox-missing-image:0"     # 실패 쪽 먼저
+    assert [c.get("/static/novnc/core/rfb.js").status_code for _ in range(3)] == [404, 404, 404]
+    assert len(created) == 1                                             # 실패한 뒤에는 바로 다시 하지 않는다
+    c2, _, _, _ = _build()                                               # 새 서버: 진짜 이미지
+    created.clear()
+    with ThreadPoolExecutor(8) as ex:
+        codes = list(ex.map(lambda _: c2.get("/static/novnc/core/rfb.js").status_code, range(8)))
+    assert codes == [200] * 8 and len(created) == 1
+
+
+def test_failed_logins_are_aggregated(home, monkeypatch):
+    """보안 검수 run-4 F8: 인증 없는 로그인 실패가 시도마다 감사 행을 만들지 않고, ASCII 밖 입력도 500이 아니다."""
+    import time
+    from agentbox import web
+    c, box, H, _ = _build()
+
+    def failed_rows():
+        return [r for r in box.audit.list(limit=5000) if r["event"] == "ui_login_failed"]
+
+    for _ in range(12):
+        assert c.post("/login", data={"token": "hum_wrong"}).status_code == 200
+    assert len(failed_rows()) == 5                       # web.LOGIN_FAIL_LOG_MAX
+    monkeypatch.setattr(web, "LOGIN_FAIL_WINDOW", 0.2, raising=False)
+    time.sleep(0.3)
+    c.post("/login", data={"token": "hum_wrong"})
+    rows = failed_rows()
+    assert len(rows) == 6 and rows[-1]["payload"] == {"suppressed_before": 7}
+    assert c.post("/login", data={"token": "토큰"}).status_code == 200      # 예전에는 TypeError로 500
+    assert c.get("/sandboxes", headers={"Authorization": b"Bearer \xe9t\xe9"}).status_code == 401

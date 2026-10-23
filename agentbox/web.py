@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -84,9 +86,34 @@ def describe(e: dict[str, Any]) -> str:
     return _short({k: v for k, v in p.items() if k not in ("request",)})
 
 
+LOGIN_FAIL_WINDOW = 60     # 초
+LOGIN_FAIL_LOG_MAX = 5     # 창 하나에 하나씩 기록하는 로그인 실패 수. 넘는 것은 세기만 하고 다음 기록에 붙인다
+
+
 def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: Callable,
              browser_human: Callable, human_only: Callable, same_origin: Callable) -> None:
     import secrets
+
+    # 인증 없는 로그인 실패가 시도마다 지울 수 없는 감사 행을 만들고 감사 잠금을 차지하지 못하게,
+    # 1분에 몇 개만 하나씩 기록하고 나머지는 센 수로 남긴다 (보안 검수 run-4 F8)
+    fails = {"window": float("-inf"), "logged": 0, "suppressed": 0}
+    fails_lock = threading.Lock()
+
+    def note_login_failure() -> None:
+        now = time.monotonic()
+        with fails_lock:
+            carried = 0
+            if now - fails["window"] >= LOGIN_FAIL_WINDOW:
+                carried = fails["suppressed"]
+                fails.update(window=now, logged=0, suppressed=0)
+            if fails["logged"] >= LOGIN_FAIL_LOG_MAX:
+                fails["suppressed"] += 1
+                return
+            fails["logged"] += 1
+        try:
+            box.log_human("ui_login_failed", None, {"suppressed_before": carried} if carried else {})
+        except ServiceError:
+            pass
 
     tpl = Jinja2Templates(directory=str(HERE / "templates"))
     tpl.env.globals.update(actors=ACTORS, describe=describe, runtime=box.sandboxes.runtime)
@@ -131,11 +158,9 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
     def login(request: Request, token: str = Form(...)):
         if not same_origin(request.headers):
             raise HTTPException(403, "다른 출처의 요청")
-        if not secrets.compare_digest(token.strip(), human_token):
-            try:
-                box.log_human("ui_login_failed", None, {})
-            except ServiceError:
-                pass
+        # 바이트로 비교한다. 문자열 비교는 ASCII가 아닌 입력에 TypeError(500)를 내고 기록도 남기지 않는다
+        if not secrets.compare_digest(token.strip().encode(), human_token.encode()):
+            note_login_failure()
             return render(request, "login.html", error="사람 토큰이 아님 (에이전트 토큰으로는 들어갈 수 없음)")
         return start_session(request, "/ui", "token")
 

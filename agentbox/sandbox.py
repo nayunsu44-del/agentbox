@@ -386,6 +386,8 @@ class SandboxManager(DesktopTools):
 
     def restore(self, sid: str, snap_id: str) -> dict[str, Any]:
         rec = self._rec(sid)
+        if rec["status"] == "deleted":
+            raise SandboxError(f"삭제된 샌드박스: {sid}")
         snaps = {s["id"]: s for s in self.list_snapshots(sid)}
         if snap_id not in snaps:
             raise SandboxError(f"이 샌드박스의 스냅샷이 아님: {snap_id}")
@@ -395,7 +397,13 @@ class SandboxManager(DesktopTools):
             pass
         tpl = self.template_of(sid)
         c = self._run_container(tpl, snaps[snap_id]["image"], rec["source_dir"], f"agentbox-{sid}")
-        self._set(sid, container_id=c.id, status="running")
+        # 그사이 삭제됐으면 되살리지 않는다. 삭제는 상태로 토큰을 폐기하므로 덮어쓰면 토큰이 다시 살아난다 (run-4 F6)
+        with self._lock:
+            cur = self.conn.execute("UPDATE sandboxes SET container_id = ?, status = 'running' "
+                                    "WHERE id = ? AND status != 'deleted'", (c.id, sid))
+        if cur.rowcount == 0:
+            c.remove(force=True)
+            raise SandboxError(f"복원하는 사이 삭제된 샌드박스: {sid}")
         if tpl.desktop:
             self._wait_display(c)
         return self.get(sid)
@@ -554,19 +562,24 @@ class SandboxManager(DesktopTools):
         return data
 
     # ---- 승인 화면용 영향 미리보기 -------------------------------------
+    # 경로는 공백·줄바꿈을 품을 수 있다. 인자를 단어로 쪼개지 않고(IFS=) NUL로 나눠 받아야 한 경로가 한 줄이 된다.
+    # 그러지 않으면 'rm "final report.docx"'의 영향 표가 있는 파일을 '없음'으로 보이거나 엉뚱한 파일을 보인다
+    # (보안 검수 run-4 F4)
     def _expand(self, c, pattern: str) -> list[str]:
         """컨테이너 안에서 glob만 펼친다. 명령 치환은 일어나지 않는다."""
-        script = 'cd /workspace; for p in $1; do if [ -e "$p" ] || [ -L "$p" ]; then printf "%s\\n" "$p"; fi; done'
+        script = ('cd /workspace; IFS=; for p in $1; do if [ -e "$p" ] || [ -L "$p" ]; then printf "%s\\000" "$p"; '
+                  'fi; done')
         res = c.exec_run(["sh", "-c", script, "_", pattern], user=AGENT_UID, demux=True)
         out = (res.output[0] or b"").decode("utf-8", errors="replace")
-        return [line for line in out.splitlines() if line]
+        return [p for p in out.split("\0") if p]
 
     def _walk(self, c, path: str, limit: int) -> list[str]:
-        res = c.exec_run(["sh", "-c", 'cd /workspace; case "$1" in -*) set -- "./$1" "$2";; esac; find "$1" 2>/dev/null | head -n "$2"',
+        res = c.exec_run(["sh", "-c", 'cd /workspace; case "$1" in -*) set -- "./$1" "$2";; esac; '
+                                      'find "$1" -print0 2>/dev/null | head -z -n "$2"',
                           "_", path, str(limit)],
                          user=AGENT_UID, demux=True)
         out = (res.output[0] or b"").decode("utf-8", errors="replace")
-        return [line for line in out.splitlines() if line]
+        return [p for p in out.split("\0") if p]
 
     def preview(self, sid: str, command: str, limit: int = 200) -> dict[str, Any]:
         c = self._container(sid)

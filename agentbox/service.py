@@ -83,6 +83,9 @@ class AgentBox:
         self.captures = captures
         self._busy: dict[str, int] = {}
         self._snap_locks: dict[str, threading.Lock] = {}
+        # 일시정지·재개·스냅샷·복원·삭제는 샌드박스마다 하나씩. 겹치면 복원이 막 지운 행을 되살리고
+        # 삭제가 폐기한 에이전트 토큰을 다시 살린다 (보안 검수 run-4 F6)
+        self._life_locks: dict[str, threading.Lock] = {}
         # 인수를 기다리는 중: sid -> (세션, 이때까지 에이전트 GUI 도구를 새로 돌리지 않음)
         self._takeover_wanted: dict[str, tuple[str, float]] = {}
         self._busy_lock = threading.Lock()
@@ -454,38 +457,51 @@ class AgentBox:
 
     # ---- 샌드박스 일시정지·재개·스냅샷·복원·삭제 -----------------------------
     # session을 넘기지 않으면(JSON API) 기록에 session 항목을 넣지 않고, 넘기면(웹 UI) None이어도 넣는다.
+    @contextmanager
+    def _lifecycle(self, sid: str):
+        with self._busy_lock:
+            lock = self._life_locks.setdefault(sid, threading.Lock())
+        with lock:
+            yield
+
     def pause_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
-        self.log_human("sandbox_pause", sid, _with_session({}, session))
-        self.bursts.end(sid, "sandbox_paused")  # 멈춘 컨테이너에서는 구간을 닫지 못한다
-        self.sandboxes.pause(sid)
-        return self.sandboxes.get(sid)
+        with self._lifecycle(sid):
+            self.log_human("sandbox_pause", sid, _with_session({}, session))
+            self.bursts.end(sid, "sandbox_paused")  # 멈춘 컨테이너에서는 구간을 닫지 못한다
+            self.sandboxes.pause(sid)
+            return self.sandboxes.get(sid)
 
     def resume_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
-        self.log_human("sandbox_resume", sid, _with_session({}, session))
-        self.sandboxes.resume(sid)
-        self.bursts.reset_timers(sid)  # 멈춘 동안의 GUI 호출이 남긴 시각 때문에 다음 구간을 건너뛰지 않게
-        return self.sandboxes.get(sid)
+        with self._lifecycle(sid):
+            self.log_human("sandbox_resume", sid, _with_session({}, session))
+            self.sandboxes.resume(sid)
+            self.bursts.reset_timers(sid)  # 멈춘 동안의 GUI 호출이 남긴 시각 때문에 다음 구간을 건너뛰지 않게
+            return self.sandboxes.get(sid)
 
     def snapshot_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
-        self.log_human("snapshot_request", sid, _with_session({}, session))
-        snap = self.sandboxes.snapshot(sid, reason="manual")
-        self.log_human("snapshot", sid, _with_session({"snapshot_id": snap["id"], "image": snap["image"]}, session))
-        return snap
+        with self._lifecycle(sid):
+            self.log_human("snapshot_request", sid, _with_session({}, session))
+            snap = self.sandboxes.snapshot(sid, reason="manual")
+            self.log_human("snapshot", sid, _with_session({"snapshot_id": snap["id"], "image": snap["image"]},
+                                                          session))
+            return snap
 
     def restore_sandbox(self, sid: str, snap_id: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
-        self.log_human("restore_request", sid, _with_session({"snapshot_id": snap_id}, session))
-        self.end_desktop(sid, "sandbox_restored")
-        rec = self.sandboxes.restore(sid, snap_id)
-        self.bursts.reset_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
-        self.log_human("restored", sid, _with_session({"snapshot_id": snap_id, "container_id": rec["container_id"]},
-                                                      session))
-        return rec
+        with self._lifecycle(sid):
+            self.log_human("restore_request", sid, _with_session({"snapshot_id": snap_id}, session))
+            self.end_desktop(sid, "sandbox_restored")
+            rec = self.sandboxes.restore(sid, snap_id)
+            self.bursts.reset_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
+            self.log_human("restored", sid, _with_session({"snapshot_id": snap_id,
+                                                           "container_id": rec["container_id"]}, session))
+            return rec
 
     def delete_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> None:
-        self.log_human("sandbox_delete", sid, _with_session({}, session))
-        self.end_desktop(sid, "sandbox_deleted")
-        self.sandboxes.delete(sid)
-        self.drop_captures(sid)
+        with self._lifecycle(sid):
+            self.log_human("sandbox_delete", sid, _with_session({}, session))
+            self.end_desktop(sid, "sandbox_deleted")
+            self.sandboxes.delete(sid)
+            self.drop_captures(sid)
 
     # ---- 파일 넣기·받기 (UX-3, UX-4) ---------------------------------------
     def import_file(self, sid: str, name: str, data: bytes, session: str | None = None) -> dict[str, Any]:
