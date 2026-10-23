@@ -1,6 +1,7 @@
 """보안 검수 run-5 회귀 테스트. Docker 없이 돈다."""
 
 import json
+import time
 
 import pytest
 
@@ -135,3 +136,72 @@ def test_disk_is_rechecked_before_pending_row(tmp_path):
     assert e.value.status == 507
     assert box.approvals.list() == []
     box.bursts._burst_pool.shutdown()
+
+
+def test_desktop_ws_does_not_block_event_loop_on_sqlite(tmp_path, monkeypatch):
+    """보안 검수 run-5: 화면 웹소켓이 이벤트 루프에서 SQLite·감사 기록을 기다려, DB 쓰기 잠금이 잡혀 있으면
+    연결 하나에 서버 전체(/healthz 포함)가 수 초 멈췄다."""
+    import sqlite3
+    import threading
+
+    import docker
+    from fastapi.testclient import TestClient
+
+    from agentbox import api
+    from agentbox import desktop as D
+
+    class _C:
+        id = "c" * 64
+        status = "running"
+        attrs = {"State": {"Status": "running"}}
+
+    class _Client:
+        containers = type("Cs", (), {"get": lambda self, cid: _C()})()
+
+        def info(self):
+            return {"Runtimes": {"runc": {}}}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(docker, "from_env", lambda *a, **k: _Client())
+    for k, v in {"AGENTBOX_HOME": str(tmp_path), "AGENTBOX_HUMAN_TOKEN": "hum_" + "d" * 40,
+                 "AGENTBOX_DOCKER_CLI": "/bin/false", "AGENTBOX_MIN_FREE": "0"}.items():
+        monkeypatch.setenv(k, v)
+    app, box, _ = api.build()
+    box.sandboxes.conn.execute(
+        "INSERT INTO sandboxes (id, container_id, source_dir, image, runtime, token_hash, status, created_at, template)"
+        " VALUES ('sb_x', ?, '/tmp', 'img', 'runc', 'h', 'running', '2026-01-01', 'desktop')", (_C.id,))
+    cookie, _ = box.desktop.new_session("sb_x")
+    held, release = threading.Event(), threading.Event()
+
+    def hold_write_lock():   # 다른 연결이 쓰기 잠금을 쥔다 (정리 명령의 BEGIN IMMEDIATE처럼)
+        c = sqlite3.connect(str(box.sandboxes.settings.db_path), isolation_level=None)
+        c.execute("BEGIN IMMEDIATE")
+        held.set()
+        release.wait(10)
+        c.execute("ROLLBACK")
+        c.close()
+
+    with TestClient(app) as client:
+        t = threading.Thread(target=hold_write_lock)
+        t.start()
+        held.wait(5)
+
+        def connect():
+            try:
+                with client.websocket_connect("/sandboxes/sb_x/desktop/ws?mode=view",
+                                              headers={"cookie": f"{D.COOKIE}={cookie}"}) as ws:
+                    ws.receive()
+            except Exception:
+                pass
+        w = threading.Thread(target=connect)
+        w.start()
+        time.sleep(0.3)
+        start = time.monotonic()
+        assert client.get("/healthz").status_code == 200
+        took = time.monotonic() - start
+        release.set()
+        t.join()
+        w.join(15)
+    assert took < 1.0, took

@@ -408,7 +408,8 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     @app.websocket("/sandboxes/{sid}/desktop/ws")
     async def desktop_ws(ws: WebSocket, sid: str, mode: str = "view"):
         cookie = ws.cookies.get(D.COOKIE)
-        session = box.desktop.session(cookie, sid)
+        # 세션 확인은 SQLite를 읽는다. 이벤트 루프에서 기다리면 서버 전체가 멈추니 스레드에서 (보안 검수 run-5)
+        session = await run_in_threadpool(box.desktop.session, cookie, sid) if cookie else None
         if not session or not same_origin(ws.headers) or mode not in ("view", "control"):
             await ws.close(code=4401)
             return
