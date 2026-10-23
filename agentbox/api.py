@@ -11,6 +11,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import re
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
@@ -19,10 +21,11 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
 
-from fastapi import Depends, FastAPI, File, Header, HTTPException, Query, Request, Response, UploadFile, WebSocket
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response, WebSocket
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 from . import desktop as D
 from .approvals import ApprovalStore
@@ -80,6 +83,60 @@ class _NoFraming:
         await self.app(scope, receive, send_with_headers)
 
 
+_UPLOAD_PATH = re.compile(r"/sandboxes/[^/]+/files")
+
+
+class _BodyLimit:
+    """본문을 읽기 전에 크기 상한을 강제한다. FastAPI는 본문 모델을 인증 의존성보다 먼저 읽고 해석하므로,
+    여기서 막지 않으면 토큰 없는 클라이언트가 고른 크기만큼 메모리·임시 파일을 쓴 뒤에야 401이 난다 (보안 검수 run-4 F1).
+    Content-Length가 상한을 넘으면 읽지 않고 413, 길이 없이 흘려 보내면 상한에서 끊고 413."""
+
+    def __init__(self, app, json_max: int, upload_max: int):
+        self.app, self.json_max, self.upload_max = app, json_max, upload_max
+
+    @staticmethod
+    async def _reject(send, cap: int) -> None:
+        body = json.dumps({"detail": f"요청 본문이 너무 큼 (최대 {cap} bytes)"}, ensure_ascii=False).encode()
+        await send({"type": "http.response.start", "status": 413,
+                    "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()),
+                                (b"connection", b"close")]})
+        await send({"type": "http.response.body", "body": body})
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        upload = scope["method"] == "POST" and _UPLOAD_PATH.fullmatch(scope["path"])
+        cap = self.upload_max if upload else self.json_max
+        length = dict(scope["headers"]).get(b"content-length")
+        if length is not None and (not length.isdigit() or int(length) > cap):
+            return await self._reject(send, cap)
+        seen, over, started = 0, False, False
+
+        async def limited_receive():
+            nonlocal seen, over
+            if over:
+                return {"type": "http.disconnect"}
+            message = await receive()
+            if message["type"] == "http.request":
+                seen += len(message.get("body", b""))
+                if seen > cap:
+                    over = True
+                    if not started:
+                        await self._reject(send, cap)
+                    return {"type": "http.disconnect"}   # 앱은 끊긴 연결로 보고 더 읽지 않는다
+            return message
+
+        async def guarded_send(message):
+            nonlocal started
+            if over:
+                return   # 413을 이미 보냈다
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        await self.app(scope, limited_receive, guarded_send)
+
+
 def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     settings = settings or Settings()
     settings.home.mkdir(parents=True, exist_ok=True)
@@ -110,6 +167,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     app = FastAPI(title="agentbox", version="0.1.0", lifespan=lifespan)
     app.state.box = box
+    app.add_middleware(_BodyLimit, json_max=settings.max_body_bytes, upload_max=settings.max_upload_body_bytes)
     app.add_middleware(_NoFraming)
 
     def principal(authorization: str = Header(default="")) -> Principal:
@@ -274,15 +332,21 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     # ---- 파일 넣기·결과함 (UX-3, UX-4) ---------------------------------
     @app.post("/sandboxes/{sid}/files", status_code=201)
-    async def put_files(sid: str, files: list[UploadFile] = File(...), p: Principal = Depends(screen_human)):
+    async def put_files(sid: str, request: Request, p: Principal = Depends(screen_human)):
+        # 본문(멀티파트)은 인증이 끝난 뒤에 읽는다. File(...)로 받으면 FastAPI가 인증 전에 전체를 임시 파일로 받아 둔다
+        # (보안 검수 run-4 F1).
         limit = settings.max_upload_bytes
-        out = []
-        for f in files:
-            data = await f.read(limit + 1)
-            if len(data) > limit:
-                raise HTTPException(413, f"파일이 너무 큼: {f.filename} (최대 {limit} bytes)")
-            out.append(await run_in_threadpool(
-                lambda d=data, n=f.filename or "": guard(lambda: box.import_file(sid, n, d, p.session))))
+        async with request.form() as form:
+            files = [f for f in form.getlist("files") if isinstance(f, StarletteUploadFile)]
+            if not files:
+                raise HTTPException(422, "보낼 파일이 없음 (multipart 필드 이름은 files)")
+            out = []
+            for f in files:
+                data = await f.read(limit + 1)
+                if len(data) > limit:
+                    raise HTTPException(413, f"파일이 너무 큼: {f.filename} (최대 {limit} bytes)")
+                out.append(await run_in_threadpool(
+                    lambda d=data, n=f.filename or "": guard(lambda: box.import_file(sid, n, d, p.session))))
         return out
 
     @app.get("/sandboxes/{sid}/outbox")

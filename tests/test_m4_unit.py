@@ -201,3 +201,66 @@ def test_overlap_sees_bind_mount_alias(tmp_path):
         assert overlaps(alias, proj / "data")
     finally:
         subprocess.run([*sudo, "umount", str(alias)])
+
+
+def _echo_app(seen):
+    """본문을 끝까지 읽고 받은 바이트 수를 돌려주는 ASGI 앱."""
+    async def app(scope, receive, send):
+        seen["called"] = True
+        total = 0
+        while True:
+            m = await receive()
+            if m["type"] == "http.disconnect":
+                break
+            total += len(m.get("body", b""))
+            if not m.get("more_body"):
+                break
+        seen["read"] = total
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": str(total).encode()})
+    return app
+
+
+def test_body_limit_rejects_before_reading():
+    """보안 검수 run-4 F1: 인증보다 먼저 읽히는 본문이 상한을 넘으면 앱이 읽기 전에 413으로 끊는다."""
+    from fastapi.testclient import TestClient
+    from agentbox.api import _BodyLimit
+    seen = {}
+    c = TestClient(_BodyLimit(_echo_app(seen), json_max=1000, upload_max=5000))
+    r = c.post("/sandboxes", content=b"x" * 2000)                  # Content-Length가 상한을 넘음
+    assert r.status_code == 413 and "called" not in seen
+    r = c.post("/sandboxes", content=iter([b"x" * 600, b"x" * 600, b"x" * 600]))  # 길이 없이 흘려 보냄
+    assert r.status_code == 413 and seen["read"] <= 1000
+    seen.clear()
+    assert c.post("/sandboxes", content=b"x" * 900).text == "900"   # 상한 안은 그대로
+    assert c.post("/sandboxes/sb_1/files", content=b"x" * 4000).text == "4000"   # 파일 넣기는 따로 큰 상한
+    assert c.post("/sandboxes/sb_1/files", content=b"x" * 6000).status_code == 413
+    assert c.post("/sandboxes", content=b"x", headers={"content-length": "abc"}).status_code == 413
+
+
+def test_audit_payload_is_bounded(tmp_path):
+    """보안 검수 run-4 F3: 어디서 기록하든 감사 행 크기가 묶이고, 묶은 값으로 해시를 계산해 검증이 통과한다."""
+    import json
+    import sqlite3
+    from agentbox.audit import AUDIT_LIST_MAX, AUDIT_PAYLOAD_MAX, AUDIT_STR_MAX, AuditLog
+    log = AuditLog(tmp_path / "a.db")
+    small = {"request": 7, "error": "허용되지 않은 경로: /etc/x"}
+    log.append(actor="system", event="tool_error", payload=small)
+    log.append(actor="system", event="tool_error", payload={"request": 8, "error": "/etc/" + "A" * 131072})
+    log.append(actor="system", event="approval_requested",
+               payload={"approval_id": "apr_1", "preview": {"command": "c" * 10003, "notes": ["n"] * 2001}})
+    log.append(actor="system", event="tool_request",
+               payload={"request": 9, "args": {f"k{i}": "v" * 60000 for i in range(5)}})
+    rows = log.list()
+    assert rows[0]["payload"] == small                                     # 작은 값은 그대로
+    err = rows[1]["payload"]["error"]
+    assert len(err) < AUDIT_STR_MAX + 64 and err.endswith("자 생략)")
+    notes = rows[2]["payload"]["preview"]["notes"]
+    assert len(notes) == AUDIT_LIST_MAX + 1 and notes[-1] == "…(+1801개 생략)"
+    assert rows[2]["payload"]["approval_id"] == "apr_1"
+    big = rows[3]["payload"]                                              # 문자열 하나하나는 작아도 합이 큼
+    assert big["payload_truncated"] and big["request"] == 9 and "args" not in big
+    db = sqlite3.connect(tmp_path / "a.db")
+    assert max(len(p.encode()) for (p,) in db.execute("SELECT payload FROM audit")) <= AUDIT_PAYLOAD_MAX
+    assert log.verify().ok
+    assert json.loads(db.execute("SELECT payload FROM audit WHERE id=1").fetchone()[0]) == small

@@ -55,6 +55,12 @@ class Settings:
     max_write_bytes: int = 1024 * 1024
     # UX-3, UX-4 사람이 넣고 받는 파일 하나의 상한
     max_upload_bytes: int = field(default_factory=lambda: int(_env("AGENTBOX_MAX_UPLOAD", str(50 * 1024 * 1024))))
+    # 요청 본문 상한. 인증보다 먼저 읽히는 본문이 컨트롤 플레인 메모리·임시 디스크를 채우지 못하게
+    # 본문을 읽기 전에 413으로 끊는다 (보안 검수 run-4 F1). JSON은 write_file 1 MiB를 이스케이프해도 들어가게 잡았고,
+    # 파일 넣기는 한 번에 여러 파일을 보내므로 요청 전체 상한을 따로 둔다.
+    max_body_bytes: int = field(default_factory=lambda: int(_env("AGENTBOX_MAX_BODY", str(8 * 1024 * 1024))))
+    max_upload_body_bytes: int = field(
+        default_factory=lambda: int(_env("AGENTBOX_MAX_UPLOAD_BODY", str(256 * 1024 * 1024))))
     # AP-1 승인 대기 상한. 지나면 거부로 처리한다.
     approval_timeout: int = field(default_factory=lambda: int(_env("AGENTBOX_APPROVAL_TIMEOUT", "300")))
     # 데스크톱 템플릿 (UX-1, UX-2, TL-2)

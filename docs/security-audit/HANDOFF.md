@@ -194,7 +194,12 @@ pytest                                                 # 160 passed
 | N1~N5 | 검증 필요 | — | `same_origin` scheme 무시, 감사·승인 행 무제한, 컨테이너 출력 리더 상한 부재, `_NET_WM_PID` 신뢰, 남은 bidi/보이지 않는 문자 | |
 
 ### 남은 일
-1. **확정 8건 수정**(소유자 지시 대기). 제안 순서: F1·F3(인증 전·감사 상한) → F2·F7(스냅샷 게이트를 락 안에서 다시 판단) → F6(수명 주기 락) → F4·F5·F8.
+1. **확정 8건 수정.** 제안 순서: F1·F3(인증 전·감사 상한) → F2·F7(스냅샷 게이트를 락 안에서 다시 판단) → F6(수명 주기 락) → F4·F5·F8.
+   - **F1·F3 수정 완료**(브랜치 `ccr-534dd824-2jgcsj`).
+     - F1: `_BodyLimit` 미들웨어가 본문을 읽기 전에 413을 준다(`AGENTBOX_MAX_BODY` 8MB, `AGENTBOX_MAX_UPLOAD_BODY` 256MB). 파일 넣기는 인증한 뒤 폼을 읽고, Caddyfile에 `request_body` 상한을 넣었다.
+     - F3: `AuditLog.append`가 해시를 계산하기 전에 payload를 묶는다(문자열 64KB, 목록 200개, 한 행 128KB).
+     - 회귀 테스트 4개(`test_m4_unit.py`, `test_m4_acceptance.py`)는 수정 전 코드에서 실패한다. 전체 pytest 237개 통과.
+   - 남은 것: F2·F7 → F6 → F4·F5·F8.
 2. **보류 3단위**는 다음 run의 1순위다.
    - 데스크톱 WebSocket이 `ws.accept()` 전에 동기 SQLite·Docker를 호출한다.
    - 승인 테이블이 마스킹·상한 없이 남는다.

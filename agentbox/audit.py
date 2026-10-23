@@ -93,6 +93,42 @@ class AuditWriteError(RuntimeError):
     """감사 기록 실패. 이 예외가 나면 도구 호출을 실행하지 않는다."""
 
 
+# 감사 로그는 지울 수 없어서, 에이전트가 고른 문자열(승인 미리보기, 오류 메시지 속 경로 등)이 그대로 들어가면
+# 되돌릴 수 없이 커진다. 어디서 기록하든 해시를 계산하기 전에 여기서 크기를 묶는다 (보안 검수 run-4 F3).
+AUDIT_STR_MAX = 64 * 1024        # 문자열 하나 (도구 인자 원문 상한 LOGGED_ARGS_MAX와 같다)
+AUDIT_LIST_MAX = 200             # 목록 하나의 항목 수 (승인 미리보기의 영향 표 상한과 같다)
+AUDIT_PAYLOAD_MAX = 128 * 1024   # 한 항목 전체 (JSON 바이트)
+AUDIT_PAYLOAD_HEAD = 16 * 1024   # 넘으면 남기는 앞부분
+
+
+def _bound(value: Any) -> Any:
+    if isinstance(value, str):
+        if len(value) <= AUDIT_STR_MAX:
+            return value
+        return value[:AUDIT_STR_MAX] + f"…(+{len(value) - AUDIT_STR_MAX}자 생략)"
+    if isinstance(value, dict):
+        return {_bound(str(k)): _bound(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        out = [_bound(v) for v in value[:AUDIT_LIST_MAX]]
+        if len(value) > AUDIT_LIST_MAX:
+            out.append(f"…(+{len(value) - AUDIT_LIST_MAX}개 생략)")
+        return out
+    return value
+
+
+def bound_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """문자열·목록을 자르고, 그래도 크면 작은 최상위 값(request, approval_id 등)만 남기고 앞부분과 크기·해시로 바꾼다."""
+    payload = _bound(payload)
+    blob = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")
+    if len(blob) <= AUDIT_PAYLOAD_MAX:
+        return payload
+    kept = {k: v for k, v in payload.items()
+            if len(json.dumps(v, ensure_ascii=False, default=str).encode("utf-8")) <= 1024}
+    return kept | {"payload_truncated": True, "payload_bytes": len(blob),
+                   "payload_sha256": hashlib.sha256(blob).hexdigest(),
+                   "payload_head": blob[:AUDIT_PAYLOAD_HEAD].decode("utf-8", errors="replace")}
+
+
 @dataclass
 class VerifyResult:
     ok: bool
@@ -157,7 +193,7 @@ class AuditLog:
         payload: dict[str, Any] | None = None,
     ) -> int:
         """한 항목을 기록하고 id를 돌려준다. 실패하면 AuditWriteError."""
-        payload = self._mask(payload or {})
+        payload = bound_payload(self._mask(payload or {}))
         try:
             with self._lock:
                 self.conn.execute("BEGIN IMMEDIATE")

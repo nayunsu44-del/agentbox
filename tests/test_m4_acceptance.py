@@ -239,3 +239,50 @@ def test_preview_flags_every_unmodeled_segment(home):
         assert prev["notes"] == ["'mv /workspace/important.db /tmp/gone' 부분의 영향은 자동 계산하지 못함. 명령 원문을 확인할 것."]
     finally:
         c.delete(f"/sandboxes/{sid}", headers=H)
+
+
+def test_unauthenticated_body_rejected_before_read(home, monkeypatch):
+    """보안 검수 run-4 F1: 토큰 없는 큰 본문은 읽기 전에 413이고, 파일 넣기는 인증 전에 임시 파일을 만들지 않는다."""
+    import starlette.formparsers as fp
+    c, _, H, _ = _build()
+    big = b'{"source_dir": "' + b"a" * (9 * 1024 * 1024) + b'"}'
+    assert c.post("/sandboxes", content=big, headers={"content-type": "application/json"}).status_code == 413
+    assert c.post("/sandboxes", content=big, headers={**H, "content-type": "application/json"}).status_code == 413
+    spooled = []
+    real = fp.SpooledTemporaryFile
+
+    def counting(*a, **kw):
+        spooled.append(1)
+        return real(*a, **kw)
+
+    monkeypatch.setattr(fp, "SpooledTemporaryFile", counting)
+    r = c.post("/sandboxes/sb_none/files", files={"files": ("big.bin", b"x" * (2 * 1024 * 1024))})
+    assert r.status_code == 401 and spooled == []          # 인증 전에는 본문을 받지 않는다
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    try:
+        r = c.post(f"/sandboxes/{sb['id']}/files", files={"files": ("ok.txt", b"hello")}, headers=H)
+        assert r.status_code == 201 and spooled                 # 인증하면 그대로 넣는다
+        assert c.post(f"/sandboxes/{sb['id']}/files", data={"x": "1"}, headers=H).status_code == 422
+    finally:
+        c.delete(f"/sandboxes/{sb['id']}", headers=H)
+
+
+def test_agent_input_cannot_grow_audit_rows(home):
+    """보안 검수 run-4 F3: 도구 오류 문자열과 승인 미리보기로 들어가는 에이전트 입력도 감사 행 크기가 묶인다."""
+    import sqlite3
+    c, box, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid, A = sb["id"], {"Authorization": f"Bearer {sb['agent_token']}"}
+    try:
+        r = c.post(f"/sandboxes/{sid}/tools/read_file", headers=A, json={"args": {"path": "/etc/" + "A" * 131072}})
+        assert r.status_code == 400
+        r = c.post(f"/sandboxes/{sid}/tools/delete_file", headers=A, json={"args": {"path": "/etc/" + "B" * 262144}})
+        assert r.status_code == 202
+        r = c.post(f"/sandboxes/{sid}/tools/exec", headers=A, json={"args": {"command": "; ".join(["mv a b"] * 2001)}})
+        assert r.status_code == 202
+        db = sqlite3.connect(home / "data" / "agentbox.db")
+        sizes = [len(p.encode()) for (p,) in db.execute("SELECT payload FROM audit WHERE sandbox_id=?", (sid,))]
+        assert max(sizes) <= 128 * 1024   # AUDIT_PAYLOAD_MAX
+        assert c.get("/audit/verify", headers=H).json()["ok"]
+    finally:
+        c.delete(f"/sandboxes/{sid}", headers=H)

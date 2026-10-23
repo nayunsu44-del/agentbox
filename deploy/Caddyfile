@@ -1,6 +1,11 @@
 # TLS를 여기서 끝내고 agentbox(평문, 컨테이너 네트워크 안)로 넘긴다.
 # 웹소켓(화면 보기)도 reverse_proxy가 그대로 넘긴다. Host와 X-Forwarded-Proto를 붙여 주므로
 # agentbox는 같은 출처 검사와 Secure 쿠키를 그대로 쓴다.
+# 본문 상한은 agentbox도 걸지만(AGENTBOX_MAX_BODY, AGENTBOX_MAX_UPLOAD_BODY) 프록시에서 먼저 끊는다.
+# 파일 넣기 요청 전체 상한(기본 256MB)보다 작게 잡으면 큰 파일을 넣을 수 없다.
 {$AGENTBOX_SITE} {
+	request_body {
+		max_size {$AGENTBOX_PROXY_MAX_BODY:256MB}
+	}
 	reverse_proxy agentbox:8765
 }
