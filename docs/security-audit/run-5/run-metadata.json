@@ -34,13 +34,13 @@
  "agents_spent": {
   "recon": 0,
   "hunters": 8,
-  "phase3": 5,
+  "phase3": 8,
   "phase5": 5,
   "retries": 2,
   "critics": 1,
   "reverify": 1
  },
- "agents_spent_total": 22,
+ "agents_spent_total": 25,
  "phase": "wave2_hunting_and_phase5",
  "retry_note": "h-gui-lease and h-bodylimit were each resumed once to fix only the unit reviewed_paths union (HUNTING.md contract); results otherwise unchanged.",
  "deviations": [

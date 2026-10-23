@@ -644,17 +644,96 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 2,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-lifecycle",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/approvals.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/sandbox.py",
+   "agentbox/sandbox_desktop.py",
+   "agentbox/service.py",
+   "agentbox/web.py",
+   "tests/test_m2_unit.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-lifecycle",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "After DELETE /sandboxes/{sid} returns, no agent pre-destructive snapshot is recorded for the deleted sandbox and no snapshot image is left behind (delete_sandbox vs call_tool -> _snapshot, which holds only _snap_locks, not _lifecycle).",
+    "method": "local",
+    "result": "Deterministic schedule with real AgentBox/AuditLog/ApprovalStore/SandboxManager code (sqlite in scratch) and a fake Docker client whose commit blocks until released: agent call_tool(write/delete_file) entered SandboxManager.snapshot (status check via _container at sandbox.py:351 passed, commit at :355 in progress); human delete_sandbox ran and returned (status=deleted, snapshot_rows=[], images=[]). When the commit then completed, sandbox.py:358-362 inserted snapshot row snap_6a3f7373 for the deleted sandbox, the image agentbox-snap:sb_1-snap_6a3f7373 remained in the (fake) daemon, and the audit log shows system 'snapshot' (id 4) after human 'sandbox_delete' (id 3), then tool_error 'deleted sandbox'. A second DELETE on the deleted id removes the orphan (sandboxes.delete has no deleted-status guard), but nothing triggers it. Whether real dockerd lets an in-flight commit finish while 'rm -f' removes the container is not established locally -> needs_validation.",
+    "artifact": "agents/h-lifecycle/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-lifecycle",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/sandbox.py",
+     "agentbox/approvals.py"
+    ],
+    "invariant": "After restore returns, no agent/approved/human-import action writes to or snapshots the old container, and snapshot rows are attributed correctly.",
+    "method": "source",
+    "result": "No container identity is carried from check to use: _snapshot (service.py:261-276), _run_tool (service.py:129-161) and sandbox tool methods re-resolve container_id from the DB per call (_container sandbox.py:225-232, _require_running :343-347). An in-flight exec/write that already resolved the old container hits it before removal (harmless, state discarded) or fails with a docker NotFound/APIError; one resolved after restore's UPDATE (sandbox.py:401-403) runs on the restored container, which the agent may do anyway with its still-valid token. Snapshot rows carry only sandbox_id (sandbox.py:63-69), so a commit of the old container completing across restore is correctly attributed to sid and is listable/removable by later delete. Variant gap (hardening, not a boundary result): the pre-destructive snapshot taken for an in-flight write/decide/import_file may be of the old container rather than the restored state being overwritten; the overwritten content still exists in the restore-source snapshot. Pending approvals survive restore (restore_sandbox service.py:528-536 does not expire them) and execute on the restored container with a preview/capture computed on the old one; the agent can already change files between preview and approval, so restore adds no agent advantage.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-lifecycle",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/gui_bursts.py",
+     "tests/test_m2_unit.py"
+    ],
+    "invariant": "GUI bursts are never bound to a container other than the one the covered GUI input runs on, across restore.",
+    "method": "source",
+    "result": "GuiBursts.open (gui_bursts.py:73-87) takes no burst lock and is not fenced by _lifecycle. Schedule: agent GUI input is inside _snapshot's commit (service.py:264) when restore_sandbox runs end_desktop -> bursts.end (finds no burst; _snapshot closed it at :263); open then reads the old container_id and baseline from the old container before restore removes it (sandbox.py:395); restore installs the new container and reset_timers; the input's _run_tool (service.py:141-150) passes covers() (gui_bursts.py:68-71 checks only sid in _gui_burst, not container_id) and clicks on the restored container. That single input is covered by a burst whose close reports gui_burst_close_failed 'container replaced' (gui_bursts.py:132-136; intended per tests/test_m2_unit.py:247-257) with no stray kill or gui_changes, and the next burst's baseline includes what it started. Reach of one input on a freshly reset desktop is minimal and the window is narrow (open must finish between end_desktop and the docker remove), so recorded as hardening, not a candidate. Restore that closes a burst opened earlier is fail-closed (end closes it; covers() then refuses).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-lifecycle",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/gui_bursts.py",
+     "agentbox/api.py",
+     "agentbox/web.py"
+    ],
+    "invariant": "A lifecycle call cannot be deadlocked or starved by tool calls, takeover or burst close holding _snap_locks, gui_lock, burst locks or concurrency slots, and _life_locks does not grow without bound from a lower-trust principal.",
+    "method": "source",
+    "result": "Lock order inside _lifecycle (service.py:499-504): life -> audit lock (log_human) -> burst lock (end -> close, gui_bursts.py:117-128) -> gui_lock via handback's _gui_locked with a 30 s timeout whose ServiceError end_desktop swallows (service.py:647-655). No tool, decide, takeover or burst path ever takes _life_locks, and lifecycle never takes _snap_locks or _busy, so no cycle exists. The agent can delay a lifecycle call only by a burst close in progress (bounded by _timed X and manifest execs, sandbox.py:376 30 s) or by holding gui_lock (bounded by GUI_LOCK_WAIT=30); new closes need new bursts, which need quota-limited snapshots. All lifecycle routes are human_only/browser_human (api.py:248-269, web.py:270-287), so _life_locks keys (created before any existence check, service.py:502) come only from the human principal; _snap_locks/_busy keys are created per authenticated call, and an agent is fixed to its own sid. Growth is human-driven only: hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-lifecycle",
+    "reviewed_paths": [
+     "agentbox/sandbox.py",
+     "agentbox/sandbox_desktop.py"
+    ],
+    "invariant": "Every SandboxManager method that snapshots, resumes, pauses or execs refuses a deleted sandbox.",
+    "method": "source",
+    "result": "restore checks deleted explicitly (sandbox.py:389) and re-checks with a conditional UPDATE (:401-406). snapshot, pause, resume, workspace_manifest go through _container (sandbox.py:225-228, deleted -> SandboxError); exec/list_dir/read/write/delete/upload/is_dir/outbox and desktop tools go through _require_running/_desktop -> _container (sandbox.py:343-347, sandbox_desktop.py:64-67). delete has no guard, which keeps it idempotent. The guards are check-then-act: a status check passed before a concurrent delete does not stop the in-flight docker call, so the commit race in check 1 is the remaining gap.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/sandbox.py:SandboxManager.snapshot:delete-race-orphaned-snapshot-image"
+  ],
   "unresolved": [],
   "x_hunter": "h-lifecycle",
   "x_prior_unit": null,
   "x_prior_fingerprints": [],
   "x_source": "Proposed by post-wave critic critic-1 (agents/critic-1/result.json); companion block names mapped to existing skill blocks where the critic named a non-existent one.",
-  "x_critic_boundary": "Agent and human actions versus sandbox lifecycle state (F6 fix, PR #18). _lifecycle (service.py:500-505) is a per-sandbox mutex taken only by pause/resume/snapshot/restore/delete (service.py:507-540); call_tool, decide, import_file, takeover and the burst code never take it, so a tool exec, an approval decide or a pre-destructive snapshot can still run against a container that restore is replacing or delete is removing. Also: restore/snapshot hold the lock across a multi-second docker commit while log_human and end_desktop run inside it (human request threads and the Starlette threadpool can pile up behind one sandbox), self._life_locks (service.py:90) is a dict that grows per sandbox id and is never pruned, and SandboxManager.restore now refuses status 'deleted' (check that every other manager method that takes a snapshot, resume or exec has the same state guard). Invariant: after restore or delete returns, no agent or approved action writes to, snapshots, or records results for the old container or a deleted sandbox, no snapshot row or image is orphaned or attributed to the wrong container_id, and a lifecycle call cannot be starved or deadlocked by a tool call, takeover or burst close that holds _snap_locks, gui_lock or the per-sandbox concurrency slots."
+  "x_critic_boundary": "Agent and human actions versus sandbox lifecycle state (F6 fix, PR #18). _lifecycle (service.py:500-505) is a per-sandbox mutex taken only by pause/resume/snapshot/restore/delete (service.py:507-540); call_tool, decide, import_file, takeover and the burst code never take it, so a tool exec, an approval decide or a pre-destructive snapshot can still run against a container that restore is replacing or delete is removing. Also: restore/snapshot hold the lock across a multi-second docker commit while log_human and end_desktop run inside it (human request threads and the Starlette threadpool can pile up behind one sandbox), self._life_locks (service.py:90) is a dict that grows per sandbox id and is never pruned, and SandboxManager.restore now refuses status 'deleted' (check that every other manager method that takes a snapshot, resume or exec has the same state guard). Invariant: after restore or delete returns, no agent or approved action writes to, snapshots, or records results for the old container or a deleted sandbox, no snapshot row or image is orphaned or attributed to the wrong container_id, and a lifecycle call cannot be starved or deadlocked by a tool call, takeover or burst close that holds _snap_locks, gui_lock or the per-sandbox concurrency slots.",
+  "x_hardening": [
+   "service.py covers()/GuiBursts.covers (gui_bursts.py:68-71) checks only that a burst exists, not that burst['container_id'] equals the current sandboxes.get(sid)['container_id']. A GUI input whose burst was opened on the pre-restore container (open at gui_bursts.py:73-87 races restore_sandbox between end_desktop and the docker remove) can run on the restored container with no stray kill or gui_changes, and what it starts joins the next baseline. Fix: compare container ids in covers() and refuse with the same F2 message. Regression: open a burst with container_id c1, set the current container to c2, then call _run_tool click; expect a SandboxError and no click.",
+   "restore_sandbox (service.py:528-536) and delete_sandbox (service.py:538-543) do not expire pending approvals for the sandbox. After a restore, an approval whose preview and capture were computed on the abandoned container can still be approved and runs on the restored container. Suggest claiming them as EXPIRED (with a reason such as 'sandbox_restored'/'sandbox_deleted') inside the lifecycle lock.",
+   "Lifecycle calls do not fence in-flight tool, decide or import calls: an action queued behind _snap_locks or in preview during restore runs on the restored container, but its AP-2 pre-destructive snapshot may be of the old container. Suggest a per-sandbox generation (or container_id) captured at call_tool/decide entry and re-checked before _run_tool, or having lifecycle methods acquire _snap_locks for the sid.",
+   "pause_sandbox (service.py:506-511) does not serialise with an agent docker commit (pause=True). Depending on dockerd, the human pause may fail with an unmapped docker APIError (HTTP 500), or the commit's deferred unpause may resume a container that the DB records as paused. Suggest taking _snap_locks in pause/resume, or verifying the container state after pause.",
+   "_life_locks (service.py:90, created at :502 before any existence check), _snap_locks (:296) and _busy (:290) keep one entry per sid string forever. Keys come only from human-authenticated lifecycle routes or from callers authenticated to the sid, so growth is human-driven only. Suggest pruning entries on delete and validating that the sid exists before setdefault.",
+   "SandboxManager.exec/upload/_write_chunks pass docker NotFound/APIError (for example, an exec on a container that restore or delete just removed) through as non-SandboxError exceptions. The caller gets HTTP 500 and no tool_error audit row. Suggest mapping docker.errors.APIError to SandboxError in the tool methods."
+  ]
  },
  {
   "coverage_id": "POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2Fexec%20%28and%20any%20tool%20whose%20argument%20text%20reaches%20Policy.decide%20and%20preview_command%29%20with%20a%20long%20or%20adversarially%20shaped%20command%2C%20run%20on%20the%20tool_pool%20thread%20before%20any%20approval%20exists%2C%20plus%20the%20approval-card%20render%20of%20the%20same%20text::Agent%20to%20control-plane%20availability%3A%20pure-Python%20policy%20and%20preview%20parsing%20%28Policy.decide%2C%20_split_segments%2C%20shlex%20passes%2C%20_raw_hits%2C%20preview%20glob%2Fwalk%29%20of%20an%20agent%20command%20up%20to%20the%208%20MiB%20body%20cap%2C%20with%20no%20per-command%20length%20cap%2C%20holds%20the%20GIL%20shared%20with%20the%20event%20loop%20and%20human%20threads%20%28hunter%20measurement%3A%204.96%20s%20for%20a%20128%20KiB%20command%2C%204%20concurrent%20per%20sandbox%29.%20Invariant%3A%20no%20agent-supplied%20argument%20makes%20evaluation%20cost%20more%20than%20a%20small%20bounded%20amount%20of%20CPU%2C%20memory%20or%20container%20exec%20time%20before%20rejection%20or%20queueing%2C%20and%20the%20human%20API%20stays%20responsive.::agentbox%2Fpolicy.py%23decide%2F_words%2Fcommand_names%2F_raw_hits%2Fsimple_programs%2Fhas_bash_comment%20%2B%20agentbox%2Fpreview.py%23preview_command%2F_split_segments%20%2B%20agentbox%2Fsandbox.py%23_expand%2F_walk%20%28container-side%20glob%20and%20find%2C%20no%20timeout%29%20%2B%20agentbox%2Fservice.py%23call_tool%2F_call_tool%2F_logged_args%20%2B%20agentbox%2Fapi.py%23tool%20route::Resource%20exhaustion%3A%20algorithmic%20complexity%20and%20worker%20starvation",
@@ -690,17 +769,86 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 2,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-policy-cpu",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/approvals.py",
+   "agentbox/audit.py",
+   "agentbox/config.py",
+   "agentbox/default_policy.yaml",
+   "agentbox/policy.py",
+   "agentbox/preview.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/templates/_approvals.html"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-policy-cpu",
+    "reviewed_paths": [
+     "agentbox/policy.py",
+     "agentbox/default_policy.yaml",
+     "agentbox/service.py",
+     "agentbox/api.py",
+     "agentbox/config.py"
+    ],
+    "invariant": "Policy.decide on an agent exec command costs a small bounded amount of CPU before the call is rejected or queued. A length cap sits before decide.",
+    "method": "local",
+    "result": "No per-command or per-argument length cap exists. ToolCall.args is an unbounded dict (api.py:54-55), and the only limit is _BodyLimit max_body_bytes, 8 MiB (config.py:65). The route runs box.call_tool on the shared 32-thread tool_pool (api.py:160, 277-278). call_tool admits 4 per sandbox (service.py:286-290). _call_tool writes the tool_request audit row and then calls policy.decide (service.py:309-311), before the pending-approval cap (service.py:326). Measured in sbx (Python 3.13, 1 CPU), default policy, 'x;'*n: 16/32/64/128 KiB took 0.64/1.32/2.59/4.85 s. 'x|' gave the same. 'a '*n took 0.025-0.20 s, and 'rm a a ...' took 0.014-0.108 s. Growth is linear, not superlinear, but the constant is large: about 38 us per shell-punctuation token. cProfile shows command_names to _words taking 2.30 of 2.53 s. _words builds a new shlex for every token that contains punctuation, even a bare ';' (policy.py:45, 60-61), and shlex.__init__ plus str.translate account for 1.0 s and 0.78 s. has_bash_comment (0.008 s), simple_programs (0.096 s), _raw_hits (0.002 s) and _split_segments (0.099 s) at 64 KiB are minor. Linear extrapolation gives about 310 s of GIL-holding CPU for one 8 MiB call.",
+    "artifact": "agents/h-policy-cpu/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-policy-cpu",
+    "reviewed_paths": [
+     "agentbox/policy.py"
+    ],
+    "invariant": "While agent policy evaluation runs, other Python threads in the same process (event loop, human request threads) stay responsive.",
+    "method": "local",
+    "result": "An asyncio stand-in loop in the main thread ran a fixed small CPU unit plus a 1 ms sleep, 40 times. Baseline: median 2.2 ms, max 2.7 ms, total 0.09 s. With 1 concurrent Policy.decide('x;'*65536, i.e. 128 KiB): median 7.5 ms, max 10.1 ms, total 0.31 s. With 4 concurrent (the per-sandbox tool_concurrency default): median 8.6 ms, max 88.8 ms, total 0.90 s, and each decide's wall time stretched from 5.6 s to about 24.9 s. The GIL switch interval is 5 ms, so other threads are slowed in proportion to the number of runnable decide threads (about 4x median, 33x max with one agent's 4 slots), not frozen. Several sandboxes' agents would add up to 32 tool_pool threads.",
+    "artifact": "agents/h-policy-cpu/artifacts/h2.out"
+   },
+   {
+    "agent_id": "h-policy-cpu",
+    "reviewed_paths": [
+     "agentbox/preview.py",
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "Preview of a REQUIRE_APPROVAL exec command costs a bounded number of container execs and a bounded amount of exec time before the approval is created.",
+    "method": "local",
+    "result": "_call_tool calls _preview (service.py:331-332) to SandboxManager.preview (sandbox.py:584-587) to preview_command. For every rm operand, preview calls expand(op) (preview.py:88-89), and for every match under -r it calls walk(m, limit) (preview.py:96). Each of these is one synchronous docker exec_run with no container-side timeout (_expand sandbox.py:568-574, _walk sandbox.py:576-582), unlike the _timed manifest/read execs. 'limit' only truncates 'affected' after all execs have run (preview.py:126-128). Counted with stub callbacks: 'rm -r d d ...' at 16 KiB gave 8189 expand + 8189 walk calls; at 64 KiB, 32765 + 32765. 'rm -r *' over 5000 workspace entries gave 1 expand + 5000 walk calls. Scaled to the 8 MiB cap, that is about 4.2M expand plus 4.2M walk execs, run serially on one tool_pool thread, with no deadline and no cancellation on client disconnect. The real per-exec latency and Docker-daemon impact need the live daemon (not available in sbx).",
+    "artifact": "agents/h-policy-cpu/artifacts/h2.out"
+   },
+   {
+    "agent_id": "h-policy-cpu",
+    "reviewed_paths": [
+     "agentbox/preview.py",
+     "agentbox/templates/_approvals.html",
+     "agentbox/approvals.py",
+     "agentbox/audit.py"
+    ],
+    "invariant": "Preview output and the approval-card render of an agent command stay bounded in memory and size.",
+    "method": "local",
+    "result": "preview_command appends one note per unrecognised segment with no cap (preview.py:122-125). Measured: 32/128/512 KiB 'x;' commands gave 16384/65536/262144 notes and preview JSON of 1.46/5.83/23.3 MB, a constant 44.5x. tracemalloc peak was 14.8/59.4 MiB at 128/512 KiB, which extrapolates to about 950 MiB for 8 MiB. ApprovalStore.create json.dumps the raw preview into the pending row (approvals.py:49-59). _approvals.html renders every note (line 16) and the full command (line 8) for pending rows. The audit copy is bounded by bound_payload (audit.py:141-152). This is the same root cause, and the same remediation (a NOTES_MAX cap in preview.py), as the already-filed h-approvals finding agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention, which measured the 5832767-byte preview and the 7.47 MB card. It is consolidated there, not re-filed.",
+    "artifact": "agents/h-policy-cpu/artifacts/h2.out"
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/policy.py:_words:per-token-shlex-relex-without-command-length-cap",
+   "agentbox/preview.py:preview_command:per-operand-container-exec-without-count-or-time-bound"
+  ],
   "unresolved": [],
   "x_hunter": "h-policy-cpu",
   "x_prior_unit": null,
   "x_prior_fingerprints": [],
   "x_source": "Proposed by post-wave critic critic-1 (agents/critic-1/result.json); companion block names mapped to existing skill blocks where the critic named a non-existent one.",
-  "x_critic_boundary": "Agent to control-plane availability: pure-Python, CPU-bound policy and preview parsing of an attacker-sized command (up to the 8 MiB AGENTBOX_MAX_BODY; no per-command or per-argument length cap exists, grep finds only max_body_bytes) holds the GIL shared with the event loop and every human request thread. The h-approvals hunter measured Policy.decide at 4.96 s for a 128 KiB 'x;' command, growing at least linearly, and up to 4 such calls run concurrently per sandbox on the 32-thread tool_pool, across sandboxes. Invariant: no agent-supplied command or argument can make policy evaluation, _split_segments, simple_programs/shlex passes, _raw_hits or the preview glob/walk expansion cost more than a small bounded amount of CPU, memory or container-side exec time before the call is rejected or queued, and the human API stays responsive while it runs."
+  "x_critic_boundary": "Agent to control-plane availability: pure-Python, CPU-bound policy and preview parsing of an attacker-sized command (up to the 8 MiB AGENTBOX_MAX_BODY; no per-command or per-argument length cap exists, grep finds only max_body_bytes) holds the GIL shared with the event loop and every human request thread. The h-approvals hunter measured Policy.decide at 4.96 s for a 128 KiB 'x;' command, growing at least linearly, and up to 4 such calls run concurrently per sandbox on the 32-thread tool_pool, across sandboxes. Invariant: no agent-supplied command or argument can make policy evaluation, _split_segments, simple_programs/shlex passes, _raw_hits or the preview glob/walk expansion cost more than a small bounded amount of CPU, memory or container-side exec time before the call is rejected or queued, and the human API stays responsive while it runs.",
+  "x_hardening": [
+   "call_tool's executor job is not cancelled when the HTTP client disconnects (api.py:277-278), so a long decide or preview keeps its tool_pool thread and _busy slot to completion even after the sandbox is deleted.",
+   "_raw_hits (policy.py:164-170), has_bash_comment (policy.py:85-125), simple_programs and _split_segments are linear with small constants (0.002-0.1 s at 64 KiB). Nested quoting depth is capped at 4 (_words) and 3 (_split_segments), so recursion multiplies cost by at most about 5x. No superlinear path was found.",
+   "The unbounded per-segment preview notes (preview.py:122-125; 44.5x JSON amplification, about 950 MiB estimated Python memory at 8 MiB) and the uncapped _approvals.html render of pending rows (line 16) share the remediation already attached to the filed h-approvals fingerprint (NOTES_MAX in preview_command). A TOOL_ARG_MAX before decide would also bound them."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws%20upgrade%20before%20ws.accept%28%29::agentbox%2Fapi.py%23desktop_ws%20async%20handler%3A%20synchronous%20SQLite%20%28session%2C%20lease%29%20and%20Docker%20SDK%20calls%20on%20the%20event%20loop%20before%20accept%20%2B%20agentbox%2Fdesktop_ws.py%23relay%20setup::agentbox%2Fapi.py%20%2B%20agentbox%2Fdesktop_ws.py%20%2B%20agentbox%2Fdesktop.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",

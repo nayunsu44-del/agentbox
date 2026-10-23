@@ -1,0 +1,11 @@
+python 3.13.16 switchinterval 0.005
+preview semi 32KiB notes=16384 preview_json_bytes=1458239 ratio=44.5x time=0.184s tracemalloc_peak=3.7MiB
+preview semi 128KiB notes=65536 preview_json_bytes=5832767 ratio=44.5x time=0.978s tracemalloc_peak=14.8MiB
+preview semi 512KiB notes=262144 preview_json_bytes=23330879 ratio=44.5x time=3.815s tracemalloc_peak=59.4MiB
+preview rm-r operands 16KiB operands=8189 expand_calls=8189 walk_calls=8189 affected_before_trunc=1notes time=0.016s
+preview rm-r operands 64KiB operands=32765 expand_calls=32765 walk_calls=32765 affected_before_trunc=1notes time=0.071s
+preview 'rm -r *' with 5000 workspace entries: expand_calls=1 walk_calls=5000 (one container exec each)
+template notes loop present: True
+baseline probe: median=2.2ms max=2.7ms total(40)=0.09s
+with 1 decide(128KiB) threads: probe median=7.5ms max=10.1ms total(40)=0.31s; decide wall per thread=[5.62]
+with 4 decide(128KiB) threads: probe median=8.6ms max=88.8ms total(40)=0.90s; decide wall per thread=[24.26, 24.67, 24.81, 24.96]

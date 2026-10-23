@@ -1,0 +1,102 @@
+{
+ "runs": [
+  {
+   "delay_s": 0.5,
+   "sid": "sb_e3d4ec1c",
+   "delete": "ok",
+   "delete_s": 1.08,
+   "agent": {
+    "error": "ServiceError('\uc2a4\ub0c5\uc0f7 \ub610\ub294 \uae30\ub85d \uc2e4\ud328, \uc2e4\ud589\ud558\uc9c0 \uc54a\uc74c: 404 Client Error for http+docker://localhost/v1.56/commit?container=0fbc6498b4f9708ab1f275aa32e1f710292f9fbaeaeadb73a3ba6bca0e9c9b3b&repo=agentbox-snap&tag=sb_e3d4ec1c-snap_9cb21d16&pause=True: Not Found (\"failed to apply diff: NotFound: snapshot 0fbc6498b4f9708a"
+   },
+   "agent_s": 10.53,
+   "status_after": "deleted",
+   "snapshot_rows_after": [],
+   "images_after": [],
+   "images_by_name": [],
+   "audit": [
+    [
+     "human",
+     "sandbox_created"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "system",
+     "tool_result"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "human",
+     "sandbox_delete"
+    ],
+    [
+     "system",
+     "tool_error"
+    ]
+   ],
+   "images_after_second_delete": []
+  },
+  {
+   "delay_s": 1.5,
+   "sid": "sb_7c884686",
+   "delete": "ok",
+   "delete_s": 1.07,
+   "agent": {
+    "error": "ServiceError('\uc2a4\ub0c5\uc0f7 \ub610\ub294 \uae30\ub85d \uc2e4\ud328, \uc2e4\ud589\ud558\uc9c0 \uc54a\uc74c: 404 Client Error for http+docker://localhost/v1.56/commit?container=283f9d2bc484ef2dd2ac2e24dd1c3bf5706c8c1980563cccf8c965cb65369e93&repo=agentbox-snap&tag=sb_7c884686-snap_b45b8682&pause=True: Not Found (\"failed to apply diff: NotFound: snapshot 283f9d2bc484ef2d"
+   },
+   "agent_s": 9.57,
+   "status_after": "deleted",
+   "snapshot_rows_after": [],
+   "images_after": [],
+   "images_by_name": [],
+   "audit": [
+    [
+     "human",
+     "sandbox_created"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "system",
+     "tool_result"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "human",
+     "sandbox_delete"
+    ],
+    [
+     "system",
+     "tool_error"
+    ]
+   ],
+   "images_after_second_delete": []
+  }
+ ]
+}

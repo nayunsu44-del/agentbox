@@ -1,0 +1,151 @@
+{
+ "runs": [
+  {
+   "delay_s": 5.0,
+   "sid": "sb_739dfc01",
+   "delete": "ok",
+   "delete_s": 1.24,
+   "agent": {
+    "error": "ServiceError('\uc2a4\ub0c5\uc0f7 \ub610\ub294 \uae30\ub85d \uc2e4\ud328, \uc2e4\ud589\ud558\uc9c0 \uc54a\uc74c: 404 Client Error for http+docker://localhost/v1.56/commit?container=12182d3b8671aa3164cf81cfbec7d506a5d8c547f61bb462fa51f8e16e9371bf&repo=agentbox-snap&tag=sb_739dfc01-snap_07ddf47b&pause=True: Not Found (\"failed to apply diff: NotFound: snapshot 12182d3b8671aa31"
+   },
+   "agent_s": 10.44,
+   "status_after": "deleted",
+   "snapshot_rows_after": [],
+   "images_after": [],
+   "images_by_name": [],
+   "audit": [
+    [
+     "human",
+     "sandbox_created"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "system",
+     "tool_result"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "human",
+     "sandbox_delete"
+    ],
+    [
+     "system",
+     "tool_error"
+    ]
+   ],
+   "images_after_second_delete": []
+  },
+  {
+   "delay_s": 7.0,
+   "sid": "sb_d69d7edd",
+   "delete": "ok",
+   "delete_s": 1.58,
+   "agent": {
+    "error": "ServiceError('\uc2a4\ub0c5\uc0f7 \ub610\ub294 \uae30\ub85d \uc2e4\ud328, \uc2e4\ud589\ud558\uc9c0 \uc54a\uc74c: 404 Client Error for http+docker://localhost/v1.56/commit?container=b569328d48630aafae59217daa40b771ea5ee5ca815e6c5444533eaf5742c082&repo=agentbox-snap&tag=sb_d69d7edd-snap_98c2f8b6&pause=True: Not Found (\"failed to apply diff: NotFound: snapshot b569328d48630aaf"
+   },
+   "agent_s": 9.48,
+   "status_after": "deleted",
+   "snapshot_rows_after": [],
+   "images_after": [],
+   "images_by_name": [],
+   "audit": [
+    [
+     "human",
+     "sandbox_created"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "system",
+     "tool_result"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "human",
+     "sandbox_delete"
+    ],
+    [
+     "system",
+     "tool_error"
+    ]
+   ],
+   "images_after_second_delete": []
+  },
+  {
+   "delay_s": 8.5,
+   "sid": "sb_c3d14b8d",
+   "delete": "ok",
+   "delete_s": 1.7,
+   "agent": {
+    "error": "ServiceError('\uc2a4\ub0c5\uc0f7 \ub610\ub294 \uae30\ub85d \uc2e4\ud328, \uc2e4\ud589\ud558\uc9c0 \uc54a\uc74c: 404 Client Error for http+docker://localhost/v1.56/commit?container=49c7855fc0b93fefbc418a01330df55cf948657868eec6949519404a4e063c1f&repo=agentbox-snap&tag=sb_c3d14b8d-snap_2b33e675&pause=True: Not Found (\"failed to apply diff: NotFound: snapshot 49c7855fc0b93fef"
+   },
+   "agent_s": 9.86,
+   "status_after": "deleted",
+   "snapshot_rows_after": [],
+   "images_after": [],
+   "images_by_name": [],
+   "audit": [
+    [
+     "human",
+     "sandbox_created"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "system",
+     "tool_result"
+    ],
+    [
+     "agent",
+     "tool_request"
+    ],
+    [
+     "system",
+     "policy_decision"
+    ],
+    [
+     "human",
+     "sandbox_delete"
+    ],
+    [
+     "system",
+     "tool_error"
+    ]
+   ],
+   "images_after_second_delete": []
+  }
+ ]
+}

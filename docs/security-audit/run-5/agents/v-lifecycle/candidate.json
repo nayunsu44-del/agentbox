@@ -1,0 +1,80 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/sandbox.py:SandboxManager.snapshot:delete-race-orphaned-snapshot-image",
+ "title": "Agent pre-write snapshot that is still committing when the human deletes the sandbox leaves an untracked snapshot image and a snapshot record for the deleted sandbox",
+ "description": "delete_sandbox holds only the per-sandbox _lifecycle lock. The agent's automatic snapshot before a destructive tool (call_tool -> _call_tool -> _snapshot, holding only _snap_locks), the approved-run snapshot in decide, and the import_file snapshot never take that lock. SandboxManager.snapshot checks the deleted status once in _container, then runs a multi-second docker commit, then inserts the snapshot row without checking status again. If the human's DELETE runs during the commit, delete removes the container, marks the sandbox deleted and removes the snapshot images it can list, then returns. The commit then finishes: a snapshot row is inserted for the deleted sandbox, the system writes a 'snapshot' audit row after 'sandbox_delete', and the committed image (the agent's whole writable layer, which the agent can make large with many write_file calls) stays on the host Docker disk. Nothing removes it unless someone issues DELETE again for the already-deleted id, and the UI hides deleted sandboxes. A sandboxed schedule with real agentbox code and a fake Docker client reproduced this end to end. The one fact not established here is whether real dockerd lets an in-flight commit finish while 'docker rm -f' removes the container.",
+ "claimed_root_cause": "Snapshot creation is check-then-act on the sandbox status (sandbox.py:351 _container check, :355 commit, :358-362 unconditional INSERT) and is not serialised with delete_sandbox (service.py:538-543 under _lifecycle only). SandboxManager.delete (sandbox.py:320-332) cleans up only the snapshot rows that exist when it runs list_snapshots, so a commit that completes after that point is never cleaned up.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 274,
+   "scope": "POST /sandboxes/{sid}/tools/{tool} (agent token)",
+   "description": "Agent calls write_file on an existing path (allowed by default policy, which snapshots on overwrite) or another SNAPSHOT_TOOLS tool; runs on tool_pool via box.call_tool."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 292,
+   "scope": "AgentBox.call_tool",
+   "description": "Takes the per-sandbox _snap_locks lock (not _lifecycle) and enters _call_tool."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 367,
+   "scope": "AgentBox._call_tool",
+   "description": "The allow path with _needs_snapshot true calls _snapshot before running the tool (decide at service.py:467 and import_file at :555 reach the same call)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 351,
+   "scope": "SandboxManager.snapshot",
+   "description": "_container checks status != deleted once and returns the container handle."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 355,
+   "scope": "SandboxManager.snapshot",
+   "description": "A multi-second docker commit runs. Meanwhile the human DELETE runs delete_sandbox -> SandboxManager.delete: removes the container (:323), sets status deleted (:326), and removes the images of the snapshot rows that exist so far (:328-332)."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox.py",
+   "line": 359,
+   "scope": "SandboxManager.snapshot",
+   "description": "After the commit returns, the snapshot row is inserted for the deleted sandbox with no status re-check. Its image is never removed, and _snapshot (service.py:269) appends a 'snapshot' audit record after the delete."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/service.py",
+   "line": 500,
+   "description": "_lifecycle is the only per-sandbox serialisation for delete; call_tool, decide and import_file never acquire it."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 328,
+   "description": "delete removes only the images of snapshot rows that exist when list_snapshots runs."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 358,
+   "description": "The snapshot INSERT runs after the commit with no deleted-status check, unlike restore's conditional UPDATE at sandbox.py:401-406."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 269,
+   "description": "_snapshot writes the 'snapshot' audit row for the sandbox regardless of its current status."
+  }
+ ],
+ "blockers": [
+  "Real Docker 29.9.1 behaviour is not observable in the sandbox (no Docker socket). The local check assumed that a 'docker commit' already in progress (pause=True) completes and keeps its image when the same container is force-removed concurrently (container rm -f during commit). If dockerd instead fails the commit, or blocks the remove until the commit ends and the remove still lands before the INSERT, the orphan does not occur in practice.",
+  "Local harness output (agents/h-lifecycle/artifacts/h.out) uses a fake Docker client. It shows the agentbox-side logic only."
+ ],
+ "validation_plan": {
+  "local": "Parent-live, disposable loopback setup with a dummy human token: run 'agentbox serve' with the cli template and default policy, then create a sandbox. With the agent token, write /workspace/a.txt, then write many new 8 MiB files with write_file (about 1-2 GiB total, no snapshots) so that the commit takes several seconds. Start POST /sandboxes/{sid}/tools/write_file {path:/workspace/a.txt, content:'x'} with the agent token. About 0.5 s later, while 'docker ps' shows the container paused by the commit, send DELETE /sandboxes/{sid} with the human token and wait for both to return. Observe the result in three places: (1) 'docker images agentbox-snap --filter label=agentbox.sandbox=<sid>' lists an image after DELETE returned 204; (2) sqlite 'SELECT * FROM snapshots WHERE sandbox_id=<sid>' has a row while sandboxes.status='deleted'; (3) GET /audit shows a system 'snapshot' event after human 'sandbox_delete'. Repeat with delays of 0.1, 0.5 and 2 s. Then clean up by sending DELETE again (which removes the orphan) and running 'docker image rm'."
+ }
+}

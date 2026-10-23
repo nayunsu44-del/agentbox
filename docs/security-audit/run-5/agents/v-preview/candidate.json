@@ -1,0 +1,72 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/preview.py:preview_command:per-operand-container-exec-without-count-or-time-bound",
+ "title": "Approval preview runs one untimed docker exec per rm operand and per matched path, with no count or deadline, before the approval exists",
+ "description": "For any exec command that needs approval and contains an rm segment, preview_command calls expand(op) once per operand and, with -r, walk(m) once per expanded match. Each call is a synchronous docker exec_run in SandboxManager._expand/_walk with no container-side timeout. The 'limit' (200) truncates only the displayed 'affected' list after every exec has run. An agent can send 'rm -r d d d ...' (about 4.2M operands at the 8 MiB body cap; 32765 at 64 KiB) or create many files with the allowed 'touch' and send 'rm -r *' (one walk exec per entry). One tool_pool thread then serially drives that many docker API exec create/start/inspect round trips against the shared host Docker daemon, with no deadline, before the 202 is returned. Cancelling the client request does not stop it.",
+ "claimed_root_cause": "preview_command (preview.py:88-98) loops over every operand and every match and calls the container callbacks without a call budget, total deadline or early stop once 'limit' affected entries exist. _expand (sandbox.py:568-574) and _walk (sandbox.py:576-582) use plain exec_run without the _timed wrapper used by the manifest and read execs. Neither _call_tool nor call_tool caps the operand count or the command length (service.py:279-332).",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 274,
+   "scope": "call_tool route",
+   "description": "An agent token posts {\"args\":{\"command\":\"rm -r d d d ...\"}} up to 8 MiB. It runs on the shared tool_pool (api.py:278)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 332,
+   "scope": "AgentBox._call_tool",
+   "description": "The decision is REQUIRE_APPROVAL (rm-curl-needs-approval). After the pending cap check (line 326), _preview to sandboxes.preview (service.py:226) runs synchronously before approvals.create."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 586,
+   "scope": "SandboxManager.preview",
+   "description": "preview_command is called with lambdas bound to _expand/_walk on the live container."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/preview.py",
+   "line": 89,
+   "scope": "preview_command",
+   "description": "expand(op) runs for every operand. walk(m, limit) runs for every match when recursive (line 96). There is no budget, and the limit is applied only at lines 126-128."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox.py",
+   "line": 572,
+   "scope": "SandboxManager._expand / _walk",
+   "description": "Each call is c.exec_run(['sh','-c',...]) with no timeout (also _walk at line 577): one docker exec per operand/match."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/preview.py",
+   "line": 96,
+   "description": "items = walk(m, limit) if recursive else [m], called per match inside the per-operand loop. limit bounds only each walk's output, not the number of walks."
+  },
+  {
+   "file": "agentbox/preview.py",
+   "line": 126,
+   "description": "Truncation to 'limit' happens after all expand/walk execs have completed."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 572,
+   "description": "_expand exec_run has no _timed wrapper or container-side timeout, unlike the manifest exec (sandbox.py:376)."
+  },
+  {
+   "file": "agentbox/default_policy.yaml",
+   "line": 27,
+   "description": "touch and mkdir are in the allow-listed read-only-exec set, so the agent can populate /workspace with many entries without approval before sending 'rm -r *'."
+  }
+ ],
+ "blockers": [
+  "The real latency and host-side cost of each docker exec_run (exec_create, exec_start, exec_inspect) against the Docker daemon, and whether millions of serial execs measurably delay other sandboxes' tool calls or human lifecycle/approval actions that also use the daemon, need the real Docker daemon. The sbx has no Docker socket. Only call counts were observed locally (stub callbacks: 32765 expand + 32765 walk calls for a 64 KiB 'rm -r d d ...' command; 5000 walk calls for 'rm -r *' over 5000 entries; agents/h-policy-cpu/artifacts/h2.out)."
+ ],
+ "validation_plan": {
+  "local": "In a disposable loopback control plane (dummy human/agent tokens, default policy, one runc sandbox from ubuntu:24.04): (1) with the agent token, POST /sandboxes/{sid}/tools/exec with command 'rm -r ' + 'd '*2000 after 'mkdir d' (allowed). Measure the wall time until the 202 and count exec events with 'docker events --filter type=container --filter event=exec_start' (expect about 4000). (2) Repeat with 'touch f1 ... f2000' then 'rm -r *' (expect 2000 walk execs). (3) While (1) runs, time a human GET /sandboxes and a POST /sandboxes/{other}/tools/exec 'ls' from a second sandbox, and compare with baseline. Extrapolate the per-exec latency to the 8 MiB operand count. Stop at the first measurable delay; do not run 8 MiB inputs."
+ }
+}

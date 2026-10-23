@@ -1,0 +1,79 @@
+{
+ "after_delete_returned": {
+  "status": "deleted",
+  "snapshot_rows": [],
+  "images": []
+ },
+ "agent_result": [
+  400,
+  "삭제된 샌드박스: sb_1"
+ ],
+ "final": {
+  "status": "deleted",
+  "snapshot_rows": [
+   [
+    "snap_6a3f7373",
+    "agentbox-snap:sb_1-snap_6a3f7373"
+   ]
+  ],
+  "images_left_in_docker": [
+   "agentbox-snap:sb_1-snap_6a3f7373"
+  ],
+  "containers_alive": []
+ },
+ "audit": [
+  [
+   1,
+   "agent",
+   "tool_request",
+   "sb_1",
+   {
+    "args": {
+     "path": "/workspace/a.txt"
+    }
+   }
+  ],
+  [
+   2,
+   "system",
+   "policy_decision",
+   "sb_1",
+   {
+    "action": "allow",
+    "matched": [],
+    "reason": null,
+    "request": 1,
+    "rule_id": null
+   }
+  ],
+  [
+   3,
+   "human",
+   "sandbox_delete",
+   "sb_1",
+   {}
+  ],
+  [
+   4,
+   "system",
+   "snapshot",
+   "sb_1",
+   {
+    "image": "agentbox-snap:sb_1-snap_6a3f7373",
+    "request": 1,
+    "snapshot_id": "snap_6a3f7373"
+   }
+  ],
+  [
+   5,
+   "system",
+   "tool_error",
+   "sb_1",
+   {
+    "error": "삭제된 샌드박스: sb_1",
+    "request": 1
+   }
+  ]
+ ],
+ "images_after_second_delete": []
+}

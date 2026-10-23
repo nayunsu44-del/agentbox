@@ -1,0 +1,124 @@
+{
+ "proposed_verdict": "confirmed",
+ "fingerprint": "agentbox/policy.py:_words:per-token-shlex-relex-without-command-length-cap",
+ "title": "Agent exec command of up to 8 MiB drives minutes of GIL-holding policy parsing per call, slowing the shared control plane",
+ "description": "An agent token can POST /sandboxes/{sid}/tools/exec with a command of shell-punctuation tokens (e.g. 'x;x;x;...') up to the 8 MiB AGENTBOX_MAX_BODY. No per-command length cap exists anywhere before Policy.decide. With the default policy, command_names calls _words, which constructs a new shlex.shlex for every token that contains a punctuation character, including each bare ';'. That costs about 38 us per token: 4.85 s for 128 KiB, linear, so about 310 s for one 8 MiB call. The work runs on the shared tool_pool and holds the process GIL. One agent can keep 4 such calls running (tool_concurrency). The run happens before the pending-approval cap, so that cap does not stop it. A stand-in event-loop thread slowed from 2.2 ms median / 2.7 ms max to 8.6 ms median / 88.8 ms max while 4 calls ran, and each call's wall time stretched to about 25 s. The control plane degrades (it is not frozen) for every human request and every other sandbox for as long as the agent re-issues calls.",
+ "root_cause": "Policy evaluation has no input-size bound. AgentBox.call_tool/_call_tool pass args['command'] of any length to Policy.decide (service.py:311). The only limit is the 8 MiB HTTP body cap. _words (policy.py:40-62) re-lexes every token that contains a shell punctuation or whitespace character with a fresh shlex.shlex instance (policy.py:45, 60-61). shlex.__init__ is expensive (str.translate of wordchars), so cost is about 38 us per punctuation token, and an 8 MiB command holds about 4M such tokens.",
+ "intended_behavior": "An agent-supplied command or argument longer than a small fixed bound (e.g. 64 KiB) is rejected (400/413) or sent straight to REQUIRE_APPROVAL without full parsing, before policy.decide and preview run. _words does not re-lex tokens made only of punctuation, so evaluation costs at most milliseconds and human requests keep their normal latency.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 274,
+   "scope": "call_tool route",
+   "description": "An agent token posts {\"args\":{\"command\":\"x;\"*N}}. ToolCall.args is an unbounded dict (api.py:54-55), limited only by _BodyLimit at 8 MiB (config.py:65)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/api.py",
+   "line": 278,
+   "scope": "call_tool route",
+   "description": "Dispatched to the shared 32-thread tool_pool (api.py:160) via run_in_executor. A client disconnect does not cancel the job."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 287,
+   "scope": "AgentBox.call_tool",
+   "description": "Admits up to tool_concurrency (4) concurrent calls per sandbox, with no size check."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 311,
+   "scope": "AgentBox._call_tool",
+   "description": "policy.decide(tool, args) runs after the tool_request audit row and before the pending-approval cap (service.py:326)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/policy.py",
+   "line": 211,
+   "scope": "Policy.decide",
+   "description": "The rm-curl-needs-approval rule (default_policy.yaml:12-17) calls command_names(cmd) on the whole command."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/policy.py",
+   "line": 61,
+   "scope": "_words",
+   "description": "Each token containing a punctuation char (every ';') is recursively re-lexed with a new shlex instance (policy.py:45). This is about 38 us per token, holding the GIL."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/policy.py",
+   "line": 60,
+   "description": "Recursion condition: any token with whitespace or a char in _SHELL_PUNCT, including a bare ';' token, triggers _words(t, depth+1), which builds a new shlex (line 45)."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 311,
+   "description": "decide is called with the raw command. No length check exists in call_tool/_call_tool (service.py:279-311). grep finds no command-length constant in agentbox/."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 65,
+   "description": "max_body_bytes defaults to 8 MiB, the only bound on the command length."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 286,
+   "description": "Per-sandbox tool_concurrency (default 4) allows 4 concurrent evaluations per agent. tool_pool has 32 workers across sandboxes (api.py:160)."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "Requires the sandbox's agent token, which is the lowest-trust principal and is assumed prompt-injected by the threat model."
+  },
+  {
+   "kind": "system_configuration",
+   "description": "Default AGENTBOX_MAX_BODY (8 MiB), default policy with an exec 'commands' rule (rm-curl-needs-approval), default tool_concurrency 4."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "A prompt-injected agent holding its own sandbox's agent token repeatedly sends exec tool calls whose command is a long run of 'x;' tokens. Each call is eventually queued as an approval (or 429 by the pending cap), but only after Policy.decide has consumed CPU in proportion to the command length.",
+  "payloads": [
+   "{\"args\":{\"command\":\"x;x;x;...\"}} with 'x;' repeated 65536 times (131072-byte command)",
+   "Policy.load('agentbox/default_policy.yaml').decide('exec', {'command': 'x;' * 65536})"
+  ],
+  "instructions": [
+   "In the parent-approved sbx (no network, uid 65534, 512 MiB, 1 CPU, 120 s, audited source read-only at /target), load the default policy with agentbox.policy.Policy.load and time Policy.decide('exec', {'command': s}) for s = 'x;'*n at 16/32/64/128 KiB, plus 'x|', 'a ' and 'rm a a ...' shapes. Profile the 16 KiB case with cProfile.",
+   "In the same harness, run an asyncio probe on the main thread (40 iterations of a fixed 20000-step Python loop plus await asyncio.sleep(0.001)) alone, with 1 thread, and with 4 threads each running decide on the 128 KiB 'x;' command. Record median, max and total probe latency and each decide's wall time."
+  ],
+  "observed_result": "decide('x;' * n): 16 KiB 0.641 s, 32 KiB 1.318 s, 64 KiB 2.593 s, 128 KiB 4.845 s (linear, ~38 us per token). 'x|' was the same, 'a ' 0.199 s at 128 KiB, and 'rm a a...' 0.108 s at 128 KiB. cProfile: command_names to _words took 2.30 of 2.53 s, with 65538 shlex.__init__ calls (1.02 s) and str.translate (0.78 s). Probe baseline median 2.2 ms / max 2.7 ms / total 0.09 s. With 1 decide thread: 7.5 / 10.1 ms / 0.31 s. With 4 decide threads: 8.6 / 88.8 ms / 0.90 s, and each decide's wall time stretched to 24.3-25.0 s. Extrapolation: about 310 s CPU for one 8 MiB call (not run). (agents/h-policy-cpu/artifacts/h.out, agents/h-policy-cpu/artifacts/h2.out)"
+ },
+ "remediation": {
+  "strategy": "Bound the input before any parsing, and remove the per-token re-lex. In AgentBox._call_tool (before the tool_request audit row and policy.decide), refuse an exec command or any string argument longer than a fixed TOOL_ARG_MAX (e.g. 64 KiB) with 413/400 and a tool_blocked audit row. Alternatively, route it directly to REQUIRE_APPROVAL with a fixed 'too long to analyse' preview, skipping command_names and preview_command. In _words, skip recursion for tokens made only of punctuation and recurse only on tokens that contain whitespace or '$(' or '`'. Add a regression test asserting that decide on a 64 KiB 'x;' command finishes in under ~100 ms and that a 1 MiB command is rejected or approval-routed without calling command_names.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/service.py",
+    "fixed_code": "TOOL_ARG_MAX = 64 * 1024\n...\n    def _call_tool(self, sid, tool, args, actor):\n        if tool not in TOOLS:\n            raise ServiceError(404, ...)\n        self.sandboxes.get(sid)\n        if any(isinstance(v, str) and len(v) > TOOL_ARG_MAX for k, v in args.items() if k != \"content\"):\n            self.log_best_effort(sid, tool, \"tool_blocked\", {\"reason\": \"argument_too_long\", \"limit\": TOOL_ARG_MAX})\n            raise ServiceError(413, f\"도구 인자가 너무 김 (최대 {TOOL_ARG_MAX}자)\")\n        ..."
+   },
+   {
+    "file_name": "agentbox/policy.py",
+    "fixed_code": "    for t in tokens:\n        if not t:\n            continue\n        cleaned = ...\n        out.extend(cleaned.split())\n        if all(c in _SHELL_PUNCT for c in t):\n            continue  # 순수 구분자 토큰은 다시 렉싱하지 않는다\n        if any(c.isspace() for c in t) or any(c in _SHELL_PUNCT for c in t):\n            out.extend(_words(t, depth + 1))"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "medium",
+   "reason": "A single agent-token request with a default configuration triggers it, and a prompt-injected agent can repeat it indefinitely. No approval or human action is needed first."
+  },
+  "impact": {
+   "score": "low",
+   "reason": "Measured effect is degradation, not denial. One agent's 4 concurrent calls slowed a same-process stand-in loop about 4x at the median and up to 33x at the max, for minutes per call at the body cap. The control plane keeps answering, and the effect ends when the calls finish. Several hostile sandboxes would worsen it, but that was not measured."
+  },
+  "overall_severity": "low"
+ },
+ "confidence": {
+  "score": "medium",
+  "reason": "The CPU cost, linear growth and GIL contention were measured directly on the audited code with the default policy. The real server's latency under uvicorn on the host's CPU count, and the full 8 MiB figure, are extrapolated, not observed."
+ }
+}

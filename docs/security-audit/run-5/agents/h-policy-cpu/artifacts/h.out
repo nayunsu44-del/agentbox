@@ -1,0 +1,43 @@
+python 3.13.16
+decide semi_x; 16KiB len=16384 0.641s action=require_approval rule=exec-needs-approval
+decide semi_x; 32KiB len=32768 1.318s action=require_approval rule=exec-needs-approval
+decide semi_x; 64KiB len=65536 2.593s action=require_approval rule=exec-needs-approval
+decide semi_x; 128KiB len=131072 4.845s action=require_approval rule=exec-needs-approval
+decide words_a_ 16KiB len=16384 0.025s action=require_approval rule=exec-needs-approval
+decide words_a_ 32KiB len=32768 0.050s action=require_approval rule=exec-needs-approval
+decide words_a_ 64KiB len=65536 0.100s action=require_approval rule=exec-needs-approval
+decide words_a_ 128KiB len=131072 0.199s action=require_approval rule=exec-needs-approval
+decide rm_operands 16KiB len=16383 0.014s action=require_approval rule=rm-curl-needs-approval
+decide rm_operands 32KiB len=32767 0.027s action=require_approval rule=rm-curl-needs-approval
+decide rm_operands 64KiB len=65535 0.053s action=require_approval rule=rm-curl-needs-approval
+decide rm_operands 128KiB len=131071 0.108s action=require_approval rule=rm-curl-needs-approval
+decide pipe_x| 16KiB len=16384 0.646s action=require_approval rule=exec-needs-approval
+decide pipe_x| 32KiB len=32768 1.297s action=require_approval rule=exec-needs-approval
+decide pipe_x| 64KiB len=65536 2.667s action=require_approval rule=exec-needs-approval
+decide pipe_x| 128KiB len=131072 5.047s action=require_approval rule=exec-needs-approval
+fn has_bash_comment 64KiB semi 0.008s
+fn simple_programs 64KiB semi 0.096s
+fn command_names 64KiB semi 2.489s
+fn <lambda> 64KiB semi 0.002s
+fn _split_segments 64KiB semi 0.099s
+         3424320 function calls (3342400 primitive calls) in 2.532 seconds
+
+   Ordered by: cumulative time
+   List reduced from 40 to 12 due to restriction <12>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    2.578    2.578 /target/agentbox/policy.py:192(decide)
+        1    0.023    0.023    2.344    2.344 /target/agentbox/policy.py:65(command_names)
+  81921/1    0.489    0.000    2.303    2.303 /target/agentbox/policy.py:40(_words)
+    65538    0.164    0.000    1.017    0.000 /usr/lib/python3.13/shlex.py:21(__init__)
+    65540    0.778    0.000    0.778    0.000 {method 'translate' of 'str' objects}
+   196610    0.085    0.000    0.598    0.000 /usr/lib/python3.13/shlex.py:299(__next__)
+   196610    0.089    0.000    0.513    0.000 /usr/lib/python3.13/shlex.py:101(get_token)
+   196610    0.305    0.000    0.424    0.000 /usr/lib/python3.13/shlex.py:133(read_token)
+        1    0.057    0.057    0.234    0.234 /target/agentbox/policy.py:128(simple_programs)
+   196609    0.091    0.000    0.173    0.000 {built-in method builtins.any}
+   393217    0.069    0.000    0.069    0.000 {method 'replace' of 'str' objects}
+   262148    0.050    0.000    0.050    0.000 {method 'read' of '_io.StringIO' objects}
+
+
+
