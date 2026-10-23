@@ -2,9 +2,9 @@
  {
   "verdict": "needs_validation",
   "fingerprint": "agentbox/api.py:preauth-request-body-read-before-principal",
-  "title": "Unauthenticated JSON bodies are still decoded before principal(); one 8 MiB request costs about 200 MB of transient memory and 0.4-0.7 s of event-loop time before the 401",
-  "description": "The F1 fix (PR #16) caps request bodies before routing, at 8 MiB (AGENTBOX_MAX_BODY) for JSON routes. That cap is identical for unauthenticated and authenticated clients. FastAPI's get_request_handler (fastapi 0.161.1) reads the body and decodes the JSON before solve_dependencies runs principal()/human_only. On the async route (call_tool, api.py:274) the decode runs on the event loop. A body of empty objects decodes at about 26x its size. Parent-live check on a real uvicorn server (127.0.0.1, stub Docker client, 1 GiB container, dummy human token, no Authorization header, 8,388,580-byte body to POST /sandboxes/sb_x/tools/exec): idle RSS 59 MB. One request returned 401 after 0.69 s, with RSS 260 MB afterwards and a high-water mark of 268 MB. Four concurrent requests reached a 703 MB high-water mark, and a human GET /healthz sent during that burst took 1.23 s against 0.003 s idle. Eight concurrent requests reached 734 MB, with every request answered 401 in under 4 s and healthz at 0.47 s. The server stayed alive and was not OOM-killed in any run. So the amplification and the missing authentication ordering are reproduced, but the effect is bounded in the tested configuration: transient memory, concurrent decodes appear to be serialised by the single event loop (peak flattened from 4 to 8 clients), and impact was a sub-second to about 1 s stall. Nothing in the repository limits the effect further. cli.py:127 passes no limit_concurrency, deploy/docker-compose.yml sets no memory limit, and the bundled Caddyfile allows 256MB per request by default. Whether this causes an OOM-kill or a sustained stall of the shared control plane (human approval UI, audit chain) depends on the deployed memory limit, the supervisor restart behavior, and the attacker's sustained bandwidth, none of which the repository fixes. Attacker cost is one 8 MiB upload per 0.4-0.7 s of event-loop time, so about 12-20 MB/s of sustained upload would keep the loop busy. The run-4 finding (unbounded body size, multipart spooling) is fixed: bytes are now capped and the upload form is parsed only after screen_human. What remains is bounded per-request work that is not tied to authentication.",
-  "claimed_root_cause": "Authentication dependencies run after FastAPI's body-reading and JSON-decoding stage. The only pre-auth bound is a byte cap (8 MiB) sized for the largest authenticated payload (an escaped 1 MiB write_file). It does not account for the roughly 26x object-graph amplification of JSON, there is no smaller cap or credential check for requests that carry no Authorization header, and no concurrency limit on pre-auth decodes (no uvicorn limit_concurrency, no container memory limit, no proxy JSON-route cap below 256MB).",
+  "title": "Unauthenticated JSON bodies are still decoded before principal(); one 8 MiB request costs about 200 MB of transient memory and roughly 0.3-0.8 s of request time before the 401, and four concurrent requests OOM-killed the server at a 512 MiB container limit",
+  "description": "The F1 fix (PR #16) caps request bodies before routing, at 8 MiB (AGENTBOX_MAX_BODY) for JSON routes. That cap is identical for unauthenticated and authenticated clients. FastAPI's get_request_handler (fastapi 0.161.1, routing.py:428-471) awaits request.body() and decodes the JSON in its async request handler before solve_dependencies (routing.py:511) runs principal()/human_only. Because the decode happens in that async handler, it runs on the event loop for every JSON-body route, including the sync create_sandbox, restore and decide routes as well as the async call_tool (api.py:274). A body of empty objects decodes at about 26x its size (hunter tracemalloc: 27.4 MB peak for 1.05 MB, 54.9 MB for 2.10 MB, both 401). Whole-process growth for an 8 MiB body is about 24x (RSS 59 MB to 260 MB). Parent-live check on a real uvicorn server (127.0.0.1, stub Docker client, dummy human token, no Authorization header, 8,388,580-byte body to POST /sandboxes/sb_x/tools/exec). At a 1 GiB container limit: idle RSS 59 MB; one request returned 401 after 0.69 s with RSS 260 MB afterwards and a high-water mark of 268 MB; four concurrent requests reached a 703 MB high-water mark and a human GET /healthz sent during the burst took 1.23 s against 0.003 s idle; eight concurrent requests reached 734 MB, all answered 401 in under 4 s, healthz 0.47 s; the server stayed alive. At a 512 MiB container limit: one request returned 401 (hwm 267 MB), but four concurrent unauthenticated 8 MiB requests got connection resets and the server process was OOM-killed (exit -9). Two later independent runs of the same script in 512 MiB no-swap sandboxes (r-preauth, then rv-preauth) reproduced the pattern: single request 401 in 0.28 s and 0.75 s with hwm 268 and 267 MB, then four concurrent requests were reset and the server exited -9. So the amplification, the missing authentication ordering, and process death under a memory limit are reproduced. Whether any real deployment is affected depends on its memory limit and host RAM, which the repository does not fix: deploy/docker-compose.yml sets no mem_limit, cli.py:127 passes no limit_concurrency, and the bundled Caddyfile allows 256MB per request by default. In the 512 MiB run the container supervisor policy in the repository (restart: unless-stopped) would restart the process. The attacker's cost in that case is about 32 MiB of upload (four 8 MiB bodies), with in-flight requests lost during the restart and the human approval UI and audit chain unavailable meanwhile. Pending approvals live in SQLite and are not shown to be lost. The run-4 finding (unbounded body size, multipart spooling) is fixed: bytes are now capped and the upload form is parsed only after screen_human. What remains is bounded per-request work, about 25x memory amplification, that is not tied to authentication.",
+  "claimed_root_cause": "Authentication dependencies run after FastAPI's body-reading and JSON-decoding stage. The only pre-auth bound is a byte cap (8 MiB) sized for the largest authenticated payload (an escaped 1 MiB write_file). It does not account for the roughly 26x object-graph amplification of JSON. There is no smaller cap or credential check for requests that carry no Authorization header, and no concurrency limit on pre-auth decodes (no uvicorn limit_concurrency, no container memory limit in the shipped compose file, no proxy JSON-route cap below 256MB).",
   "trace": [
    {
     "kind": "entrypoint",
@@ -23,7 +23,7 @@
    {
     "kind": "propagation",
     "file": "agentbox/api.py",
-    "line": 121,
+    "line": 115,
     "scope": "_BodyLimit.limited_receive",
     "description": "Streamed bytes are counted up to the cap and handed to the app. Bodies at or under 8 MiB pass unchanged."
    },
@@ -32,7 +32,7 @@
     "file": "agentbox/api.py",
     "line": 173,
     "scope": "principal() dependency",
-    "description": "Runs only after FastAPI has buffered the body and json.loads has built the full object graph (about 26x the body for empty objects). It then raises 401 at the missing Authorization header."
+    "description": "Runs only after FastAPI has buffered the body (await request.body()) and decoded the JSON into the full object graph (about 26x the body for empty objects), in the async request handler on the event loop. It then raises 401 at the missing Authorization header."
    }
   ],
   "evidence": [
@@ -58,28 +58,33 @@
    },
    {
     "file": "deploy/docker-compose.yml",
-    "line": 14,
-    "description": "The agentbox service has no mem_limit or deploy.resources limits. The same process serves the approval UI and the audit chain."
+    "line": 11,
+    "description": "The agentbox service block (lines 11-31) has no mem_limit or deploy.resources limits. Line 17 sets restart: unless-stopped. The same process serves the approval UI and the audit chain."
    },
    {
     "file": "agents/parent-live/artifacts/preauth_json.json",
     "line": 1,
-    "description": "Parent-live result (real uvicorn, 1 GiB container, no auth): 8,388,580-byte body gives 401 in 0.69 s, RSS 59 to 260 MB (hwm 268). 4 concurrent give hwm 703 MB and healthz 1.23 s. 8 concurrent give hwm 734 MB and healthz 0.47 s. No OOM at 1 GiB."
+    "description": "Parent-live result at 1 GiB (real uvicorn, no auth): 8,388,580-byte body gives 401 in 0.69 s, RSS 59 to 260 MB (hwm 268). Four concurrent give hwm 703 MB and healthz 1.23 s. Eight concurrent give hwm 734 MB and healthz 0.47 s. No OOM at 1 GiB."
+   },
+   {
+    "file": "agents/parent-live/artifacts/preauth_json_512m.json",
+    "line": 1,
+    "description": "Parent-live result at --memory 512m: one request gives 401 (hwm 267 MB); four concurrent requests give connection resets, server_alive false, exit -9 (OOM-kill). Independent reruns of the same script in 512 MiB no-swap sandboxes (r-preauth scratch/out.json; rv-preauth scratch/out.json, single 401 in 0.75 s, hwm 267 MB) show the same pattern with exit -9."
    },
    {
     "file": "agents/h-bodylimit/artifacts/h.out",
-    "line": 1,
-    "description": "Hunter-local check: tracemalloc peak 27.4 MB for a 1.05 MB body and 54.9 MB for 2.10 MB, both 401, confirming the linear ~26x amplification before the dependency runs."
+    "line": 13,
+    "description": "Hunter-local check: tracemalloc peak 27.4 MB for a 1.05 MB body (line 13) and 54.9 MB for 2.10 MB (line 14), both 401 (T7 lines), confirming the linear ~26x amplification before the dependency runs."
    }
   ],
   "blockers": [
-   "Deployed memory limit of the agentbox control-plane container or host is outside the repository. The compose file sets none, and the parent-live 1 GiB test survived 8 concurrent 8 MiB requests with a 734 MB high-water mark, so an OOM-kill is not shown. A smaller limit (for example 512 MiB) or more concurrent connections might trigger one.",
-   "Sustained-load behavior (event-loop starvation of the human UI and approvals under repeated pre-auth requests) and the supervisor restart policy were not measured, because the audit rules forbid stress or saturation testing. The measured stall was about 1.2 s for a 4-request burst.",
+   "Deployed memory limit of the agentbox control-plane container or host is outside the repository. The compose file sets none. The 1 GiB test survived 8 concurrent 8 MiB requests (734 MB hwm) and the 512 MiB test was OOM-killed by 4, so whether a real deployment dies depends on a limit or host RAM that the owner sets.",
+   "Sustained-load behavior (event-loop starvation of the human UI and approvals under repeated pre-auth requests) and the actual restart and recovery time were not measured, because the audit rules forbid stress or saturation testing. The measured stall was about 1.2 s for a 4-request burst at 1 GiB. The repo's compose policy is restart: unless-stopped, but the owner's supervisor may differ.",
    "The deployed edge may enforce a stricter body cap, connection or rate limit than the bundled Caddyfile (default 256MB, no rate limit). That is the owner's configuration."
   ],
   "validation_plan": {
-   "local": "Repeat the parent-live harness (agents/parent-live/parent_live_preauth_json.py) in a disposable container with --network none and a tighter limit such as --memory 512m, with 8 MiB bodies at 2, 4 and 8 concurrent, and record the exit status (OOM-kill or not), hwm and healthz latency. Stop at the first OOM-kill. Fix check: after adding a smaller pre-auth cap, or a pre-body Authorization-present gate in _BodyLimit, the same unauthenticated requests should return 413 or 401 with no measurable RSS growth.",
-   "deployment": "Owner checks the memory limit and restart policy of the agentbox control-plane container or host. Owner checks whether the TLS proxy or edge applies a per-route or JSON body cap below 8 MiB (the bundled Caddyfile allows 256MB on every route) and any per-client rate or connection limit. Owner confirms that a stall of 1 s or more on the single uvicorn process, which also serves the human approval queue and the audit chain, is acceptable. Suggested hardening: reject JSON-route requests without an Authorization header or session cookie before reading the body (a pre-body gate in _BodyLimit), set a lower AGENTBOX_PROXY_MAX_BODY for non-upload routes, add limit_concurrency, and set a container mem_limit."
+   "local": "Local OOM at 512 MiB is already reproduced three times (parent-live, r-preauth, rv-preauth). The remaining local check is the fix: after adding a smaller pre-auth cap, or a pre-body Authorization-present gate in _BodyLimit (reject JSON-route requests with no Authorization header or session cookie before reading the body), rerun agents/parent-live/parent_live_preauth_json.py in a disposable --network none container with --memory 512m and 4 concurrent 8 MiB bodies. Expect 401 or 413 for each request, no RSS growth beyond the baseline, and no exit -9.",
+   "deployment": "Owner checks the memory limit and swap of the agentbox control-plane container or host, and its restart policy (compose default restart: unless-stopped). The owner also checks whether the TLS proxy or edge applies a per-route or JSON body cap below 8 MiB (the bundled Caddyfile allows 256MB on every route) and any per-client rate or connection limit, and confirms that a stall of 1 s or more, or a process restart, on the single uvicorn process (which also serves the human approval queue and the audit chain) is acceptable. Suggested hardening: reject JSON-route requests without an Authorization header or session cookie before reading the body, set a lower AGENTBOX_PROXY_MAX_BODY for non-upload routes, add limit_concurrency, and set a container mem_limit sized for the cap."
   }
  },
  {
