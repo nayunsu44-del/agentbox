@@ -62,6 +62,11 @@ class GuiBursts:
         return (last_input is None or now - last_input > s.gui_snapshot_idle
                 or last_snap is None or now - last_snap > s.gui_snapshot_interval)
 
+    def covers(self, sid: str) -> bool:
+        """지금 GUI 입력을 실행해도 열린 구간이 그 변경을 받는지. gui_lock을 잡은 채로 부른다.
+        스냅샷 판단은 잠금 전에 하므로, 잠금을 기다리는 사이 인수·반환으로 구간이 닫히면 여기서 걸러진다."""
+        return self.sandboxes.settings.gui_snapshot_interval <= 0 or sid in self._gui_burst
+
     def open(self, sid: str, snapshot_id: str) -> bool:
         try:
             # 구간은 지금 컨테이너의 것이다. 복원으로 컨테이너가 바뀌면 옛 pid·파일 목록으로 새 데스크톱을 판단하지 않는다

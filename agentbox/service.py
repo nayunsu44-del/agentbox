@@ -136,6 +136,11 @@ class AgentBox:
             with self.desktop.gui_lock(sid):
                 self._check_control(sid)
                 if tool in GUI_INPUT:
+                    if not self.bursts.covers(sid):
+                        # 잠금을 기다리는 사이 사람이 인수했다가 돌려줘 구간이 닫혔다. 스냅샷·기록 없이 실행하지 않는다.
+                        # 입력 시각을 남기지 않으니 다시 부르면 새 스냅샷과 구간을 연다 (보안 검수 run-4 F2)
+                        raise SandboxError("기다리는 동안 화면 제어가 바뀌어 GUI 구간이 닫혔음. 이 입력은 실행하지 않음. "
+                                           "다시 호출할 것")
                     self.bursts.mark_input(sid)
                 if tool == "screenshot":
                     shot = sb.screenshot(sid)
@@ -341,6 +346,14 @@ class AgentBox:
 
         assert decision.action == ALLOW
         if self._needs_snapshot(sid, tool, args):
+            quota = self.sandboxes.settings.snapshot_quota
+            if quota > 0 and self.sandboxes.snapshot_count(sid) >= quota:
+                # 상한 확인 때는 스냅샷이 필요 없었는데 그 사이 대상이 생겼다(예: 같이 보낸 touch). 상한을 넘겨
+                # 승인 없이 커밋하지 않는다. 다시 부르면 상한 확인에서 승인 요청으로 간다 (보안 검수 run-4 F7)
+                self.log_best_effort(sid, tool, "tool_blocked", {"request": req_id, "reason": "snapshot_quota_changed",
+                                                                 "quota": quota})
+                raise ServiceError(409, f"스냅샷이 {quota}개 이상이라 사람의 승인이 필요해졌음. 실행하지 않음. "
+                                        "다시 호출하면 승인 요청으로 처리됨")
             try:
                 self._snapshot(sid, tool, f"before {tool} (request {req_id})", {"request": req_id})
             except (SandboxError, AuditWriteError, Exception) as e:

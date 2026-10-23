@@ -302,3 +302,78 @@ def test_gui_input_refused_when_burst_baseline_unreadable():
     assert "sb" not in box.bursts._gui_burst and box.bursts.needs_snapshot("sb")
     assert [r["event"] for r in box.audit.rows] == ["gui_burst_open_failed", "snapshot"]
     box.bursts._burst_pool.shutdown()
+
+
+# ---- run-4 F2·F7: 잠금·두 번째 확인 사이에 바뀐 상태로 스냅샷 없이 실행하지 않는다 -----------------
+class _GuiSandboxes(_Sandboxes):
+    def __init__(self):
+        super().__init__()
+        self.release.set()
+        self.clicks, self.snaps, self.count = [], [], 0
+
+    def click(self, sid, x, y, button, double):
+        self.clicks.append((x, y))
+        return {"clicked": [x, y]}
+
+    def geometry(self, sid):
+        return 1280, 800
+
+    def snapshot(self, sid, reason):
+        self.snaps.append(reason)
+        self.count += 1
+        return {"id": f"snap_{self.count}", "image": "img"}
+
+    def snapshot_count(self, sid):
+        return self.count
+
+
+def test_gui_input_queued_across_handback_is_not_run_without_burst():
+    """보안 검수 run-4 F2: 사람이 쥔 동안 gui_lock을 기다리던 입력은, 그 사이 돌려받아도 구간 없이 실행되지 않는다."""
+    from agentbox.service import ServiceError
+
+    sb = _GuiSandboxes()
+    box = AgentBox(_Audit(), Policy({"default": "allow"}), sb, approvals=None, desktop=DesktopControl())
+    box.takeover("sb", "hs_1")                        # 사람이 화면을 쥐었다 → 스냅샷 판단은 '필요 없음'
+    lock = box.desktop.gui_lock("sb")
+    lock.acquire()                                    # 사람의 반환이 잠금을 쥐고 있는 동안 에이전트 입력이 줄 선다
+    out = {}
+
+    def agent():
+        try:
+            out["r"] = box.call_tool("sb", "click", {"x": 1, "y": 1})
+        except ServiceError as e:
+            out["e"] = e
+
+    t = threading.Thread(target=agent)
+    t.start()
+    time.sleep(0.3)
+    box._handback_locked("sb", "hs_1", "handback")
+    lock.release()
+    t.join(5)
+    assert out["e"].status == 400 and sb.clicks == [] and sb.snaps == []
+    assert box.bursts.needs_snapshot("sb")            # 입력 시각을 남기지 않아 다음 입력이 구간을 연다
+    assert box.call_tool("sb", "click", {"x": 2, "y": 2}).status == 200
+    assert sb.snaps and sb.clicks == [(2, 2)] and box.bursts.covers("sb")
+    box.bursts._burst_pool.shutdown()
+
+
+def test_snapshot_quota_rechecked_at_commit():
+    """보안 검수 run-4 F7: 상한 확인 뒤 두 번째 확인에서 대상이 생겨도 상한을 넘겨 승인 없이 커밋하지 않는다."""
+    from agentbox.service import ServiceError
+
+    sb = _GuiSandboxes()
+    sb.settings.snapshot_quota = 2
+    sb.count = 2                                      # 이미 상한
+    probes = iter([False, True])                      # 첫 확인 뒤 같이 보낸 touch가 파일을 만든다
+    sb.exists = lambda sid, path: next(probes)
+    sb.write_file = lambda sid, path, content: {"path": path, "bytes": len(content)}
+    box = AgentBox(_Audit(), Policy({"default": "allow"}), sb, approvals=None, desktop=DesktopControl())
+    with pytest.raises(ServiceError) as e:
+        box.call_tool("sb", "write_file", {"path": "/workspace/p1", "content": "x"})
+    assert e.value.status == 409 and sb.snaps == [] and sb.count == 2
+    assert box.audit.rows[-1]["event"] == "tool_blocked"
+    sb.count = 1                                      # 상한 아래에서는 그대로 스냅샷 뒤 실행
+    sb.exists = lambda sid, path: True
+    assert box.call_tool("sb", "write_file", {"path": "/workspace/p1", "content": "x"}).status == 200
+    assert len(sb.snaps) == 1
+    box.bursts._burst_pool.shutdown()

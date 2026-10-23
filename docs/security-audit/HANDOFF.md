@@ -199,7 +199,11 @@ pytest                                                 # 160 passed
      - F1: `_BodyLimit` 미들웨어가 본문을 읽기 전에 413을 준다(`AGENTBOX_MAX_BODY` 8MB, `AGENTBOX_MAX_UPLOAD_BODY` 256MB). 파일 넣기는 인증한 뒤 폼을 읽고, Caddyfile에 `request_body` 상한을 넣었다.
      - F3: `AuditLog.append`가 해시를 계산하기 전에 payload를 묶는다(문자열 64KB, 목록 200개, 한 행 128KB).
      - 회귀 테스트 4개(`test_m4_unit.py`, `test_m4_acceptance.py`)는 수정 전 코드에서 실패한다. 전체 pytest 237개 통과.
-   - 남은 것: F2·F7 → F6 → F4·F5·F8.
+   - **F2·F7 수정 완료**(브랜치 `ccr-534dd824-2jgcsj`, PR #16 다음).
+     - F2: `_run_tool`이 `gui_lock`을 잡고 제어 확인을 마친 뒤, 열린 구간이 없으면 GUI 입력을 실행하지 않는다(`GuiBursts.covers`, 400). 입력 시각을 남기지 않으므로 다시 부르면 새 스냅샷과 구간을 연다.
+     - F7: 허용 경로의 커밋 직전에 스냅샷 상한을 다시 확인한다. 상한 이상이면 커밋하지 않고 409와 `tool_blocked`(`snapshot_quota_changed`)를 남긴다. 다시 부르면 승인 요청으로 간다.
+     - 회귀 테스트 2개(`test_m2_unit.py`)는 수정 전 코드에서 실패한다. 전체 pytest 239개 통과.
+   - 남은 것: F6 → F4·F5·F8.
 2. **보류 3단위**는 다음 run의 1순위다.
    - 데스크톱 WebSocket이 `ws.accept()` 전에 동기 SQLite·Docker를 호출한다.
    - 승인 테이블이 마스킹·상한 없이 남는다.
