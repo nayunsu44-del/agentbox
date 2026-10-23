@@ -162,3 +162,19 @@ pytest                                                 # 160 passed
 8. 검증자별 `agents/<id>/scratch`는 `chown 65534`로 미리 만든다. `gen5.py`가 대신 해 준다.
 
 이번 세션 확인 결과: 전체 pytest 231개 통과(재개 세션, 실제 Docker와 다시 빌드한 데스크톱 이미지, 건너뛴 것 없음). 이전 세션은 214개. CI의 acceptance가 건너뛴 테스트를 실패로 처리하므로, 바인드 마운트 테스트가 root가 아니면 `sudo -n`을 쓰게 고쳤다(`192019f`).
+
+## 4차 감사(run-4) 진행 상태 — 다음 세션이 여기서 이어받는다
+
+작업 브랜치 `ccr-17444317-ygb3a1`. 감사 기준은 리팩토링(PR #11~#14) 뒤 `main` `9805d91`이다. 프로필은 `standard`이고 상한 50은 소유자가 정했다. 모델은 run-3과 같게 나눈다: 정찰·헌터·3단계·비평은 Opus, 5단계 레코드 검증은 Sonnet, 큰 변경 재확인은 Opus.
+
+**1단계(정찰)까지 마치고 소유자 요청으로 멈췄다.** 에이전트는 50 중 4개를 썼다.
+- `run-4/agents/recon-1a..1d/result.md`: 정찰 결과 원문. 1b·1c가 인용한 `api.py`·`web.py`·`preview.py` 줄 번호는 일부가 실제 파일에 없다. `architecture.md`에는 부모가 다시 확인한 줄만 썼다.
+- `run-4/architecture.md`: 정찰을 합친 요약. 7절에 리팩토링 경계 후보를 모았다.
+- `run-4/coverage-ledger.json`: 30단위, 모두 `planned`(검증기 PASS). `tools/seed.py`가 run-3 장부 29단위를 현재 소스 객체로 옮기고, 수명 주기 통합(PR 1) 단위 1개를 더했다. 단위마다 `x_hunter`(헌터 13명), `x_prior_unit`, `x_prior_fingerprints`가 있다.
+- `run-4/tools/hunter_notes.json`: 정찰이 짚은 후보를 헌터별로 나눈 것. 지시문에 "검증 안 된 단서"로 들어간다.
+
+### 다음 할 일 (2단계부터)
+1. 환경: `nohup dockerd >/tmp/dockerd.log 2>&1 &`, `pip install -e '.[test]' pyte`, `docker pull ubuntu:24.04 buildpack-deps:noble-curl`, `docker build -t agentbox-desktop:0.1 images/desktop`. 스크래치패드에 `git clone --depth 1 https://github.com/cloudflare/security-audit-skill skill`, `git worktree add --detach <scratchpad>/src-audited 9805d91`.
+2. `run-4/tools/common.py`의 `SP` 기본값과 `sbx`의 `TARGET`·`LOG` 줄을 새 스크래치패드 경로로 바꾼다(또는 `AUDIT_SCRATCHPAD`를 설정). `sbx`는 에이전트별 256 MiB loop 스크래치(`common.make_scratch`가 만든다)가 아니면 실행을 거부한다. jinja2는 `/root/.local/lib/python3.13/site-packages`에서 읽기 전용으로 붙인다.
+3. 헌터 지시문: `python3 -I run-4/tools/gen_hunt.py h-gui-race h-gui-burst h-container h-pool h-queue h-policy h-audit h-preauth h-session h-webui h-lifecycle h-files h-wild`. 단위를 `in_progress`로 바꾸고 스크래치를 만든다. 각 헌터에게 "`agents/<id>/prompt.md`를 읽고 따르라"고 지시한다.
+4. 예산 계획: 정찰 4 + 헌터 13 + 비평 2(웨이브 뒤, 최종) = 19, 나머지 31은 3·5단계 검증용이다. 헌터 결과 수거기(ingest), 3·5단계 생성기는 아직 없다. run-3의 `ingest_hunt.py`, `gen3.py`, `gen5.py`, `apply5.py`를 `common.py` 기준으로 옮겨 쓴다.

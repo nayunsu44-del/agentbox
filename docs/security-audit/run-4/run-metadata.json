@@ -15,7 +15,7 @@
  "budget": 50,
  "budget_note": "Owner-set cap of 50 agent invocations (standard profile). Plan: 4 reconnaissance, one hunter wave, one post-wave critic, one distinct final-clean critic, and the rest reserved for Phase 3 and Phase 5 verifiers. Model split as in run-3: Opus for recon, hunters, Phase 3 and critics; Sonnet for Phase 5 record verifiers; Opus for material-replacement re-verifiers.",
  "execution_policy": "sandboxed-source-and-local-only",
- "execution_note": "Agent-run target code runs only through tools/sbx: docker run --network none --read-only, host /usr and the audited worktree read-only, writes only to agents/<id>/scratch, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB, 1 CPU, 64 pids, 32 MiB file size, 120 s, explicit env allowlist. Checks that need the real Docker-backed control plane are run by the parent with dummy principals in a scratch AGENTBOX_HOME on loopback inside this disposable cloud container (labelled parent-live). Promotion uses tools/promote.py.",
+ "execution_note": "Agent-run target code runs only through tools/sbx: docker run --network none --read-only, host /usr and the audited worktree read-only, writes only to agents/<id>/scratch (a 256 MiB loop-mounted ext4 per agent), /dev/shm tmpfs 16 MiB, --pull never, jinja2/markupsafe mounted read-only, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB, 1 CPU, 64 pids, 32 MiB file size, 120 s, explicit env allowlist. Checks that need the real Docker-backed control plane are run by the parent with dummy principals in a scratch AGENTBOX_HOME on loopback inside this disposable cloud container (labelled parent-live). Promotion uses tools/promote.py.",
  "companions_selected": [],
  "prior_runs": [
   {
@@ -45,5 +45,10 @@
  ],
  "shared_file_owner": "parent",
  "run_status": "in_progress",
- "agents_spent": {}
+ "agents_spent": {
+  "recon": 4
+ },
+ "agents_spent_total": 4,
+ "phase": "phase1_complete",
+ "phase_note": "Reconnaissance finished (recon-1a..1d, Opus); architecture.md written; ledger seeded with 30 planned units for 13 hunters (x_hunter). Paused at the owner's request before Phase 2 hunting."
 }
