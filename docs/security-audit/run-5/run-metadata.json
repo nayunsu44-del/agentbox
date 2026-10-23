@@ -35,13 +35,13 @@
   "recon": 0,
   "hunters": 8,
   "phase3": 8,
-  "phase5": 6,
+  "phase5": 8,
   "retries": 2,
-  "critics": 1,
+  "critics": 2,
   "reverify": 1
  },
- "agents_spent_total": 26,
- "phase": "wave2_hunting_and_phase5",
+ "agents_spent_total": 29,
+ "phase": "phase5_and_final_critic",
  "retry_note": "h-gui-lease and h-bodylimit were each resumed once to fix only the unit reviewed_paths union (HUNTING.md contract); results otherwise unchanged.",
  "deviations": [
   "r-prune Phase 5 replace changed only two line references (cli.py:322->323, audit.py:353-354->358-359) and wording in trace/execution/confidence; apply.py parked it as material by field, the parent checked the diff (verdict, root cause, severity, trace kinds/files/lines unchanged) and applied it with tools/apply5_nonmaterial.py without a re-verifier."

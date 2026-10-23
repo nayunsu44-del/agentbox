@@ -802,7 +802,9 @@
    "agentbox/preview.py",
    "agentbox/sandbox.py",
    "agentbox/service.py",
-   "agentbox/templates/_approvals.html"
+   "agentbox/templates/_approvals.html",
+   "agents/parent-live/artifacts/preview_exec.json",
+   "agents/v-preview/scratch/count.py"
   ],
   "local_checks": [
    {
@@ -853,6 +855,37 @@
     "method": "local",
     "result": "preview_command appends one note per unrecognised segment with no cap (preview.py:122-125). Measured: 32/128/512 KiB 'x;' commands gave 16384/65536/262144 notes and preview JSON of 1.46/5.83/23.3 MB, a constant 44.5x. tracemalloc peak was 14.8/59.4 MiB at 128/512 KiB, which extrapolates to about 950 MiB for 8 MiB. ApprovalStore.create json.dumps the raw preview into the pending row (approvals.py:49-59). _approvals.html renders every note (line 16) and the full command (line 8) for pending rows. The audit copy is bounded by bound_payload (audit.py:141-152). This is the same root cause, and the same remediation (a NOTES_MAX cap in preview.py), as the already-filed h-approvals finding agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention, which measured the 5832767-byte preview and the 7.47 MB card. It is consolidated there, not re-filed.",
     "artifact": "agents/h-policy-cpu/artifacts/h2.out"
+   },
+   {
+    "agent_id": "v-preview",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/default_policy.yaml",
+     "agentbox/preview.py",
+     "agentbox/sandbox.py",
+     "agentbox/service.py",
+     "agents/parent-live/artifacts/preview_exec.json",
+     "agents/v-preview/scratch/count.py"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
+   },
+   {
+    "agent_id": "v-policy-cpu",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/config.py",
+     "agentbox/policy.py",
+     "agentbox/service.py"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
@@ -869,7 +902,9 @@
    "call_tool's executor job is not cancelled when the HTTP client disconnects (api.py:277-278), so a long decide or preview keeps its tool_pool thread and _busy slot to completion even after the sandbox is deleted.",
    "_raw_hits (policy.py:164-170), has_bash_comment (policy.py:85-125), simple_programs and _split_segments are linear with small constants (0.002-0.1 s at 64 KiB). Nested quoting depth is capped at 4 (_words) and 3 (_split_segments), so recursion multiplies cost by at most about 5x. No superlinear path was found.",
    "The unbounded per-segment preview notes (preview.py:122-125; 44.5x JSON amplification, about 950 MiB estimated Python memory at 8 MiB) and the uncapped _approvals.html render of pending rows (line 16) share the remediation already attached to the filed h-approvals fingerprint (NOTES_MAX in preview_command). A TOOL_ARG_MAX before decide would also bound them."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v-policy-cpu"
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws%20upgrade%20before%20ws.accept%28%29::agentbox%2Fapi.py%23desktop_ws%20async%20handler%3A%20synchronous%20SQLite%20%28session%2C%20lease%29%20and%20Docker%20SDK%20calls%20on%20the%20event%20loop%20before%20accept%20%2B%20agentbox%2Fdesktop_ws.py%23relay%20setup::agentbox%2Fapi.py%20%2B%20agentbox%2Fdesktop_ws.py%20%2B%20agentbox%2Fdesktop.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",

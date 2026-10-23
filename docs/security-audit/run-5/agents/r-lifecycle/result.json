@@ -1,0 +1,4 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/sandbox.py:SandboxManager.snapshot:delete-race-orphaned-snapshot-image"
+}

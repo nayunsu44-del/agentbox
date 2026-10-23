@@ -1,0 +1,124 @@
+{
+ "verdict": "confirmed",
+ "fingerprint": "agentbox/policy.py:_words:per-token-shlex-relex-without-command-length-cap",
+ "title": "Agent exec command of up to 8 MiB drives minutes of GIL-holding policy parsing per call, slowing the shared control plane",
+ "description": "An agent token can POST /sandboxes/{sid}/tools/exec with a command made of shell-punctuation tokens (for example 'x;x;x;...') up to the 8 MiB AGENTBOX_MAX_BODY. No per-command or per-argument length cap exists before Policy.decide. With the default policy, the first rule (rm-curl-needs-approval) calls command_names, which calls _words. _words builds a new shlex.shlex for every token that contains a shell punctuation character, including each bare ';'. That costs about 40 us per token and is linear: 0.76/1.20/2.39/5.54 s for 16/32/64/128 KiB in this verifier's rerun, so roughly 300 s of CPU for one 8 MiB call (extrapolated, not run). The work runs on the shared 32-thread tool_pool and holds the GIL. One agent can keep 4 such calls running (tool_concurrency). The evaluation happens before the pending-approval cap, so that cap does not stop it. A stand-in asyncio loop on the main thread slowed from 1.6 ms median / 1.9 ms max (idle) to 6.9/12.2 ms with 1 decide thread and 7.4/60 ms with 4 decide threads. This is degradation of the shared control plane (human API, other sandboxes) for as long as the agent re-issues calls, not a freeze.",
+ "root_cause": "Policy evaluation has no input-size bound. AgentBox._call_tool passes args['command'] of any length to Policy.decide (service.py:311). The only limit is the 8 MiB HTTP body cap. _words (policy.py:40-62) re-lexes every token that contains whitespace or a shell punctuation character with a fresh shlex.shlex instance (policy.py:45, 60-61), even a token that is only ';'. shlex construction is expensive, so cost is about 40 us per punctuation token, and an 8 MiB command holds about 4M such tokens.",
+ "intended_behavior": "An agent-supplied command or argument longer than a small fixed bound (for example 64 KiB) is rejected (400/413) or sent straight to REQUIRE_APPROVAL with a fixed 'too long to analyse' preview, before Policy.decide and preview run. _words does not re-lex tokens made only of punctuation, so evaluation costs at most milliseconds and human requests keep their normal latency.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 274,
+   "scope": "call_tool route",
+   "description": "An agent token posts {\"args\":{\"command\":\"x;\"*N}}. ToolCall.args is an unbounded dict (api.py:54-55), limited only by the _BodyLimit middleware at 8 MiB (config.py:65)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/api.py",
+   "line": 277,
+   "scope": "call_tool route",
+   "description": "Dispatched to the shared 32-thread tool_pool (api.py:160) via run_in_executor (api.py:277-278). A client disconnect does not cancel the running job."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 288,
+   "scope": "AgentBox.call_tool",
+   "description": "Admits up to tool_concurrency (default 4, config.py:53) concurrent calls per sandbox (service.py:286-290), with no size check on args."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 311,
+   "scope": "AgentBox._call_tool",
+   "description": "policy.decide(tool, args) runs with the raw args after the tool_request audit row and before the pending-approval cap (service.py:326)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/policy.py",
+   "line": 211,
+   "scope": "Policy.decide",
+   "description": "The first default rule (rm-curl-needs-approval, default_policy.yaml:11-17) has match.commands, so decide calls command_names(cmd) on the whole command, then _raw_hits."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/policy.py",
+   "line": 61,
+   "scope": "_words",
+   "description": "Each token containing a punctuation char (every ';') is recursively re-lexed with a new shlex.shlex instance (policy.py:45) while holding the GIL, about 40 us per token."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/policy.py",
+   "line": 60,
+   "description": "Recursion condition: any token with whitespace or a char in _SHELL_PUNCT (policy.py:26), including a bare ';' token, calls _words(t, depth+1), which builds a new shlex at line 45."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 311,
+   "description": "decide is called with the raw command. No length check exists in call_tool/_call_tool (service.py:279-311). The only size constants are LOGGED_ARGS_MAX (audit logging only, service.py:39) and AUDIT_STR_MAX (audit.py:120)."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 65,
+   "description": "max_body_bytes defaults to 8 MiB and is the only bound on the command length."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 286,
+   "description": "Per-sandbox tool_concurrency allows 4 concurrent evaluations per agent; tool_pool has 32 workers across sandboxes (api.py:160)."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "Requires a sandbox agent token, the lowest-trust principal, which the threat model assumes can be prompt-injected."
+  },
+  {
+   "kind": "system_configuration",
+   "description": "Default AGENTBOX_MAX_BODY (8 MiB), the default policy with an exec 'commands' rule (rm-curl-needs-approval), and the default tool_concurrency of 4. A policy with no exec commands rule would skip command_names."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "A prompt-injected agent holding its own sandbox's agent token repeatedly sends exec tool calls whose command is a long run of 'x;' tokens. Each call ends as an approval request (or a 429 from the pending cap), but only after Policy.decide has consumed GIL-holding CPU in proportion to the command length. Up to 4 calls per sandbox run at once.",
+  "payloads": [
+   "{\"args\":{\"command\":\"x;x;x;...\"}} with 'x;' repeated 65536 times (131072-byte command)",
+   "Policy.load('agentbox/default_policy.yaml').decide('exec', {'command': 'x;' * 65536})"
+  ],
+  "instructions": [
+   "In the sandbox (no network, uid 65534, 1 CPU), load the default policy with agentbox.policy.Policy.load and time Policy.decide('exec', {'command': 'x;'*n}) for n = 8192, 16384, 32768, 65536 (16-128 KiB).",
+   "In the same process run an asyncio probe on the main thread (30 iterations of a 20000-step Python loop plus await asyncio.sleep(0.001)) alone, with 1 thread, and with 4 threads each running decide on a 32 KiB 'x;' command. Record median and max iteration latency."
+  ],
+  "observed_result": "Verifier rerun, decide('x;'*n): 16 KiB 0.757 s, 32 KiB 1.204 s, 64 KiB 2.392 s, 128 KiB 5.539 s, all returning require_approval via rule exec-needs-approval; growth is linear. Probe (32 KiB command per thread): idle median 1.6 ms / max 1.9 ms; 1 decide thread 6.9 / 12.2 ms; 4 decide threads 7.4 / 60.0 ms. This matches the hunter's figures (4.85 s at 128 KiB, 8.6 / 88.8 ms with 4 threads) within run-to-run variance. The 8 MiB figure of about 300 s is a linear extrapolation and was not run, and no live uvicorn server was measured."
+ },
+ "remediation": {
+  "strategy": "Bound the input before any parsing. In AgentBox._call_tool, before the tool_request audit row and policy.decide, refuse an exec command or any string argument over a fixed TOOL_ARG_MAX (for example 64 KiB, excluding write_file content which has its own size handling) with 413 and a tool_blocked audit row, or route it straight to REQUIRE_APPROVAL with a fixed 'too long to analyse' preview that skips command_names and preview_command. Also in _words, do not re-lex tokens made only of punctuation; recurse only on tokens that contain whitespace, '$(' or a backtick. Add a regression test asserting decide on a 64 KiB 'x;' command finishes in under about 100 ms and that a 1 MiB command is rejected or approval-routed without calling command_names.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/service.py",
+    "fixed_code": "TOOL_ARG_MAX = 64 * 1024\n...\n    def _call_tool(self, sid, tool, args, actor):\n        if tool not in TOOLS:\n            raise ServiceError(404, ...)\n        self.sandboxes.get(sid)\n        if any(isinstance(v, str) and len(v) > TOOL_ARG_MAX for k, v in args.items() if k != \"content\"):\n            self.log_best_effort(sid, tool, \"tool_blocked\", {\"reason\": \"argument_too_long\", \"limit\": TOOL_ARG_MAX})\n            raise ServiceError(413, f\"tool argument too long (max {TOOL_ARG_MAX})\")\n        ..."
+   },
+   {
+    "file_name": "agentbox/policy.py",
+    "fixed_code": "    for t in tokens:\n        if not t:\n            continue\n        cleaned = ...\n        out.extend(cleaned.split())\n        if all(c in _SHELL_PUNCT for c in t):\n            continue  # pure separator tokens are not re-lexed\n        if any(c.isspace() for c in t) or any(c in _SHELL_PUNCT for c in t):\n            out.extend(_words(t, depth + 1))"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "medium",
+   "reason": "A single agent-token request under the default configuration triggers it, and a prompt-injected agent can repeat it indefinitely. No approval or human action is needed first."
+  },
+  "impact": {
+   "score": "low",
+   "reason": "Measured effect is slowdown, not denial: about 4x median and up to 30x max latency for a same-process stand-in loop with one agent's 4 concurrent calls, lasting minutes per call at the body cap. The control plane keeps answering and the effect ends when the calls finish. Several hostile sandboxes would worsen it but that was not measured. Other availability costs from the same input (unbounded preview notes, per-operand container execs) are tracked under other findings."
+  },
+  "overall_severity": "low"
+ },
+ "confidence": {
+  "score": "medium",
+  "reason": "The source path, the linear CPU cost and the GIL contention were independently reproduced on the audited code with the default policy. The latency under a real uvicorn server with a Docker-backed sandbox, and the full 8 MiB figure, are extrapolated rather than observed."
+ }
+}
