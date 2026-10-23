@@ -1,0 +1,22 @@
+== check1: KeyboardInterrupt surfacing right after a successful COMMIT ==
+before: ((7, 1, 7), [])
+prune raised: OperationalError | context: KeyboardInterrupt KeyboardInterrupt()
+archive exists after failure: False
+after: ((3, 6, 8), [(1, 5, 'c1.jsonl.gz', '3628529612f99a8974e82e59a4813add5055860751c6c33be57298f6987f78f6')])
+verify(): {'ok': True, 'checked': 3, 'broken_at': None, 'reason': None, 'pruned_through': 5}
+verify_archives([archive]) raised: FileNotFoundError [Errno 2] No such file or directory: '/scratch/work/c1.jsonl.gz'
+verify_archives([]): {'ok': False, 'checked': 0, 'broken_at': None, 'reason': '정리 기록은 1번인데 아카이브는 0개', 'pruned_through': None}
+
+== check2: archive write fails mid-way (simulated ENOSPC) ==
+prune raised: OSError [Errno 28] No space left on device
+partial archive left: True 297
+db after: ((7, 1, 7), [])
+re-run raised: FileExistsError 아카이브 파일이 이미 있음: /scratch/work/c2.jsonl.gz
+
+== check3: normal prune, tamper detection, approval selection ==
+summary: {'audit_rows': 5, 'approval_rows': 4, 'first_id': 1, 'last_id': 5, 'pruned': True}
+approval statuses left: ['approved', 'pending']
+verify after prune: {'ok': True, 'checked': 3, 'broken_at': None, 'reason': None, 'pruned_through': 5}
+verify_archives: {'ok': True, 'checked': 8, 'broken_at': None, 'reason': None, 'pruned_through': 5}
+verify after deleting first post-anchor row: {'ok': False, 'checked': 0, 'broken_at': 7, 'reason': 'id가 6 다음에 7로 건너뜀 (항목 삭제 의심)', 'pruned_through': 5}
+done

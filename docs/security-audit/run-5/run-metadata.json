@@ -41,5 +41,6 @@
   "reverify": 0
  },
  "agents_spent_total": 8,
- "phase": "phase2_hunting"
+ "phase": "phase2_hunting",
+ "retry_note": "h-gui-lease and h-bodylimit were each resumed once to fix only the unit reviewed_paths union (HUNTING.md contract); results otherwise unchanged."
 }

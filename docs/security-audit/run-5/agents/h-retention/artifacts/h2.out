@@ -1,0 +1,7 @@
+3.13.16 sqlite 3.45.1
+calibration: COMMIT took 0.269s
+attempt 0: inner-except:KeyboardInterrupt then ROLLBACK raised OperationalError: cannot rollback - no transaction is active | outer-except:KeyboardInterrupt (prune would unlink the archive here); rows committed=20000
+attempt 1: inner-except:KeyboardInterrupt then ROLLBACK raised OperationalError: cannot rollback - no transaction is active | outer-except:KeyboardInterrupt (prune would unlink the archive here); rows committed=20000
+attempt 2: inner-except:KeyboardInterrupt then ROLLBACK raised OperationalError: cannot rollback - no transaction is active | outer-except:KeyboardInterrupt (prune would unlink the archive here); rows committed=20000
+attempt 3: inner-except:KeyboardInterrupt then ROLLBACK raised OperationalError: cannot rollback - no transaction is active | outer-except:KeyboardInterrupt (prune would unlink the archive here); rows committed=20000
+attempt 4: inner-except:KeyboardInterrupt then ROLLBACK raised OperationalError: cannot rollback - no transaction is active | outer-except:KeyboardInterrupt (prune would unlink the archive here); rows committed=20000

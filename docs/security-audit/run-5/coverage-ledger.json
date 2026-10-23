@@ -154,17 +154,81 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-bodylimit",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/cli.py",
+   "agentbox/config.py",
+   "agentbox/templates/sandbox.html",
+   "agentbox/web.py",
+   "deploy/Caddyfile",
+   "tests/test_m4_unit.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-bodylimit",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/config.py",
+     "tests/test_m4_unit.py"
+    ],
+    "invariant": "_BodyLimit (api.py:89-148, added at api.py:170) bounds every http-scope body before routing/auth under all framings: Content-Length over cap or non-digit, chunked/no Content-Length, duplicate Content-Length, path/method variants, root_path.",
+    "method": "local",
+    "result": "Drove the real build() ASGI app (fake docker client, raw ASGI messages) in the sbx sandbox. CL 9 MiB on POST /sandboxes -> 413 with 0 bytes read; CL '+2' -> 413 unread; duplicate CL (999999999999 then 2; dict keeps last) with 10 MiB streamed -> 413 after 9 MiB delivered to the middleware, the app never sees more than 8 MiB; chunked 10 MiB -> 413, same; PUT /sandboxes/x/files -> 405, POST .../files/ -> 307, //sandboxes/x/files -> 404, all under the 8 MiB JSON cap with 0 bytes read; unauthenticated POST /sandboxes/x/files with 10 MiB -> 401 with 0 bytes read (form parsed only after screen_human, api.py:336-340). root_path-prefixed scope paths do not match _UPLOAD_PATH, so they get the smaller 8 MiB cap (fails closed, functional only). After the fake http.disconnect FastAPI handles ClientDisconnect and guarded_send drops later messages; exactly one response.start was sent. A 5000-digit Content-Length makes int() raise ValueError inside _BodyLimit (500 for that request only; in deployment h11 parses Content-Length first). The byte cap holds in every framing.",
+    "artifact": "agents/h-bodylimit/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-bodylimit",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/templates/sandbox.html"
+    ],
+    "invariant": "Unauthenticated form routes (/login Form, /ui/sandboxes Form) cannot be made to parse or spool more than the cap before auth.",
+    "method": "local",
+    "result": "POST /login with 10 MiB urlencoded body -> 400 'Field exceeded maximum size of 1024KB' after 2 MiB read (Starlette 1.7.0 FormParser max_part_size/max_fields=1000). Multipart /login with 900 file parts (961 KB) is parsed and spooled into SpooledTemporaryFile objects before the token check (status 200 failed-login page), which is bounded by the 8 MiB cap and max_files=1000 and closed by FastAPI's file_stack. The /ui upload form (templates/sandbox.html:51-53) posts to the same /sandboxes/{sid}/files route, so there is no separate upload parser. Login-failure audit rows (prior agentbox/web.py:unauthenticated-login-failure-audit-growth) are now rate-logged at 5 per 60 s globally with a suppressed count (web.py:89-114) and are removable via the host prune command, so the prior root cause of unbounded attacker-paced rows no longer holds.",
+    "artifact": "agents/h-bodylimit/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-bodylimit",
+    "reviewed_paths": [
+     "agentbox/api.py"
+    ],
+    "invariant": "An unauthenticated client's work before principal() is small and does not scale far beyond the body cap (prior agentbox/api.py:preauth-request-body-read-before-principal).",
+    "method": "local",
+    "result": "Variant not covered by the fix: FastAPI still reads the body and runs json.loads before solve_dependencies, so principal() runs only after decoding. An unauthenticated POST /sandboxes/sb_x/tools/exec with body {\"args\":{\"a\":[{},{},...]}} returned 401 with tracemalloc peak 27.4 MB for 1.05 MB and 54.9 MB for 2.10 MB (26x, linear). By extrapolation one request at the 8 MiB default cap allocates about 220 MB of transient Python objects before rejection, plus about 80 ms of event-loop CPU per 2 MiB (about 0.35 s per 8 MiB). The 8 MiB cap was sized for authenticated write_file, but every JSON route gets it before auth. The deploy has no memory limit in docker-compose and no uvicorn limit_concurrency (cli.py:127). Caddy's request_body default is 256MB for all routes (deploy/Caddyfile:7-8), so the proxy does not bound JSON routes.",
+    "artifact": "agents/h-bodylimit/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-bodylimit",
+    "reviewed_paths": [
+     "deploy/Caddyfile",
+     "agentbox/cli.py"
+    ],
+    "invariant": "Deployment layers in front of the cap.",
+    "method": "source",
+    "result": "Caddyfile request_body max_size defaults to 256MB for every route (no per-route JSON cap). uvicorn.run (cli.py:127) passes no limit_concurrency, h11_max_incomplete_event_size or body-read timeout, so connections that trickle a body are not timed out. That is uvicorn's general behavior and holds no thread. httptools is not installed in this environment, so h11 0.16 is used, and h11 rejects conflicting duplicate Content-Length values before the app runs.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/api.py:preauth-request-body-read-before-principal"
+  ],
   "unresolved": [],
   "x_hunter": "h-bodylimit",
   "x_prior_unit": null,
   "x_prior_fingerprints": [
    "agentbox/api.py:preauth-request-body-read-before-principal",
    "agentbox/web.py:unauthenticated-login-failure-audit-growth"
+  ],
+  "x_hardening": [
+   "Smallest fix for the candidate: in _BodyLimit, apply a small cap (e.g. 64 KiB, enough for /login and htmx forms) when the request has neither an Authorization header nor the session cookie, and keep 8 MiB only for credentialed requests. Better, move token/cookie validation into the middleware for JSON routes so unauthenticated requests are rejected before any body is read. Regression: an unauthenticated 1 MiB JSON body to /sandboxes/x/tools/exec gets 413 or 401 with no body read.",
+   "_BodyLimit calls int(length) on any all-digit Content-Length. A value over 4300 digits raises ValueError and returns a 500 (observed via raw ASGI, T6c). Use len(length) > 20 or try/except before int(). In deployment h11 parses Content-Length first, so this is robustness only.",
+   "_UPLOAD_PATH fullmatches scope['path'], which includes root_path under a prefix-mounted deployment. Uploads behind a root_path then get the 8 MiB JSON cap. This fails closed (functional only). Match against scope['path'] with root_path removed.",
+   "After the fake http.disconnect in the authenticated put_files route, Starlette raises ClientDisconnect out of request.form(). FastAPI does not catch it in an endpoint, so uvicorn logs 'Exception in ASGI application' (log noise, human-only path). Partially spooled temp files are unlinked when garbage collected.",
+   "Unauthenticated /login also accepts multipart/form-data and spools up to max_files=1000 file parts (at most 8 MiB in total) into SpooledTemporaryFile before the token check. This is bounded by the cap, but a 64 KiB pre-auth cap would also remove it.",
+   "Login-failure logging uses one global 5-per-minute window, so an attacker's failures crowd out per-attempt rows for real failures (they show up only in the suppressed_before count). This is an audit-detail gap, not a growth issue.",
+   "uvicorn is run without limit_concurrency and has no request header/body read timeout. A client that trickles a body holds a socket and up to the cap in bytes indefinitely (generic slowloris, no thread held). The bundled Caddy front end is the only place to set read timeouts."
   ]
  },
  {
@@ -410,16 +474,114 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-retention",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "README.md",
+   "agentbox/approvals.py",
+   "agentbox/audit.py",
+   "agentbox/cli.py",
+   "agentbox/retention.py",
+   "agentbox/service.py",
+   "tests/test_retention.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-retention",
+    "reviewed_paths": [
+     "agentbox/retention.py",
+     "agentbox/cli.py"
+    ],
+    "invariant": "A prune that fails or is interrupted leaves the database and archive consistent: the archive is unlinked only when the DB transaction did not commit.",
+    "method": "local",
+    "result": "Failed. retention.prune (retention.py:126-131) unlinks the archive in the outer `except BaseException` without checking whether COMMIT went through. h.py check1 used a Connection subclass that raises SIGINT right after a successful COMMIT returns. Result: prune raised OperationalError('cannot rollback - no transaction is active') chained from KeyboardInterrupt. The archive was deleted. The DB had committed: audit rows 1-5 deleted, an audit_anchor row (last_id 5, archive c1.jsonl.gz, sha256 3628...) and audit_pruned row #8 present. verify() returned ok with pruned_through 5. verify_archives([archive]) raised FileNotFoundError and verify_archives([]) failed with an anchor/archive count mismatch. cmd_prune (cli.py:321-323) catches only ValueError/FileExistsError/RuntimeError, so the operator sees a traceback, and a re-run finds nothing to prune.",
+    "artifact": "agents/h-retention/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-retention",
+    "reviewed_paths": [
+     "agentbox/retention.py"
+    ],
+    "invariant": "Timing prerequisite: a real asynchronous SIGINT that arrives while a real sqlite3 COMMIT runs surfaces inside the try whose last statement is COMMIT, the layout of retention.py:105-132.",
+    "method": "local",
+    "result": "Confirmed in 5 of 5 attempts (Python 3.13.16, SQLite 3.45.1, WAL, synchronous=FULL, a 20k-row transaction whose COMMIT took about 0.27 s, timer SIGINT at dur/3). Each time KeyboardInterrupt was raised in the inner except after the commit was durable (20000 rows committed). ROLLBACK then raised 'cannot rollback - no transaction is active' and the outer except ran, which in prune is where the archive is unlinked.",
+    "artifact": "agents/h-retention/artifacts/h2.out"
+   },
+   {
+    "agent_id": "h-retention",
+    "reviewed_paths": [
+     "agentbox/retention.py",
+     "agentbox/audit.py",
+     "agentbox/approvals.py",
+     "agentbox/service.py",
+     "tests/test_retention.py"
+    ],
+    "invariant": "Prune removes only audit rows before the first row at or after the cutoff and only approvals in denied/executed/failed/expired. Deletions it did not perform are still detected by verify()/verify_archives().",
+    "method": "local",
+    "result": "Holds. _plan (retention.py:54-64) selects id < MIN(id WHERE ts >= cutoff). Timestamps share the UTC millisecond isoformat used by _cutoff (retention.py:44-51), and the future cutoff is rejected. DELETE is bounded by the planned last id (retention.py:114). Approvals are planned by terminal status; claim moves only pending rows (approvals.py:82-89) and finish runs only after claim (service.py:406-483), so a terminal status cannot revert before the id-only delete. h.py check3: pending and approved rows were kept and 4 terminal rows were pruned. verify and verify_archives were ok after the prune. Deleting the first row after the anchor was detected (id gap at #7). tests/test_retention.py: 7 passed in the sandbox (pytest.out, not promoted). insert_record chains from the latest anchor only when the table is empty (audit.py:228-243), and verify() fails on an anchor with an empty table (audit.py:343-344).",
+    "artifact": "agents/h-retention/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-retention",
+    "reviewed_paths": [
+     "agentbox/retention.py",
+     "agentbox/audit.py"
+    ],
+    "invariant": "Concurrent server writes and concurrent prunes cannot make prune delete unarchived rows or leave the append-only trigger missing.",
+    "method": "source",
+    "result": "Holds. The plan is read outside the lock, but the audit table is append-only, so planned rows cannot change. Inside BEGIN IMMEDIATE, prune re-checks MIN(id) against the planned first row and the latest anchor (retention.py:108-111). DROP TRIGGER / DELETE / CREATE TRIGGER from NO_DELETE_SQL (audit.py:56-59) all run in the same write transaction, so other connections (AuditLog.append BEGIN IMMEDIATE, audit.py:294) never see the trigger missing, and ROLLBACK restores it on error. An approvals-only prune reuses the latest anchor, or (0, GENESIS), inside the transaction (retention.py:117), so verify_archives' per-archive last-row check (audit.py:370) stays consistent. The remaining in-DB anchor forgeability is the documented README limit and is not reported.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-retention",
+    "reviewed_paths": [
+     "agentbox/retention.py",
+     "README.md"
+    ],
+    "invariant": "If the archive cannot be written, nothing is deleted (README.md:190) and the archive state stays clean.",
+    "method": "local",
+    "result": "The DB is unchanged, but a partial file is left behind. h.py check2 simulated ENOSPC on the third gzip write: prune raised OSError 28, the DB still held 7 rows and no anchor, a 297-byte partial archive remained, and a re-run with the same path failed with FileExistsError. _write_archive (retention.py:67-84) runs before the try that unlinks. No audit loss, so recorded as hardening.",
+    "artifact": "agents/h-retention/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-retention",
+    "reviewed_paths": [
+     "agentbox/audit.py"
+    ],
+    "invariant": "Archive serialization and verification match live verify. A sha-pinned archive cannot carry forged audit rows, and parsing it does not amplify beyond operator-supplied content.",
+    "method": "source",
+    "result": "Holds. _write_archive uses json.dumps (escapes control characters, so TextIOWrapper universal-newline splitting is safe) and read_archive rebuilds the same column tuples (audit.py:208-225). check_chain recomputes hashes from GENESIS across archives into the live table (audit.py:360-378), so content swapped after the sha check (TOCTOU between read_bytes at :362 and read_archive at :364) cannot change the audit rows without breaking the chain. Approval rows in the archive are protected only by that sha check and are not otherwise verified. The archive is operator-supplied and pinned to an anchor sha, and its size is bounded by the pruned DB rows.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-retention",
+    "reviewed_paths": [
+     "agentbox/audit.py",
+     "agentbox/retention.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "Revalidate the run-4 needs_validation record agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention against current source.",
+    "method": "source",
+    "result": "The retention half no longer holds. A host-only prune now exists (retention.py:87, cli.py:319) and keeps the chain verifiable through the anchor and archive (audit.py:336-379, verified locally in check3), so capacity recovery is no longer exclusive with integrity. Pruning frees pages for reuse, and file shrink needs an offline VACUUM per README.md:194. The aggregate-bound half (disk_low guard service.py:388-404, compaction service.py:406-411) belongs to the peer unit owned by h-approvals and was not re-hunted here. No candidate with that fingerprint.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/retention.py:prune:archive-unlinked-after-committed-prune-on-interrupt"
+  ],
   "unresolved": [],
   "x_hunter": "h-retention",
   "x_prior_unit": null,
   "x_prior_fingerprints": [
    "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention"
+  ],
+  "x_hardening": [
+   "retention._write_archive (retention.py:67-84) runs before the try that unlinks on failure, so ENOSPC or another write error leaves a partial archive. It wastes disk during the exact low-disk scenario prune exists for and blocks a re-run with FileExistsError (h.out check2). Wrap the write and unlink on failure.",
+   "The archive sha256 is computed by re-reading the path after close (retention.py:84), and verify_archives hashes the file (audit.py:362) and then re-opens it to parse (audit.py:364). Hash the bytes as written and parse the same buffer that was hashed. Archived approval rows are protected only by this sha check.",
+   "The parent directory is not fsynced after creating the archive, so a power loss after COMMIT could keep the anchor but lose the archive's directory entry. Add os.fsync on the directory fd.",
+   "The archive is created with the default umask (open 'xb', retention.py:70) and carries full finished approval rows, including the unmasked result column and any args left raw when _finish failed. Create it 0600, since README tells operators to store it elsewhere.",
+   "AuditLog.verify (audit.py:338-340) and verify_archives (audit.py:354-357) read the anchor and rows as separate autocommit statements. A prune committing between them gives a false 'id gap' alarm. This fails closed; wrapping both reads in one read transaction removes the false positive.",
+   "Capture PNGs are indexed only through approval rows (service.py:114-116 drop_captures). An orphan capture from the create-then-write window (service.py:337-341) or a failed unlink is no longer reachable by sandbox-delete cleanup once prune removes its approval row. Prune could also unlink captures/<aid>.png for pruned approvals."
   ]
  },
  {

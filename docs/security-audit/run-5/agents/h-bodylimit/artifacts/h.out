@@ -1,0 +1,16 @@
+T1 CL over json cap: (413, b'{"detail": "\xec\x9a\x94\xec\xb2\xad \xeb\xb3\xb8\xeb\xac\xb8\xec\x9d\xb4 \xeb\x84\x88\xeb\xac\xb4 \xed\x81\xbc (\xec\xb5\x9c\xeb\x8c\x80 8388608 bytes)"}', {'delivered': 0, 'receives': 0}, None, 1)
+T2a CL '+2': (413, b'{"detail": "\xec\x9a\x94\xec\xb2\xad \xeb\xb3\xb8\xeb\xac\xb8\xec\x9d\xb4 \xeb\x84\x88\xeb\xac\xb4 \xed\x81\xbc (\xec\xb5\x9c\xeb\x8c\x80 8388608 bytes)"}', {'delivered': 0, 'receives': 0}, None, 1)
+T3 dup CL (big,small) + 10 MiB streamed: (413, b'{"detail": "\xec\x9a\x94\xec\xb2\xad \xeb\xb3\xb8\xeb\xac\xb8\xec\x9d\xb4 \xeb\x84\x88\xeb\xac\xb4 \xed\x81\xbc (\xec\xb5\x9c\xeb\x8c\x80 8388608 bytes)"}', {'delivered': 9437184, 'receives': 9}, None, 1)
+T4 chunked 10 MiB on JSON route: (413, b'{"detail": "\xec\x9a\x94\xec\xb2\xad \xeb\xb3\xb8\xeb\xac\xb8\xec\x9d\xb4 \xeb\x84\x88\xeb\xac\xb4 \xed\x81\xbc (\xec\xb5\x9c\xeb\x8c\x80 8388608 bytes)"}', {'delivered': 9437184, 'receives': 9}, None, 1)
+T5 PUT /sandboxes/sb_x/files 10 MiB streamed unauth: (405, b'{"detail":"Method Not Allowed"}', {'delivered': 0, 'receives': 0}, None, 1)
+T5 POST /sandboxes/sb_x/files/ 10 MiB streamed unauth: (307, b'', {'delivered': 0, 'receives': 0}, None, 1)
+T5 POST //sandboxes/sb_x/files 10 MiB streamed unauth: (404, b'{"detail":"Not Found"}', {'delivered': 0, 'receives': 0}, None, 1)
+T5 POST /sandboxes/sb_x/files 10 MiB streamed unauth: (401, b'{"detail":"\xec\x84\xb8\xec\x85\x98 \xec\x97\x86\xec\x9d\x8c. \'agentbox ui\'\xeb\xa1\x9c \xeb\xa1\x9c\xea\xb7\xb8\xec\x9d\xb8 \xeb\xa7\x81\xed\x81\xac\xeb\xa5\xbc \xeb\xb0\x9b\xec\x9d\x84 \xea\xb2\x83"}', {'delivered': 0, 'receives': 0}, None, 1)
+T6 /login 10 MiB urlencoded: (400, b'{"detail":"Field exceeded maximum size of 1024KB."}', {'delivered': 2097152, 'receives': 2}, None, 1)
+T6b /login multipart 900 file parts (961157 bytes): 200 None
+T6c 5000-digit CL: 500 ValueError('Exceeds the limit (4300 digits) for integer string conversion: value has 5000 digits; use sys.set_int_max_str_digits() to increase the limit')
+T6d upload regex with root_path-prefixed scope path matches: False
+T7 unauth tools/exec JSON 1048570 bytes: status=401 peak_traced=27413189 bytes ratio=26.1x detail=b'{"detail":"Authorization: Bearer <token> \xed\x95\x84\xec\x9a\x94"}'
+T7 unauth tools/exec JSON 2097148 bytes: status=401 peak_traced=54886160 bytes ratio=26.2x detail=b'{"detail":"Authorization: Bearer <token> \xed\x95\x84\xec\x9a\x94"}'
+T8 healthz alone 1.2 ms status=200; healthz during unauth 2 MiB JSON: status=200 0.9 ms; unauth request status=401 total 82.2 ms
+maxrss_kib 269068
