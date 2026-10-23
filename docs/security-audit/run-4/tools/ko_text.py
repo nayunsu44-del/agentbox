@@ -97,6 +97,14 @@ KO = {
         "obs": "- 경쟁 실행: 삭제가 오류 없이 끝나 상태가 `deleted`가 되고 토큰이 무효로 나왔다. 그다음 멈춰 있던 복원이 정상 반환했다.\n- 결과: 상태 `running`, 새 컨테이너가 살아 있었고 옛 토큰이 다시 유효했다. `list_dir` 호출이 200으로 실행됐다.\n- 부모가 실제 Docker로 재현했다(`agents/parent-live/artifacts/lifecycle-race.json`, 6회 중 5회). 0.25초와 0.4초 오프셋에서 되살아났고, 0.7초에서는 삭제가 이겼다.",
         "fix": "샌드박스별 수명 주기 락 하나로 pause·resume·snapshot·restore·delete를 직렬화한다. `restore`는 락 안에서 행을 다시 읽고 `deleted`면 거절한다. `_set`에 상태 조건을 넣는 방법도 함께 검토한다.",
     },
+    "agentbox/service.py:snapshot-quota:toctou-between-quota-gate-and-pre-exec-snapshot": {
+        "title": "스냅샷 상한은 컨테이너를 한 번 확인해서 정하는데, docker commit은 상한이 보지 않는 두 번째 확인으로 일어난다",
+        "desc": "샌드박스가 `snapshot_quota`(기본 50)에 도달하면, 스냅샷이 필요한 허용 호출은 승인 요청으로 바뀌어야 한다. `_call_tool`은 상한 확인(service.py:298)에서 `_needs_snapshot`을 부른다. `write_file`이면 이것은 컨테이너 안의 `test -e` 확인이다(service.py:236 → sandbox.py:458-461). 이 확인이 '스냅샷 불필요'를 돌려주면 호출은 허용으로 남는다. 그런데 실행 직전(service.py:343)에 `_needs_snapshot`을 한 번 더 부르고, 그 결과로 상한을 다시 보지 않은 채 커밋한다(345). 두 확인 사이에 대상 경로가 생기면, 승인으로 가야 할 상한 초과 호출이 승인 없이 커밋된다. 에이전트는 허용 목록의 `touch`를 `write_file`과 동시에 보내 경로를 만들 수 있다. exec는 `SNAPSHOT_TOOLS`가 아니라 `_snap_locks`로 직렬화되지 않는다. 대기 승인 상한(20)은 승인 분기에만 걸려 이를 막지 못한다. 상한은 커밋이 쓰기 층 전체를 복사하므로 사람 없이 호스트 디스크를 채우지 못하게 하려고 있다(config.py:44-46).",
+        "root": "`_call_tool`이 에이전트가 바꿀 수 있는 컨테이너 상태를 두 번 읽는다. 상한 게이트와 커밋을 하나의 '스냅샷 필요' 판단에 묶지 않고, 커밋 자리에서 상한을 다시 확인하지도 않는다.",
+        "intended": "스냅샷 수가 상한에 이르면 허용 경로의 어떤 도구 호출도 사람 승인 없이 docker commit을 일으키면 안 된다. 상한 판단과 커밋을 같은 판단에 묶거나, 커밋 경로가 상한을 직접 다시 확인해야 한다.",
+        "obs": "부모가 실제 Docker 엔진에서 감사 소스를 그대로 돌려 재현했다(`agents/parent-live/artifacts/snapquota-race.json`). 상한은 2이고 수동 스냅샷 2개를 먼저 만들었다.\n- 대조군: 이미 있는 파일 덮어쓰기는 202 승인 대기(규칙 `snapshot-quota`)가 됐고 커밋은 없었다.\n- 경쟁: `touch /workspace/pN`과 `write_file /workspace/pN`을 동시에 보냈다. 21번 중 18번 `write_file`이 200으로 실행되며 승인 없이 커밋됐고, 스냅샷 수가 2에서 20이 됐다.\n- write가 20ms 먼저 시작한 경우부터 exec가 10ms 먼저 시작한 경우까지는 3/3이 뚫렸다. exec가 20ms 먼저면 첫 확인이 파일을 봐서 0/3이었다.\n- 3단계 샌드박스 하네스(지연을 모델링)도 같은 모양이었다.\n- r14가 제안 수정을 적용한 하네스에서는 상한 초과 커밋이 0이었다.",
+        "fix": "실행 직전 `_needs_snapshot`이 True이고 스냅샷 수가 상한 이상이면 커밋하지 않는다. 그 호출은 스냅샷 상한 승인 요청으로 돌리거나 409로 거절해 다시 부르게 한다. 이 확인을 `write_file`·`delete_file`을 이미 직렬화하는 샌드박스별 락 안에서 하면, 두 쓰기가 함께 통과하지 못한다. 두 확인 사이에 대상을 바꾸는 회귀 테스트를 추가한다.",
+    },
     "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized": {
         "title": "공용 제어 문자 필터가 U+061C(빠진 유일한 Bidi_Control)와 Cf·Zl·Zp 보이지 않는 문자를 놓쳐, 승인 카드가 실행될 명령 옆에 이 문자를 그대로 보여 준다",
         "desc": "run-3 v13 수정으로 `web._shown`이 모든 템플릿 출력에 `display.escape_controls`를 걸고, run-3 공격 문자열은 막힌다. 다만 문자 집합을 손으로 나열해 Bidi_Control 12개 중 U+061C가 빠졌다. U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028, U+2029도 빠졌다. 이 문자들은 카드의 명령 `<pre>`와 영향 경로 칸에 그대로 나오고, CLI의 `_safe`도 같다. 다만 이 문자들로 카드가 다른 명령처럼 읽히는지는 확인하지 못했다. U+061C는 강한 RTL 문자라 ASCII 글자 순서를 뒤집지 못하고, 주변 문장 부호 방향에만 영향을 준다.",

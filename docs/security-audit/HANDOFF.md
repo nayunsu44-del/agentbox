@@ -163,59 +163,59 @@ pytest                                                 # 160 passed
 
 이번 세션 확인 결과: 전체 pytest 231개 통과(재개 세션, 실제 Docker와 다시 빌드한 데스크톱 이미지, 건너뛴 것 없음). 이전 세션은 214개. CI의 acceptance가 건너뛴 테스트를 실패로 처리하므로, 바인드 마운트 테스트가 root가 아니면 `sudo -n`을 쓰게 고쳤다(`192019f`).
 
-## 4차 감사(run-4) 결과 — 2026-10-23 완료 (다음 세션은 후속 수정만 하면 된다)
+## 4차 감사(run-4) 결과 — 2026-10-23 (부분 감사, 확정 건 수정 대기)
 
-작업 브랜치 `ccr-17444317-ygb3a1`. 감사 기준 `main` `9805d91`. 프로필 `standard`, 호출 상한 50 중 **46회** 사용. 소유자 지시로 서브에이전트는 전부 DeepSeek(`doph`/`doph-2`, `deepseek-ai/DeepSeek-V4.1-Flash`)로 돌렸다(정찰만 이전 세션의 Opus 4회).
+- **기준과 브랜치:** 작업 브랜치 `ccr-17444317-ygb3a1`, draft PR #15. 감사 기준은 `main` `9805d91`(리팩토링 PR #11~#14 뒤)이다.
+- **프로필·예산:** `standard`, 호출 상한 50을 **모두** 썼다.
+- **상태:** `run_status: incomplete`(`budget_exhausted`). critic-1이 제안한 2단위를 헌팅하지 못했다.
+- **보고서(한국어):** `run-4/REPORT.md`, `FINDINGS-DETAIL.md`, `NEEDS-VALIDATION.md`. 영어 레코드 원문은 항목마다 접어 두었다.
 
-**결과: 확정 7건 / 검증 필요 5건 / 기각 0건(레코드 12건). 커버리지 30단위 전부 닫힘(covered 21, candidate 9).** 보고서는 `run-4/REPORT.md`, `FINDINGS-DETAIL.md`, `NEEDS-VALIDATION.md`(한국어).
+### 진행 경과
+1. **정찰(리눅스, Opus 4회):** `architecture.md`와 30단위 장부를 만들었다.
+2. **2~6단계 1차(Windows DeepSeek 하네스, 46회):** 소유자 지시로 모든 서브에이전트를 DeepSeek(`deepseek-ai/DeepSeek-V4.1-Flash`)로 돌렸다.
+3. **검토 보완(리눅스, 4회):** DeepSeek를 쓸 수 없는 환경이라 소유자 승인으로 Opus·Sonnet을 썼다.
+   - 1차에서 판정 없이 빠진 후보 v11을 v11(Opus)이 다시 검증했다. r13(Sonnet)이 레코드를 확인했다.
+   - 부모가 실제 Docker로 v11을 재현했고, r14(Opus)가 확정 승격을 검증했다.
+   - 최종 비평 critic-2(Opus)를 돌렸다.
+   - critic-1의 2단위를 장부에 `deferred`로 넣었다. 승인 카드 단위의 잘못 매핑된 검사를 바로잡았다.
+   - 도구를 리눅스로 이식했고, 보고서를 한국어로 다시 썼다.
 
-### 확정 (confirmed)
+### 결과 (`run-4/findings.json` 13건, 두 검증기 PASS)
+| ID | 판정 | 심각도 | 내용 | 지문 파일 |
+|---|---|---|---|---|
+| F1 | 확정 | 중간 | 인증 전 요청 본문을 끝까지 읽고 해석·임시 저장한 뒤 401 | `api.py` |
+| F2 | 확정 | 중간 | 인계 사이 `gui_lock`을 기다리던 GUI 입력이 구간 없이 실행 → 스냅샷·`gui_changes` 없음 | `service.py` |
+| F3 | 확정 | 중간 | 승인 미리보기·도구 오류 문자열로 감사 로그 상한 우회(run-3 v08 수정이 덜 막음) | `service.py` |
+| F4 | 확정 | 낮음 | 승인 카드 `rm` 영향 표가 공백·줄바꿈 경로를 잘못 표시 | `sandbox.py` |
+| F5 | 확정 | 낮음 | 인증 없는 `/static/novnc/*`가 요청마다 `docker create`와 tar 추출 | `sandbox_desktop.py` |
+| F6 | 확정 | 낮음 | 복원과 삭제가 겹치면 삭제한 샌드박스와 토큰이 되살아남(parent-live 6회 중 5회) | `service.py` |
+| F7 | 확정 | 낮음 | 스냅샷 상한 TOCTOU: `touch`와 `write_file`을 겨루면 승인 없이 커밋(parent-live 21회 중 18회) | `service.py` |
+| F8 | 확정 | 낮음 | 인증 없는 로그인 실패마다 지울 수 없는 감사 행 | `web.py` |
+| N1~N5 | 검증 필요 | — | `same_origin` scheme 무시, 감사·승인 행 무제한, 컨테이너 출력 리더 상한 부재, `_NET_WM_PID` 신뢰, 남은 bidi/보이지 않는 문자 | |
 
-| # | 심각도 | 제목 | 지문 |
-|---|---|---|---|
-| F1 | 중간 | 인증 전 요청 본문이 전부 읽히고 JSON 디코드·멀티파트 스풀된다 | `agentbox/api.py:preauth-request-body-read-before-principal` |
-| F2 | 중간 | `_logged_args` 상한을 우회해 승인 프리뷰·도구 오류 문자열이 감사 로그에 그대로 들어간다 | `agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap` |
-| F3 | 중간 | `gui_lock` 대기 중 인계가 끼면 버스트 없이 GUI 입력이 실행돼 기록·스냅샷이 빠진다 | `agentbox/service.py:_call_tool:needs-snapshot-gate-before-gui-lock-lets-burstless-gui-input-after-handback` |
-| F4 | 낮음 | 복원이 삭제와 겹치면 삭제된 샌드박스 행이 되살아나 폐기한 에이전트 토큰이 다시 유효해진다 | `agentbox/service.py:delete_sandbox:racing-restore_sandbox-resurrects-deleted-record-and-revives-agent-token` |
-| F5 | 낮음 | 승인 카드의 rm 영향 표가 공백·개행 포함 경로를 잘못 보고한다(존재하는 파일을 '없음'으로) | `agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets` |
-| F6 | 낮음 | 인증 없는 `GET /static/novnc/*`가 요청마다 docker create + tar 추출을 한다(단일 실행 보장 없음) | `agentbox/sandbox_desktop.py:extract-novnc-unauthenticated-no-singleflight` |
-| F7 | 낮음 | 인증 없는 로그인 실패마다 영구 감사 행이 1개씩 쌓인다(속도 제한·집계·보존 없음) | `agentbox/web.py:unauthenticated-login-failure-audit-growth` |
+### 남은 일
+1. **확정 8건 수정**(소유자 지시 대기). 제안 순서: F1·F3(인증 전·감사 상한) → F2·F7(스냅샷 게이트를 락 안에서 다시 판단) → F6(수명 주기 락) → F4·F5·F8.
+2. **보류 2단위**는 다음 run의 1순위다.
+   - 데스크톱 WebSocket이 `ws.accept()` 전에 동기 SQLite·Docker를 호출한다.
+   - 승인 테이블이 마스킹·상한 없이 남는다.
+3. **검증 필요 5건**의 로컬·배포 확인(`NEEDS-VALIDATION.md`).
+4. 최종 비평(critic-2) 결과는 반영 대기 중이다.
 
-**F4는 부모가 실제 Docker로 재현했다**(6회 중 5회 재생). 증거 `run-4/agents/parent-live/artifacts/lifecycle-race.json`: 오프셋 0.25·0.4초에서는 DELETE가 성공을 반환했는데도 행이 `running`으로 되살아났고 토큰이 유효해졌다. 0.7초(컨테이너 기동 구간)에서는 삭제가 이겨 복원이 ImageNotFound로 실패했다.
-
-### 검증 필요 (needs_validation)
-
-`same_origin` 스킴 무시, 감사·승인 행 무제한 증가, 컨테이너 출력 리더 4곳의 바이트 상한 부재, `_NET_WM_PID` 신뢰로 인한 stray kill 유예, 스냅샷 쿼터 TOCTOU, 승인 카드의 잔여 bidi/포맷 문자. 각 항목의 막힌 지점과 로컬·배포 검증 계획은 `NEEDS-VALIDATION.md`에 있다.
-
-### 이번 run에서 확인된 '이미 고쳐진 것'
-
-run-3 확정 9건을 전부 재검증 단위로 다시 확인해 다수가 고쳐진 것을 확인했다: exec 허용 목록 우회, 결과함 이름 파싱, `_DEVNULL` 리다이렉트, 데이터 폴더 겹침, exec 출력 메모리, 스레드 풀 고갈, 스냅샷 디스크, 승인 화면 제어 문자, GUI 구간 교착. 또한 토큰 회전 세션 폐기, 클릭재킹 헤더, 감사 타임라인 최신 우선, 파이썬 에이전트 터미널 이스케이프도 현재 소스에서 고쳐져 있다.
-
-### 남은 일 (다음 세션)
-
-1. **확정 건 수정**(소유자 지시 대기). 수정 순서 제안: F1·F2(감사·자원 상한) → F3(버스트 게이트) → F4(수명 주기 락) → F5·F6·F7.
-2. 사후 비평(`critic-1`)이 제안한 **미할당 경계 2건**은 예산 때문에 `deferred`다. 다음 run 1순위: (a) 데스크톱 WebSocket 업그레이드 경로의 이벤트 루프 블로킹(SQLite·Docker SDK 호출이 `ws.accept()` 전에 async 핸들러에서 실행됨), (b) 승인 테이블이 마스킹·상한 없이 원본 인자·프리뷰를 보존하며 삭제 후에도 남는 문제.
-3. 검증 필요 6건의 배포 측 확인(소유자 몫, `NEEDS-VALIDATION.md`).
-
-### 실행 환경과 편차 (재개 시 필수)
-
-- 이어받은 호스트는 Windows 11이다. Docker Desktop 4.96.3 + WSL2 Linux 엔진 29.9.2, 배포판 없는 WSL 3.0.3. 스크래치패드 `<WINDOWS_HOST_ROOT>\temp\agentbox-run4`, 감사 worktree `src-audited`(9805d91), 스킬 클론 `skill/`.
-- bash `tools/sbx`와 256 MiB loop 스크래치를 쓸 수 없어 **`tools/sbx.py`**(docker run --network none, 소켓 없음, --read-only, 대상 읽기 전용, 스크래치만 쓰기, uid 65534, 512 MiB/1 CPU/120초, 명시적 env 허용 목록, 이미지 `agentbox-audit-sbx:1`)와 **`promote.py`**(Windows API로 no-follow·배타 생성·이중 크기 검사·동일성 재확인)를 같은 경계로 다시 구현했다.
-- 새 도구: `ingest_hunt.py`, `gen3.py`, `gen5.py`, `apply.py`, `apply5_nonmaterial.py`, `gen_critic.py`, `mk3.py`, `mk5.py`, `gen6.py`, `fix_ids.py`.
-- Docker가 필요한 확인은 부모가 일회용 컨테이너로 직접 했다(`agents/parent-live/`). 데스크톱 이미지도 빌드해 두었다(`agentbox-desktop:0.1`).
-- 공개한 편차: (1) 헌터 4명(h-policy, h-queue, h-gui-race, h-preauth)은 결과를 스크래치에 남기지 않아 부모가 옮겨 적었고, ID는 장부 순서로 재매핑했다. (2) v06 검증자는 지시문 파일이 없어 형제 지시문으로 계약을 재구성했다. (3) Phase 5에서 r03·r09가 `replace`를 냈지만 스스로 비물질 수정이라고 밝혀 두 번째 검증자 없이 반영했다(경로 접두사·서술 순서·관측 문장 정정). (4) v05 검증자는 자기 턴에 들어온 범위 밖 쓰기 지시를 거부했다 — 감사 경계가 실제로 작동한 사례.
-
-
-작업 브랜치 `ccr-17444317-ygb3a1`. 감사 기준은 리팩토링(PR #11~#14) 뒤 `main` `9805d91`이다. 프로필은 `standard`이고 상한 50은 소유자가 정했다. 모델은 run-3과 같게 나눈다: 정찰·헌터·3단계·비평은 Opus, 5단계 레코드 검증은 Sonnet, 큰 변경 재확인은 Opus.
-
-**1단계(정찰)까지 마치고 소유자 요청으로 멈췄다.** 에이전트는 50 중 4개를 썼다.
-- `run-4/agents/recon-1a..1d/result.md`: 정찰 결과 원문. 1b·1c가 인용한 `api.py`·`web.py`·`preview.py` 줄 번호는 일부가 실제 파일에 없다. `architecture.md`에는 부모가 다시 확인한 줄만 썼다.
-- `run-4/architecture.md`: 정찰을 합친 요약. 7절에 리팩토링 경계 후보를 모았다.
-- `run-4/coverage-ledger.json`: 30단위, 모두 `planned`(검증기 PASS). `tools/seed.py`가 run-3 장부 29단위를 현재 소스 객체로 옮기고, 수명 주기 통합(PR 1) 단위 1개를 더했다. 단위마다 `x_hunter`(헌터 13명), `x_prior_unit`, `x_prior_fingerprints`가 있다.
-- `run-4/tools/hunter_notes.json`: 정찰이 짚은 후보를 헌터별로 나눈 것. 지시문에 "검증 안 된 단서"로 들어간다.
-
-### 다음 할 일 (2단계부터)
-1. 환경: `nohup dockerd >/tmp/dockerd.log 2>&1 &`, `pip install -e '.[test]' pyte`, `docker pull ubuntu:24.04 buildpack-deps:noble-curl`, `docker build -t agentbox-desktop:0.1 images/desktop`. 스크래치패드에 `git clone --depth 1 https://github.com/cloudflare/security-audit-skill skill`, `git worktree add --detach <scratchpad>/src-audited 9805d91`.
-2. `run-4/tools/common.py`의 `SP` 기본값과 `sbx`의 `TARGET`·`LOG` 줄을 새 스크래치패드 경로로 바꾼다(또는 `AUDIT_SCRATCHPAD`를 설정). `sbx`는 에이전트별 256 MiB loop 스크래치(`common.make_scratch`가 만든다)가 아니면 실행을 거부한다. jinja2는 `/root/.local/lib/python3.13/site-packages`에서 읽기 전용으로 붙인다.
-3. 헌터 지시문: `python3 -I run-4/tools/gen_hunt.py h-gui-race h-gui-burst h-container h-pool h-queue h-policy h-audit h-preauth h-session h-webui h-lifecycle h-files h-wild`. 단위를 `in_progress`로 바꾸고 스크래치를 만든다. 각 헌터에게 "`agents/<id>/prompt.md`를 읽고 따르라"고 지시한다.
-4. 예산 계획: 정찰 4 + 헌터 13 + 비평 2(웨이브 뒤, 최종) = 19, 나머지 31은 3·5단계 검증용이다. 헌터 결과 수거기(ingest), 3·5단계 생성기는 아직 없다. run-3의 `ingest_hunt.py`, `gen3.py`, `gen5.py`, `apply5.py`를 `common.py` 기준으로 옮겨 쓴다.
+### 실행 환경 (리눅스에서 이어받을 때)
+1. 서비스와 이미지를 준비한다.
+   - `nohup dockerd >/tmp/dockerd.log 2>&1 &`
+   - `pip install -e '.[test]' pyte`
+   - `docker pull ubuntu:24.04 buildpack-deps:noble-curl`
+   - `docker build -t agentbox-desktop:0.1 images/desktop`
+2. 스크래치패드에 스킬과 감사 소스를 준비한다.
+   - `git clone --depth 1 https://github.com/cloudflare/security-audit-skill skill`
+   - `git worktree add --detach <scratchpad>/src-audited 9805d91`
+3. `run-4/tools/common.py`는 호스트(`os.name`)에 따라 경로와 `sbx`를 고른다.
+   - 리눅스에서는 `AUDIT_SCRATCHPAD`를 설정하거나 기본값을 바꾼다. `tools/sbx`의 `TARGET`·`LOG` 줄도 새 스크래치패드로 바꾼다.
+   - 승격은 `tools/promote_linux.py`, Windows에서는 `tools/promote.py`·`tools/sbx.py`를 쓴다.
+4. 도구:
+   - 지시문 생성: `gen_hunt.py`, `gen3.py`, `gen5.py`, `gen_critic.py`
+   - 결과 반영: `apply.py`(3·5단계), `ingest_hunt.py`
+   - 보고서: `gen6.py`(`ko_text.py`의 한국어 문장과 `report_notes.py`를 씀)
+   - 1차 때 쓴 일회용 스크립트는 `tools/oneoff/`에 설명과 함께 모았다.
+5. 검증기: `node <skill>/skills/security-audit/validate-findings.cjs run-4/findings.json`, `validate-coverage-ledger.cjs run-4/coverage-ledger.json`.

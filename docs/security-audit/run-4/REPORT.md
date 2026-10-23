@@ -1,64 +1,108 @@
 # agentbox 보안 감사 run-4 보고서
 
-감사 기준: `main` 커밋 `9805d91`(리팩토링 PR #11~#14 이후). 작업 브랜치 `ccr-17444317-ygb3a1`, 프로필 `standard`, 에이전트 호출 상한 50회 중 46회 사용.
+감사 기준은 `main` 커밋 `9805d91`(리팩토링 PR #11~#14 이후)이다. 작업 브랜치는 `ccr-17444317-ygb3a1`, 프로필은 `standard`이다. 에이전트 호출 상한 50회 중 **50회**를 썼다. 실행 상태는 **`incomplete`**(`budget_exhausted`)이다.
 
 ## 1. 요약
 
-- 확정(confirmed) **7건**: 낮음 4건, 중간 3건.
-- 검증 필요(needs_validation) **5건**, 기각 **0건**.
-- 커버리지 장부 30단위: candidate 10, covered 20.
-- run-3 확정 9건을 모두 재검증 단위로 다시 확인했고, 다수가 이미 고쳐져 있음을 확인했다. 이번 run에서 새로 확정된 것은 전부 인증 전 처리·자원 상한·감사 기록 원자성 계열이다.
-- 확정 건은 **고치지 않았다**(지시대로 보고서까지만). 수정은 별도 지시로 진행한다.
+- 이 run은 **부분 감사**다. 사후 비평이 제안한 경계 2개를 예산 때문에 헌팅하지 못했다(아래 6절).
+- 확정 **8건**: 중간 3건, 낮음 5건.
+- 검증 필요 **5건**, 기각 **0건**. 레코드는 모두 13건이다.
+- 장부 32단위: candidate 10, covered 20, deferred 2.
+- run-3 확정 11건과 검증 필요 5건은 소스가 바뀌어(수정과 리팩토링) 모두 재검증 단위로 다시 봤다. 같은 지문으로 이어진 것은 아래와 같다. 나머지 run-3 확정 건은 현재 소스에서 같은 근본 원인이 재현되지 않았다.
+  - N1: run-3 검증 필요 → run-4 검증 필요 (`agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare`)
+  - N4: run-3 검증 필요 → run-4 검증 필요 (`agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process`)
+  - F3: run-3 확정 → run-4 확정 (`agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap`)
+  - N5: run-3 확정 → run-4 검증 필요 (`agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized`)
+- 확정 건은 **고치지 않았다**. 보고서까지만 만들었고, 수정은 별도 지시로 한다.
 
 ## 2. 감사 방법과 경계
 
-- 실행 호스트: Continuation host is Windows 11 (not the Linux container of runs 1-3): Docker Desktop 4.96.3 with the WSL2 Linux engine 29.9.2, WSL 3.0.3 installed without a distribution. Agent-run target code goes only through tools/sbx.py, the Windows replacement for the bash tools/sbx: docker run --network none, no docker socket, --read-only, audited worktree bind-mounted read-only at /target, writes only to a
-- 소유자 지시로 서브에이전트는 전부 DeepSeek(`doph`/`doph-2`, `deepseek-ai/DeepSeek-V4.1-Flash`)로 통일했다. 정찰 4회만 이전 세션의 Opus 결과다.
-- 대상 코드 실행은 전부 `tools/sbx.py`(네트워크 없음, 대상 읽기 전용, 스크래치만 쓰기, uid 65534, 512 MiB, 1 CPU, 120초) 안에서만 했다. Docker가 필요한 확인은 부모가 일회용 컨테이너에서 직접 재현했다(`agents/parent-live/`).
+- **실행 환경:** 이 run은 두 호스트에서 돌았다.
+  - 정찰과 검토 보완은 리눅스 클라우드 컨테이너에서 했다.
+  - 2~6단계 1차는 Windows 11의 DeepSeek 하네스에서 했다. 그쪽에서는 bash `sbx` 대신 `tools/sbx.py`로 같은 격리 조건을 다시 구현했다.
+  - 대상 코드는 모두 `sbx` 컨테이너 안에서만 돌렸다. 조건은 네트워크 없음, 대상 읽기 전용, 스크래치만 쓰기, uid 65534, 512 MiB, 1 CPU, 120초다.
+  - Docker가 필요한 확인은 부모가 일회용 컨테이너에서 가짜 토큰으로 직접 재현했다(`agents/parent-live/`).
+- **모델:**
+  - 정찰 4회는 Opus였다.
+  - 소유자 지시로 1차 2~6단계의 서브에이전트는 전부 DeepSeek(`deepseek-ai/DeepSeek-V4.1-Flash`)였다.
+  - 검토 보완 4회는 DeepSeek를 쓸 수 없는 환경이라 소유자 승인으로 돌렸다. v11 3단계·r14 재검증·최종 비평은 Opus, r13 5단계는 Sonnet이다.
+- **이전 run 사용:** run-1·2·3의 장부와 findings를 이전 기록으로 넘겼다. run-3에서 기각된 두 주장(runc 별칭, 백그라운드 자식 pid 고갈)은 근거가 바뀌지 않아 다시 보고하지 않았다.
 
-## 3. 확정 findings
+## 3. 확정
 
-| # | 심각도 | 제목 | 대표 경로 |
+| ID | 심각도 | 제목 | 주 경로 |
 |---|---|---|---|
-| 1 | 중간 | Unauthenticated request bodies are fully read, JSON-decoded and multipart-spooled before the principal dependency rejects the request | `agentbox/api.py` |
-| 2 | 중간 | A GUI input queued on gui_lock across a human handback executes with no open burst, so its changes get no snapshot and no gui_changes row | `agentbox/api.py` |
-| 3 | 중간 | Agent tool input still reaches the append-only audit log uncapped through approval previews and tool error strings | `agentbox/api.py` |
-| 4 | 낮음 | Approval impact table misreports rm targets whose paths contain whitespace or newlines (an existing file is shown as nonexistent) | `agentbox/api.py` |
-| 5 | 낮음 | Unauthenticated GET /static/novnc/* runs docker create plus a full /usr/share/novnc tar extraction on every request while home/novnc/core/rfb.js is absent, with no single-flight | `agentbox/api.py` |
-| 6 | 낮음 | A restore racing a delete resurrects the deleted sandbox row and re-authorizes the agent token the delete revoked | `agentbox/api.py` |
-| 7 | 낮음 | Unauthenticated failed POST /login writes one permanent hash-chained audit row per attempt, with no rate limit, aggregation or retention | `agentbox/audit.py` |
+| F1 | 중간 | 인증 전 요청 본문을 401로 거절하기 전에 끝까지 읽고 JSON 해석·멀티파트 임시 저장까지 한다 | `agentbox/api.py` |
+| F2 | 중간 | 사람이 화면을 돌려주는 사이 `gui_lock`을 기다리던 GUI 입력이, 열린 구간 없이 실행돼 스냅샷과 `gui_changes` 기록이 남지 않는다 | `agentbox/service.py` |
+| F3 | 중간 | 에이전트 도구 입력이 승인 미리보기와 도구 오류 문자열을 거쳐 여전히 상한 없이 추가 전용 감사 로그에 들어간다 | `agentbox/service.py` |
+| F4 | 낮음 | 승인 카드 영향 표가 공백·줄바꿈이 든 `rm` 대상을 잘못 보여 준다(있는 파일을 '없음'으로 표시) | `agentbox/sandbox.py` |
+| F5 | 낮음 | 인증 없는 `GET /static/novnc/*`가 표식 파일이 없는 동안 요청마다 `docker create`와 noVNC 전체 tar 추출을 한다(동시 실행 제어 없음) | `agentbox/sandbox_desktop.py` |
+| F6 | 낮음 | 복원과 삭제가 겹치면 삭제한 샌드박스 행이 되살아나고, 폐기한 에이전트 토큰이 다시 유효해진다 | `agentbox/service.py` |
+| F7 | 낮음 | 스냅샷 상한은 컨테이너를 한 번 확인해서 정하는데, docker commit은 상한이 보지 않는 두 번째 확인으로 일어난다 | `agentbox/service.py` |
+| F8 | 낮음 | 인증 없는 로그인 실패마다 지울 수 없는 해시 체인 감사 행이 하나씩 쌓인다(속도 제한·집계·보존 없음) | `agentbox/web.py` |
 
-각 건의 상세 근거·재현 절차·수정안은 `FINDINGS-DETAIL.md`에 있다.
+상세 근거, 재현, 수정 방향은 `FINDINGS-DETAIL.md`에 있다.
 
-## 4. 검증 필요 항목
+## 4. 검증 필요
 
-| # | 제목 | 막힌 지점 |
+| ID | 제목 | 막힌 지점 |
 |---|---|---|
-| 1 | same_origin compares only the Origin netloc with Host, so an http:// page on the same host passes the CSRF origin check of a TLS deployment and can clear the session cookie | Browser behaviour (decisive): whether a browser an operator actually uses attaches the Secure SameSite=strict session cookie to a cross-scheme http://H -> https |
-| 2 | Agent-grown audit and approval rows in the shared control-plane SQLite file have no aggregate bound or retention, so an agent can fill the host disk and neither recovery path keeps the audit chain | Free space, any filesystem or volume quota, and the planned lifetime of the volume holding data/agentbox.db (config.py:29 home=./data, config.py:84-86 db_path,  |
-| 3 | list_dir, outbox_list, preview glob expansion and screenshot buffer unbounded container output in the shared control-plane process | The decisive quantity - how much memory the control plane actually holds while a real container streams - is produced inside the docker SDK's non-streaming exec |
-| 4 | GUI burst stray kill spares a uid-1001 process in a burst-start session whose pid the client-declared _NET_WM_PID window list names | The decisive platform step is not observable here: this sandbox has no X server and no X client. Reproduced in the run (agents/v05/artifacts/v05_probe.out:25-33 |
-| 5 | The shared control-character filter misses U+061C - the only Unicode Bidi_Control code point it omits - plus the Cf/Zl/Zp invisibles, and the approval card renders them raw beside the argv that will execute | No browser or terminal renderer is reachable from the approved sandbox (python3 plus the repo and jinja2/fastapi only, no network, no display), so the rendered  |
+| N1 | `same_origin`이 Origin의 netloc만 Host와 비교해, 같은 호스트의 http:// 페이지가 TLS 배포의 CSRF 출처 검사를 통과하고 세션을 끊을 수 있다 | 결정적 사실은 브라우저 동작이다. 사람이 쓰는 브라우저가 `Secure; SameSite=Strict` 세션 쿠키를 `http://H` → `https://H` 폼 POST에 붙이는지 봐야 한다. run-3에서 Chromium 141은 붙이지 않았다. Firefox·WebKit은 확인하지 않았다. 쿠키가 안 붙으면 남는 영향은 강제 로그아웃뿐이다. |
+| N2 | 에이전트가 늘리는 감사·승인 행에 전체 상한과 보존 정책이 없다. 호스트 디스크를 채울 수 있고, 어느 복구 방법을 써도 감사 체인을 지킬 수 없다 | 남은 디스크 용량, 볼륨 할당량, 볼륨 수명은 배포 사실이다. 소진까지 걸리는 시간은 저장소만으로 정해지지 않는다. |
+| N3 | `list_dir`, `outbox_list`, 미리보기 glob 확장, 스크린숏이 컨테이너 출력을 상한 없이 컨트롤 플레인 메모리에 올린다 | 결정적인 양은 실제 컨테이너가 스트리밍할 때 docker SDK 안에서 생긴다. 감사 샌드박스에는 Docker 데몬이 없어 가짜 `exec_run`으로만 쟀다. 실제 값은 SDK가 한 번 더 버퍼링하므로 더 크다. |
+| N4 | GUI 구간 정리가, 클라이언트가 스스로 선언한 `_NET_WM_PID`에 이름이 오른 uid 1001 프로세스를 죽이지 않는다 | 이 환경에는 X 서버와 X 클라이언트가 없어 `_NET_WM_PID` 위조와 그 값이 `xdotool`에 보이는지를 관찰할 수 없었다. |
+| N5 | 공용 제어 문자 필터가 U+061C(빠진 유일한 Bidi_Control)와 Cf·Zl·Zp 보이지 않는 문자를 놓쳐, 승인 카드가 실행될 명령 옆에 이 문자를 그대로 보여 준다 | 감사 샌드박스에는 브라우저와 터미널 렌더러가 없어 실제로 어떻게 그려지는지 볼 수 없었다. 이 문자들이 카드에 그대로 나오고 실행되는 명령에도 그대로 있다는 데까지만 확인했다. |
 
 로컬·배포 검증 계획은 `NEEDS-VALIDATION.md`에 있다.
 
-## 5. 하드닝(취약점 아님, 개선 권고)
+## 5. 하드닝 (취약점 아님)
 
-장부에 보존된 헌터 하드닝 노트 180건과 Phase 3·5 검증자가 덧붙인 항목이 각 `agents/<id>/result.json`의 `hardening`에 있다. 여러 건에서 공통으로 지적된 것: 감사·승인 테이블의 집계 상한과 보존 정책 부재, `display.escape_controls`의 문자 집합 누락, `deploy/Caddyfile`에 요청 크기·속도 제한 없음, `/healthz`·`/docs` 무인증 노출.
+헌터가 남긴 하드닝 메모 180건이 장부 단위의 `x_hardening`에 있다(같은 헌터의 메모가 그 헌터 단위마다 반복된다). 여러 헌터가 공통으로 짚은 것은 아래와 같다.
+- 감사·승인 테이블에 전체 상한과 보존 정책이 없다.
+- `display.escape_controls`의 문자 집합이 빠진 것이 있다.
+- `deploy/Caddyfile`에 요청 크기·속도 제한이 없다.
+- `/healthz`와 `/docs`가 인증 없이 노출된다.
 
 ## 6. 커버리지와 한계
 
-- 30개 커버리지 단위를 13명의 헌터가 모두 닫았다(covered 20, candidate 10).
-- 사후 커버리지 비평(`critic-1`)이 **미할당 경계 2건**을 제안했다: (a) 데스크톱 WebSocket 업그레이드 경로에서 async 핸들러가 `ws.accept()` 전에 SQLite·Docker SDK를 동기 호출해 이벤트 루프를 막는 문제, (b) 승인 테이블이 마스킹·상한 없이 원본 인자·프리뷰를 보존하고 삭제 후에도 남는 문제.
-- 남은 예산을 3·5단계 검증에 예약해야 해서 이 2건은 이번 run에서 **deferred**로 기록한다. 따라서 이 run은 그 두 경계에 대해 **명시적 조기 종료**이며, 전체 커버리지 완전 달성으로 주장하지 않는다. 다음 run의 1순위다.
-- run-3에서 기각된 두 주장(runc 별칭, 백그라운드 자식 pid 고갈)은 변경된 근거가 없어 재보고하지 않았다.
+- 장부 32단위 가운데 헌터가 맡은 30단위는 모두 닫혔다(covered 20, candidate 10).
+- 사후 비평 `critic-1`이 미할당 경계 2개를 제안했다. 예산을 검증에 남겨야 해서 헌터를 붙이지 못했고, 장부에 `deferred`로 넣었다. 다음 run의 1순위다.
+  - 데스크톱 WebSocket(`/sandboxes/{sid}/desktop/ws`) 업그레이드 경로. async 핸들러가 `ws.accept()` 전에 SQLite(세션·리스)와 Docker SDK를 동기로 불러 이벤트 루프를 막는지(api.py, desktop_ws.py).
+  - 승인 테이블. 승인이 필요한 호출마다 원본 인자와 미리보기를 마스킹·상한 없이 저장하고, 샌드박스를 지운 뒤에도 남는지(approvals.py, service.py).
+- critic-1의 원래 출력은 남아 있지 않다. 단위 내용은 1차 보고서의 요약과 소스로 다시 만들었다. WebSocket 핸들러가 `ws.accept()` 전에 동기 SQLite·Docker 호출을 하는 것은 api.py:343-353과 desktop_ws.py:18-23에서 확인했다.
+- 최종 비평(`critic-2`, Opus) 결과: 아직 반영 전.
 
 ## 7. 편차와 주의
 
-- Windows 호스트로 옮기면서 bash `sbx`와 loop 마운트 스크래치를 쓸 수 없어 `sbx.py`/`promote.py`를 같은 경계로 다시 구현했다(`run-metadata.json`의 `execution_note`).
-- 헌터 4명(h-policy, h-queue, h-gui-race, h-preauth)이 결과 파일을 남기지 않아 부모가 마지막 메시지에서 옮겨 적었고, 장부 coverage_id로 재매핑했다.
-- v06 검증자는 지시문 파일이 없어 형제 지시문으로 계약을 재구성했고 그 사실을 결과에 적었다.
-- Phase 5에서 r03·r09가 `replace`를 냈지만 스스로 **비물질 수정**이라고 밝혀(경로 접두사·서술 순서·관측 문장 1개) 두 번째 검증자 없이 반영했다. 이 편차를 여기에 공개한다.
-- v05 검증자는 자기 턴에 들어온 범위 밖 쓰기 지시를 거부했다. 감사 경계가 실제로 작동한 사례로 기록한다.
-- 스킬의 `validate-findings.cjs`·`validate-coverage-ledger.cjs`는 Linux 전용 no-follow I/O를 요구해 Windows 호스트에서 직접 실행되지 않는다. 구조 검증은 node:22-alpine 컨테이너에서 돌렸고 두 검사기 모두 통과했다(PASS: 12 findings valid, PASS: 30 coverage units valid).
+검토 세션(리눅스)이 1차 결과를 다시 보고 아래 문제를 찾았다. 고칠 수 있는 것은 고쳤고, 고칠 수 없는 것은 여기에 공개한다.
 
+**검토에서 고친 것**
+
+- **후보 v11이 판정 없이 빠져 있었다.** 스냅샷 쿼터 TOCTOU 후보는 검증자 결과가 없었지만, 장부에는 후보로 남아 있었다. 1차 보고서는 이 건을 언급하지 않았다. 검토 때 다음 순서로 처리했다.
+  1. v11(Opus)이 검증 필요로 판정했다.
+  2. r13(Sonnet)이 그 레코드를 확인했다.
+  3. 부모가 실제 Docker에서 재현했다(21번 중 18번 뚫림).
+  4. 부모가 확정으로 올린 대체 레코드를 새 검증자 r14(Opus)가 확인했다. 확정, 심각도 낮음이다.
+- **critic-1이 제안한 2단위가 장부에 없었다.** 장부에 `deferred`로 넣었다. critic-1의 원래 출력은 남지 않아 1차 보고서의 요약과 소스로 단위를 다시 만들었다(장부 `x_source`).
+- **최종 비평을 예산이 남았는데 돌리지 않았다.** 검토 때 마지막 호출로 돌렸다(`critic-2`).
+- **`run_status: "complete_with_deferred_units"`는 스킬에 없는 값이었다.** 보류 단위가 남은 부분 감사이므로 `incomplete`로 고쳤다.
+- **승인 카드 단위에 잘못된 검사가 들어가 있었다.**
+  - 원인: `tools/oneoff/_fix.py`가 h-policy의 `raw.txt`를 덮어쓰고, 단위를 순서대로 짝지었다. 그래서 승인 카드 단위에 승인 결정 단위의 검사가 들어갔다. `_fix_card_unit.py`는 그 단위를 손으로 후보로 바꿨다.
+  - 검토 때 그 검사를 헌터의 실제 산출물 `h_prev.out` 근거로 바로잡았다(장부 `x_parent_note`).
+  - 다만 h-policy 승인 결정·exec 두 단위의 결과 문장은 부모가 쓴 것이고, 원본은 남아 있지 않다.
+- **장부의 3단계 검사에 필수 필드가 없었다.** `apply.py`가 `invariant`·`result`를 쓰지 않았고, trace 경로를 `path` 키로 찾았다(레코드는 `file`). 둘 다 고쳤다. 1차 때는 `fix_schema.py`로 나중에 메웠다.
+- **보고서가 영어 원문 그대로였고, 일부 칸이 잘려 있었다.** 한국어로 다시 썼다(`tools/ko_text.py`, `tools/gen6.py`).
+  - '대표 경로'가 알파벳순 첫 파일이라 거의 다 `api.py`였다. 지문의 파일로 바꿨다.
+  - 'run-3 확정 9건'은 run-1·2 목록이었다. run-3 기준으로 바로잡았다.
+
+**고칠 수 없어 공개하는 것**
+
+- **헌터 결과 옮겨 적기.** 1차 기록은 h-policy, h-queue, h-gui-race, h-preauth를 부모가 옮겨 적었다고 했다. 하지만 `raw.txt`가 남은 것은 h-policy, h-queue, h-gui-race, h-pool이다. 그 넷의 `result.json`은 부모가 쓴 것이다.
+- **v06은 지시문 없이 돌았다.** 형제 지시문으로 계약을 재구성했고, 그 사실을 결과에 적었다. 승인 카드 영향 표 건(확정)이 이 검증자의 판정이다. 5단계에서는 다른 검증자가 레코드를 따로 확인했다.
+- **r03·r09의 '비물질 수정'은 검증할 수 없다.** 두 5단계 검증자가 `replace`를 내며 비물질이라고 밝혔고, 두 번째 검증자 없이 반영됐다. 그 결과 파일은 스크래치에만 있었고 저장소에 남지 않았다.
+- **5단계 검증 중 일부는 짧았다.** 예를 들어 r13은 도구 호출 6회였다.
+- **v05가 범위 밖 쓰기 지시를 받았다고 보고했다.** 자기 턴에 그런 지시가 들어왔고 거부했다고 적었다. 스크래치 밖에 쓴 것은 없었다.
+- **Windows 호스트에서는 256 MiB loop 스크래치를 쓸 수 없었다.** promote 크기 상한과 `cap_scratch`로 대신했다. 그쪽 검사기는 node:22-alpine 컨테이너에서 돌렸다. 검토 세션에서 리눅스로 두 검사기를 직접 다시 돌렸고 모두 통과했다.
+- **예산:** 상한 50을 모두 썼다.
+  - 1차: 정찰 4, 헌터 13, 사후 비평 1, 3단계 13(v11 포함, 결과 없음), 5단계 12, 재시도 3
+  - 검토 보완: v11 재실행, r13, r14, 최종 비평

@@ -1,0 +1,9 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/service.py:snapshot-quota:toctou-between-quota-gate-and-pre-exec-snapshot",
+ "artifacts_to_promote": [
+  "race_probe_r14.out",
+  "race_probe_fixed.py",
+  "race_probe_fixed.out"
+ ]
+}

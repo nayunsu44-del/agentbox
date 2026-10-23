@@ -1965,8 +1965,9 @@
    "The burst pool is one process-wide 4-worker executor (gui_bursts.py:38-40), so slow closes on a few sandboxes delay other sandboxes' idle-burst records; every close is container-side bounded, so this is record latency rather than starvation, and GET /audit waits at most AUDIT_BURST_WAIT=5 s over all of them (api.py:268).",
    "_burst_locks, _closing, _snap_locks and _busy entries are never removed (gui_bursts.py:37,41; service.py:85,282); growth is bounded by the number of sandboxes and tool calls seen."
   ],
-  "x_decision": "needs_validation",
-  "x_decided_by": "v11"
+  "x_decision": "confirmed",
+  "x_decided_by": "r14",
+  "x_parent_note": "v11 needs_validation (Phase 3) -> r13 verified -> parent-live real-Docker race 18/21 -> parent-drafted confirmed replacement verified by fresh verifier r14."
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2Fexec::agentbox%2Fpolicy.py%23Policy.decide%20read-only-exec%20allowlist::agentbox%2Fpolicy.py%20%2B%20agentbox%2Fsandbox.py%23exec::ATTACK-CLASSES.md%23Injection",
