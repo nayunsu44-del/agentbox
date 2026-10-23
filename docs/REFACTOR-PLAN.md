@@ -80,6 +80,17 @@ run-3 감사와 수정이 main에 들어갔다(PR #8 `5decb11`, #9 `f497c86`). �
 - 테스트의 `from agentbox.sandbox import gui_strays, _parse_manifest, diff_manifest, DESKTOP_UID, _parse_outbox`는 새 위치로 바꾼다.
 - 결과로 `sandbox.py`는 약 550줄이 된다(수명, 스냅샷, 파일 도구, 결과함).
 
+**진행.** 구현하면서 플랜과 달라진 것은 다음과 같다.
+- `agentbox/sandbox_common.py`를 더했다.
+  - 담은 것: `SandboxError`, `_timed`, `_truncate`, `WORKSPACE`, `SOURCE`, `_OUT_LIMIT`.
+  - 이유: mixin과 `preview.py`가 이것들을 `sandbox.py`에서 가져오면 순환 import가 된다.
+  - `sandbox.py`가 다시 import하므로 `from agentbox.sandbox import SandboxError` 같은 기존 import는 그대로 된다.
+- `policy.py`의 명령 해석은 `preview.py`와 공유하지 않았다. 해석 방식이 다르다.
+  - `policy._words`는 조각으로 나누지 않고 단어만 모은다. 감싸는 명령(sudo, env 등)을 따로 처리하지 않고, 펼치는 깊이 한도가 다르다.
+  - `policy.simple_programs`는 `$`, 백틱, 리다이렉트를 거부한다.
+  - 합치면 판정이 바뀐다.
+- `sandbox.py`는 574줄이다.
+
 ## PR 4. 화면 웹소켓 중계 분리
 - `api.py`의 `desktop_ws`(94줄, RFB 중계와 연결 기록)를 `agentbox/desktop_ws.py`의 함수로 옮긴다.
 - `api.py`는 라우트 등록과 인증만 맡는다.

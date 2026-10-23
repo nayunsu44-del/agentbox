@@ -245,7 +245,7 @@ def test_lifecycle_change_resets_gui_burst_timers():
 
 
 def test_burst_from_replaced_container_kills_nothing():
-    from agentbox.sandbox import DESKTOP_UID
+    from agentbox.gui_state import DESKTOP_UID
 
     box, sb = _gui_box()
     sb.release.set()
