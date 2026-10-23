@@ -16,7 +16,7 @@ from concurrent.futures import wait as wait_futures
 from typing import Any
 
 from .desktop import DesktopControl
-from .gui_state import diff_manifest, gui_strays
+from .gui_state import diff_manifest, gui_kept, gui_strays
 from .sandbox import SandboxManager
 
 
@@ -35,6 +35,9 @@ class GuiBursts:
         # 열린 GUI 구간: 시작 스냅샷과 그때의 /workspace 파일 목록. 구간이 끝나면 바뀐 파일을 기록한다.
         self._gui_burst: dict[str, dict[str, Any]] = {}
         self._burst_locks: dict[str, threading.Lock] = {}
+        # 지난 구간이 끝날 때 창이 있어 남긴 프로세스: sid -> (컨테이너 id, pid들). 다음 구간의 기준(baseline)에 넣지
+        # 않아서 구간이 끝날 때마다 다시 판단한다. 한 번 남으면 기준에 들어가 영영 면제되지 않게 (보안 검수 run-4 N4)
+        self._kept: dict[str, tuple[str, set[int]]] = {}
         # 입력이 끊긴 구간은 여기서 닫는다. 다른 샌드박스의 도구 스레드나 사람 요청 스레드에서 그 샌드박스의
         # docker exec를 돌리면, 그 컨테이너가 응답하지 않을 때 상관없는 호출이 묶인다 (보안 검수 run-3 v11).
         self._burst_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="agentbox-burst")
@@ -77,8 +80,10 @@ class GuiBursts:
             self._log(sid, None, "gui_burst_open_failed", {"snapshot_id": snapshot_id,
                                                            "error": (str(e) or type(e).__name__)[:300]})
             return False
+        kept_cid, kept = self._kept.get(sid, ("", set()))
+        pids = {p["pid"] for p in procs} - (kept if kept_cid == container_id else set())
         self._gui_burst[sid] = {"snapshot_id": snapshot_id, "manifest": manifest, "truncated": truncated,
-                                "pids": {p["pid"] for p in procs}, "container_id": container_id}
+                                "pids": pids, "container_id": container_id}
         return True
 
     def _stop_strays(self, sid: str, burst: dict[str, Any], reason: str) -> str | None:
@@ -90,11 +95,18 @@ class GuiBursts:
             self.sandboxes.kill_processes(sid, pids)
         except Exception as e:
             return str(e) or type(e).__name__
-        if pids:
-            args = {p["pid"]: p["args"][:200] for p in procs}
-            self._log(sid, None, "gui_processes_stopped", {
-                "snapshot_id": burst["snapshot_id"], "reason": reason,
-                "processes": [{"pid": pid, "args": args.get(pid, "")} for pid in pids[:50]], "count": len(pids)})
+        args = {p["pid"]: p["args"][:200] for p in procs}
+        kept = gui_kept(procs, wins, burst["pids"])
+        if kept:
+            self._kept[sid] = (burst["container_id"], set(kept))
+        else:
+            self._kept.pop(sid, None)
+        for event, listed in (("gui_processes_stopped", pids), ("gui_processes_kept", kept)):
+            if listed:
+                self._log(sid, None, event, {
+                    "snapshot_id": burst["snapshot_id"], "reason": reason,
+                    "processes": [{"pid": pid, "args": args.get(pid, "")} for pid in listed[:50]],
+                    "count": len(listed)})
         return None
 
     def close_failed(self, sid: str, burst: dict[str, Any], reason: str, error: str) -> None:

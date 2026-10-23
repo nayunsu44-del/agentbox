@@ -363,3 +363,48 @@ def test_decide_reports_store_write_failure_as_503(tmp_path):
     box.expire_stale()                                           # 기한 처리도 조회를 막지 않는다
     assert box.approvals.get(apr["id"])["status"] == "pending"
     box.bursts._burst_pool.shutdown()
+
+
+def test_kept_windowed_process_is_rechecked_next_burst():
+    """보안 검수 run-4 N4: 창이 있어 남긴 프로세스는 다음 구간의 기준(baseline)에 들어가지 않는다.
+    창을 닫고 계속 돌면 다음 구간이 끝날 때 멈춘다. 남긴 것은 기록한다."""
+    import threading
+    from agentbox.gui_bursts import GuiBursts
+
+    def p(pid, ppid, sid=1):
+        return {"pid": pid, "ppid": ppid, "sid": sid, "uid": 1001, "args": f"proc {pid}"}
+
+    class Sb:
+        settings = Settings()
+
+        def __init__(self):
+            self.procs, self.wins, self.killed = [p(38, 1), p(71, 38)], {71}, []
+
+        def get(self, sid):
+            return {"container_id": "c1"}
+
+        def workspace_manifest(self, sid):
+            return {}, False
+
+        def desktop_processes(self, sid):
+            return list(self.procs), set(self.wins)
+
+        def kill_processes(self, sid, pids):
+            self.killed += pids
+            self.procs = [q for q in self.procs if q["pid"] not in pids]
+
+    rows = []
+    sb = Sb()
+    b = GuiBursts(sb, DesktopControl(), lambda sid, tool, ev, payload: rows.append((ev, payload)),
+                  lambda sid: None, threading.Lock())
+    assert b.open("sb", "snap_1")
+    sb.procs.append(p(300, 38))                 # 구간에서 연 창 있는 앱
+    sb.wins.add(300)
+    b.close("sb", "idle")
+    assert sb.killed == [] and rows[-1][0] == "gui_processes_kept" and rows[-1][1]["processes"][0]["pid"] == 300
+    assert b.open("sb", "snap_2")
+    assert 300 not in b._gui_burst["sb"]["pids"]            # 기준에 넣지 않는다
+    sb.wins.discard(300)                                    # 창을 닫고 뒤에서 계속 돈다
+    b.close("sb", "idle")
+    assert sb.killed == [300] and rows[-1][0] == "gui_processes_stopped"
+    b.shutdown()

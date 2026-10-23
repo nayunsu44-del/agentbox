@@ -342,6 +342,10 @@ def test_gui_strays():
     windows = {71, 80, 85, 150, 180}
     assert gui_strays(base + new, windows, {q["pid"] for q in base}) == [152, 160, 172, 174, 190]
     assert gui_strays(base, windows, {q["pid"] for q in base}) == []
+    # 창이 있어 남기는 것은 따로 돌려준다 (기록하고 다음 구간에서 다시 판단, 보안 검수 run-4 N4)
+    from agentbox.gui_state import gui_kept
+    assert gui_kept(base + new, windows, {q["pid"] for q in base}) == [150, 180, 181]
+    assert gui_kept(base + new, set(), {q["pid"] for q in base}) == []
 
 
 def test_agent_log_neutralises_container_output(capsys, monkeypatch):

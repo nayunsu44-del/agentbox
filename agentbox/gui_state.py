@@ -50,15 +50,9 @@ def _parse_ps(raw: bytes) -> list[dict[str, Any]]:
     return out
 
 
-def gui_strays(procs: list[dict[str, Any]], window_pids: set[int], baseline: set[int]) -> list[int]:
-    """GUI 구간이 끝날 때 멈출 화면 계정 프로세스. baseline은 구간이 시작될 때 있던 pid.
-
-    구간 동안 새로 생긴 화면 계정 프로세스 가운데
-    - 구간 시작 때 없던 세션에 있는 것 (터미널 안의 셸과 거기서 띄운 일, nohup·setsid로 떼어 낸 일)
-    - 같은 세션이라도 자신도, 새로 생긴 조상도 창이 없는 것 (파일 관리자 등에서 실행한 스크립트)
-    은 멈춘다. 창이 있는 앱(편집기, 터미널 창)과 그 도우미, 구간 전부터 있던 것(데스크톱 세션, 사람이 연 것),
-    컨트롤 플레인이 docker exec로 띄운 것(화면 보기 연결, GUI 도구)은 그대로 둔다.
-    """
+def _new_processes(procs: list[dict[str, Any]], window_pids: set[int],
+                   baseline: set[int]) -> tuple[list[int], list[int]]:
+    """구간 동안 새로 생긴 화면 계정 프로세스를 (멈출 것, 창이 있어 남길 것)으로 나눈다. gui_strays 참고."""
     by = {p["pid"]: p for p in procs}
     base_sids = {by[pid]["sid"] for pid in baseline if pid in by and by[pid]["uid"] == DESKTOP_UID}
 
@@ -75,15 +69,30 @@ def gui_strays(procs: list[dict[str, Any]], window_pids: set[int], baseline: set
     def from_exec(p: dict[str, Any]) -> bool:
         return exec_root(p) or any(exec_root(a) for a in ancestors(p))
 
-    out = []
+    stray, kept = [], []
     for p in procs:
         if p["uid"] != DESKTOP_UID or p["pid"] in baseline or p["pid"] == 1 or from_exec(p):
             continue
-        if p["sid"] not in base_sids:
-            out.append(p["pid"])
-            continue
-        windowed = p["pid"] in window_pids or any(
-            a["pid"] in window_pids and a["pid"] not in baseline for a in ancestors(p))
-        if not windowed:
-            out.append(p["pid"])
-    return sorted(out)
+        windowed = p["sid"] in base_sids and (p["pid"] in window_pids or any(
+            a["pid"] in window_pids and a["pid"] not in baseline for a in ancestors(p)))
+        (kept if windowed else stray).append(p["pid"])
+    return sorted(stray), sorted(kept)
+
+
+def gui_strays(procs: list[dict[str, Any]], window_pids: set[int], baseline: set[int]) -> list[int]:
+    """GUI 구간이 끝날 때 멈출 화면 계정 프로세스. baseline은 구간이 시작될 때 있던 pid.
+    window_pids는 X 서버가 확인한 창 주인 pid다 (창이 스스로 적는 _NET_WM_PID가 아니다).
+
+    구간 동안 새로 생긴 화면 계정 프로세스 가운데
+    - 구간 시작 때 없던 세션에 있는 것 (터미널 안의 셸과 거기서 띄운 일, nohup·setsid로 떼어 낸 일)
+    - 같은 세션이라도 자신도, 새로 생긴 조상도 창이 없는 것 (파일 관리자 등에서 실행한 스크립트)
+    은 멈춘다. 창이 있는 앱(편집기, 터미널 창)과 그 도우미, 구간 전부터 있던 것(데스크톱 세션, 사람이 연 것),
+    컨트롤 플레인이 docker exec로 띄운 것(화면 보기 연결, GUI 도구)은 그대로 둔다.
+    """
+    return _new_processes(procs, window_pids, baseline)[0]
+
+
+def gui_kept(procs: list[dict[str, Any]], window_pids: set[int], baseline: set[int]) -> list[int]:
+    """구간 동안 새로 생긴 화면 계정 프로세스 가운데 창이 있어 남기는 것. 기록하고, 다음 구간에서도
+    기준(baseline)으로 보지 않고 다시 판단한다 (보안 검수 run-4 N4)."""
+    return _new_processes(procs, window_pids, baseline)[1]

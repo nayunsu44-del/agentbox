@@ -420,3 +420,53 @@ def test_failed_logins_are_aggregated(home, monkeypatch):
     assert len(rows) == 6 and rows[-1]["payload"] == {"suppressed_before": 7}
     assert c.post("/login", data={"token": "토큰"}).status_code == 200      # 예전에는 TypeError로 500
     assert c.get("/sandboxes", headers={"Authorization": b"Bearer \xe9t\xe9"}).status_code == 401
+
+
+_FORGE = """
+import ctypes as C, sys, time
+X = C.CDLL("libX11.so.6")
+X.XOpenDisplay.restype = C.c_void_p
+X.XDefaultRootWindow.argtypes, X.XDefaultRootWindow.restype = [C.c_void_p], C.c_ulong
+X.XCreateSimpleWindow.argtypes = [C.c_void_p, C.c_ulong] + [C.c_int] * 2 + [C.c_uint] * 3 + [C.c_ulong] * 2
+X.XCreateSimpleWindow.restype = C.c_ulong
+X.XInternAtom.argtypes, X.XInternAtom.restype = [C.c_void_p, C.c_char_p, C.c_int], C.c_ulong
+X.XChangeProperty.argtypes = [C.c_void_p, C.c_ulong, C.c_ulong, C.c_ulong, C.c_int, C.c_int, C.c_void_p, C.c_int]
+X.XStoreName.argtypes = [C.c_void_p, C.c_ulong, C.c_char_p]
+X.XMapWindow.argtypes = X.XFlush.argtypes = None
+d = X.XOpenDisplay(None)
+w = X.XCreateSimpleWindow(d, X.XDefaultRootWindow(d), 0, 0, 1, 1, 0, 0, 0)
+v = C.c_ulong(int(sys.argv[1]))
+X.XChangeProperty(d, w, X.XInternAtom(d, b"_NET_WM_PID", 0), X.XInternAtom(d, b"CARDINAL", 0), 32, 0, C.byref(v), 1)
+X.XStoreName(d, w, b"forged")
+X.XMapWindow(C.c_void_p(d), C.c_ulong(w))
+X.XFlush(C.c_void_p(d))
+time.sleep(120)
+"""
+
+
+@needs_desktop
+def test_window_owner_comes_from_x_server_not_net_wm_pid(home):
+    """보안 검수 run-4 N4: 창이 _NET_WM_PID로 남의 pid를 대도, 창 주인은 X 서버가 아는 실제 클라이언트다.
+    예전에는 그 pid의 데몬이 '창 있는 앱'으로 보여 GUI 구간이 끝나도 멈추지 않았다."""
+    import time
+    from agentbox.sandbox_desktop import DESKTOP_ENV, DESKTOP_USER
+    c, box, H, _ = _build()
+    sid = c.post("/sandboxes", json={"source_dir": None, "template": "desktop"}, headers=H).json()["id"]
+    try:
+        box.sandboxes.screenshot(sid)                                     # 화면이 뜰 때까지
+        ct = box.sandboxes._desktop(sid)
+        out = ct.exec_run(["sh", "-c", 'sleep 300 >/dev/null 2>&1 & d=$!; '
+                           'python3 -c "$0" $d >/dev/null 2>&1 & echo $d $!', _FORGE],
+                          user=DESKTOP_USER, environment=DESKTOP_ENV).output.split()
+        daemon, forger = int(out[0]), int(out[1])
+        for _ in range(50):
+            _, wins = box.sandboxes.desktop_processes(sid)
+            if forger in wins:
+                break
+            time.sleep(0.2)
+        assert forger in wins and daemon not in wins
+        net = ct.exec_run(["sh", "-c", "for w in $(xdotool search --name '^forged$'); do xdotool getwindowpid $w; done"],
+                          user=DESKTOP_USER, environment=DESKTOP_ENV).output.split()
+        assert net == [str(daemon).encode()]                              # 창이 적은 값은 데몬 pid (위조)
+    finally:
+        c.delete(f"/sandboxes/{sid}", headers=H)
