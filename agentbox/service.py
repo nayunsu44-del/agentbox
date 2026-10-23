@@ -45,6 +45,13 @@ AUDIT_BURST_WAIT = 5   # 감사 로그 조회가 방금 닫기 시작한 구간 
 PENDING_APPROVALS_MAX = 20
 
 
+_NO_SESSION: Any = ...   # "session을 넘기지 않음". None(세션 없는 사람 토큰)과 다르다
+
+
+def _with_session(payload: dict[str, Any], session: str | None) -> dict[str, Any]:
+    return payload if session is _NO_SESSION else {**payload, "session": session}
+
+
 @dataclass
 class ToolOutcome:
     status: int          # HTTP 상태: 200 실행됨, 202 승인 대기, 403 차단, 423 사람이 화면 조작 중
@@ -270,8 +277,8 @@ class AgentBox:
             manifest, truncated = self.sandboxes.workspace_manifest(sid)
             procs, _ = self.sandboxes.desktop_processes(sid)
         except Exception as e:  # 기록용이라 실패해도 도구 호출은 막지 않는다. 다만 구간 기록이 없다는 것은 남긴다
-            self._safe_log(sid, None, "gui_burst_open_failed", {"snapshot_id": snapshot_id,
-                                                                 "error": (str(e) or type(e).__name__)[:300]})
+            self.log_best_effort(sid, None, "gui_burst_open_failed", {"snapshot_id": snapshot_id,
+                                                                       "error": (str(e) or type(e).__name__)[:300]})
             return False
         self._gui_burst[sid] = {"snapshot_id": snapshot_id, "manifest": manifest, "truncated": truncated,
                                 "pids": {p["pid"] for p in procs}, "container_id": container_id}
@@ -288,15 +295,15 @@ class AgentBox:
             return str(e) or type(e).__name__
         if pids:
             args = {p["pid"]: p["args"][:200] for p in procs}
-            self._safe_log(sid, None, "gui_processes_stopped", {
+            self.log_best_effort(sid, None, "gui_processes_stopped", {
                 "snapshot_id": burst["snapshot_id"], "reason": reason,
                 "processes": [{"pid": pid, "args": args.get(pid, "")} for pid in pids[:50]], "count": len(pids)})
         return None
 
     def _burst_close_failed(self, sid: str, burst: dict[str, Any], reason: str, error: str) -> None:
         """조용히 버리지 않는다: 사람이 그 구간 시작 스냅샷을 보고 판단할 수 있게 남긴다."""
-        self._safe_log(sid, None, "gui_burst_close_failed",
-                       {"snapshot_id": burst["snapshot_id"], "reason": reason, "error": error[:300]})
+        self.log_best_effort(sid, None, "gui_burst_close_failed",
+                             {"snapshot_id": burst["snapshot_id"], "reason": reason, "error": error[:300]})
 
     def _close_gui_burst(self, sid: str, reason: str, only: dict[str, Any] | None = None) -> None:
         """GUI 구간 동안 /workspace에서 바뀐 파일을 감사 로그에 남긴다. 정책 밖에서 바뀐 것을 사람이 보고,
@@ -328,7 +335,7 @@ class AgentBox:
         diff = diff_manifest(burst["manifest"], manifest)
         if not any(diff.values()):
             return
-        self._safe_log(sid, None, "gui_changes", {
+        self.log_best_effort(sid, None, "gui_changes", {
             "snapshot_id": burst["snapshot_id"], "reason": reason,
             "counts": {k: len(v) for k, v in diff.items()},
             **{k: v[:100] for k, v in diff.items()},
@@ -418,8 +425,8 @@ class AgentBox:
 
         if decision.action == REQUIRE_APPROVAL:
             if len(self.approvals.list(status=A.PENDING, sandbox_id=sid)) >= PENDING_APPROVALS_MAX:
-                self._safe_log(sid, tool, "tool_blocked", {"request": req_id, "reason": "too_many_pending_approvals",
-                                                           "limit": PENDING_APPROVALS_MAX})
+                self.log_best_effort(sid, tool, "tool_blocked", {"request": req_id, "reason": "too_many_pending_approvals",
+                                                                 "limit": PENDING_APPROVALS_MAX})
                 raise ServiceError(429, f"이 샌드박스의 승인 대기가 이미 {PENDING_APPROVALS_MAX}개. "
                                         "사람이 결정하거나 기한이 지난 뒤 다시 호출할 것.")
             try:
@@ -452,7 +459,7 @@ class AgentBox:
             try:
                 self._snapshot(sid, tool, f"before {tool} (request {req_id})", {"request": req_id})
             except (SandboxError, AuditWriteError, Exception) as e:
-                self._safe_log(sid, tool, "tool_error", {"request": req_id, "error": f"스냅샷 실패: {e}"})
+                self.log_best_effort(sid, tool, "tool_error", {"request": req_id, "error": f"스냅샷 실패: {e}"})
                 raise ServiceError(503, f"스냅샷 또는 기록 실패, 실행하지 않음: {e}") from e
         try:
             result = self._run_tool(sid, tool, args)
@@ -466,13 +473,13 @@ class AgentBox:
                                      "message": "사람이 화면을 조작 중이라 GUI 도구를 실행하지 않았다. "
                                                 "돌려받은 뒤 다시 호출할 것 (GET /sandboxes/{id}/desktop/state)."})
         except SandboxError as e:
-            self._safe_log(sid, tool, "tool_error", {"request": req_id, "error": str(e)})
+            self.log_best_effort(sid, tool, "tool_error", {"request": req_id, "error": str(e)})
             raise ServiceError(400, str(e)) from e
-        self._safe_log(sid, tool, "tool_result", {"request": req_id, **self._summary(tool, result)})
+        self.log_best_effort(sid, tool, "tool_result", {"request": req_id, **self._summary(tool, result)})
         return ToolOutcome(200, {"status": "executed", "result": result})
 
-    def _safe_log(self, sid: str | None, tool: str | None, event: str, payload: dict[str, Any],
-                  actor: str = "system") -> None:
+    def log_best_effort(self, sid: str | None, tool: str | None, event: str, payload: dict[str, Any],
+                        actor: str = "system") -> None:
         try:
             self.audit.append(actor=actor, event=event, sandbox_id=sid, tool=tool, payload=payload)
         except AuditWriteError:
@@ -491,8 +498,8 @@ class AgentBox:
                 self._drop_capture(apr["id"])
                 self.approvals.finish(apr["id"], A.EXPIRED, {
                     "message": f"{self.approval_timeout}초 안에 결정이 없어 거부함. 실행하지 않음."})
-                self._safe_log(apr["sandbox_id"], apr["tool"], "approval_expired",
-                               {"approval_id": apr["id"], "timeout_s": self.approval_timeout})
+                self.log_best_effort(apr["sandbox_id"], apr["tool"], "approval_expired",
+                                     {"approval_id": apr["id"], "timeout_s": self.approval_timeout})
 
     def decide(self, aid: str, approve: bool, actor: str = "human", session: str | None = None) -> dict[str, Any]:
         self.expire_stale()
@@ -522,17 +529,17 @@ class AgentBox:
                               payload={"approval_id": aid, "args": self._logged_args(tool, args)})
         except (SandboxError, AuditWriteError, Exception) as e:
             self.approvals.finish(aid, A.FAILED, {"error": f"스냅샷 또는 기록 실패, 실행하지 않음: {e}"})
-            self._safe_log(sid, tool, "tool_error", {"approval_id": aid, "error": str(e)})
+            self.log_best_effort(sid, tool, "tool_error", {"approval_id": aid, "error": str(e)})
             raise ServiceError(503, f"스냅샷 또는 기록 실패, 실행하지 않음: {e}") from e
 
         try:
             result = self._run_tool(sid, tool, args)
         except (SandboxError, HumanControl) as e:
             self.approvals.finish(aid, A.FAILED, {"error": str(e)}, snapshot_id=snap["id"])
-            self._safe_log(sid, tool, "tool_error", {"approval_id": aid, "error": str(e)})
+            self.log_best_effort(sid, tool, "tool_error", {"approval_id": aid, "error": str(e)})
             return self.approvals.get(aid)  # type: ignore[return-value]
         self.approvals.finish(aid, A.EXECUTED, result, snapshot_id=snap["id"])
-        self._safe_log(sid, tool, "tool_result", {"approval_id": aid, **self._summary(tool, result)})
+        self.log_best_effort(sid, tool, "tool_result", {"approval_id": aid, **self._summary(tool, result)})
         return self.approvals.get(aid)  # type: ignore[return-value]
 
     # ---- 샌드박스 생성 (SB-1) --------------------------------------------
@@ -546,6 +553,41 @@ class AgentBox:
                                                       "image": rec["image"], "template": rec["template"],
                                                       "session": session})
         return rec, token
+
+    # ---- 샌드박스 일시정지·재개·스냅샷·복원·삭제 -----------------------------
+    # session을 넘기지 않으면(JSON API) 기록에 session 항목을 넣지 않고, 넘기면(웹 UI) None이어도 넣는다.
+    def pause_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
+        self.log_human("sandbox_pause", sid, _with_session({}, session))
+        self.end_gui_burst(sid, "sandbox_paused")  # 멈춘 컨테이너에서는 구간을 닫지 못한다
+        self.sandboxes.pause(sid)
+        return self.sandboxes.get(sid)
+
+    def resume_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
+        self.log_human("sandbox_resume", sid, _with_session({}, session))
+        self.sandboxes.resume(sid)
+        self.reset_gui_timers(sid)  # 멈춘 동안의 GUI 호출이 남긴 시각 때문에 다음 구간을 건너뛰지 않게
+        return self.sandboxes.get(sid)
+
+    def snapshot_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
+        self.log_human("snapshot_request", sid, _with_session({}, session))
+        snap = self.sandboxes.snapshot(sid, reason="manual")
+        self.log_human("snapshot", sid, _with_session({"snapshot_id": snap["id"], "image": snap["image"]}, session))
+        return snap
+
+    def restore_sandbox(self, sid: str, snap_id: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
+        self.log_human("restore_request", sid, _with_session({"snapshot_id": snap_id}, session))
+        self.end_desktop(sid, "sandbox_restored")
+        rec = self.sandboxes.restore(sid, snap_id)
+        self.reset_gui_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
+        self.log_human("restored", sid, _with_session({"snapshot_id": snap_id, "container_id": rec["container_id"]},
+                                                      session))
+        return rec
+
+    def delete_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> None:
+        self.log_human("sandbox_delete", sid, _with_session({}, session))
+        self.end_desktop(sid, "sandbox_deleted")
+        self.sandboxes.delete(sid)
+        self.drop_captures(sid)
 
     # ---- 파일 넣기·받기 (UX-3, UX-4) ---------------------------------------
     def import_file(self, sid: str, name: str, data: bytes, session: str | None = None) -> dict[str, Any]:
@@ -561,7 +603,7 @@ class AgentBox:
             except (SandboxError, AuditWriteError, Exception) as e:
                 raise ServiceError(503, f"스냅샷 또는 기록 실패, 넣지 않음: {e}") from e
         res = self.sandboxes.upload(sid, name, data)
-        self._safe_log(sid, None, "file_imported", {**meta, "path": res["path"]}, actor="human")
+        self.log_best_effort(sid, None, "file_imported", {**meta, "path": res["path"]}, actor="human")
         return res
 
     def export_file(self, sid: str, name: str, session: str | None = None) -> bytes:

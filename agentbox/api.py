@@ -187,24 +187,15 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     @app.post("/sandboxes/{sid}/pause")
     def pause(sid: str, p: Principal = Depends(human_only)):
-        box.log_human("sandbox_pause", sid, {})
-        box.end_gui_burst(sid, "sandbox_paused")  # 멈춘 컨테이너에서는 구간을 닫지 못한다
-        guard(lambda: box.sandboxes.pause(sid))
-        return box.sandboxes.get(sid)
+        return guard(lambda: box.pause_sandbox(sid))
 
     @app.post("/sandboxes/{sid}/resume")
     def resume(sid: str, p: Principal = Depends(human_only)):
-        box.log_human("sandbox_resume", sid, {})
-        guard(lambda: box.sandboxes.resume(sid))
-        box.reset_gui_timers(sid)  # 멈춘 동안의 GUI 호출이 남긴 시각 때문에 다음 구간을 건너뛰지 않게
-        return box.sandboxes.get(sid)
+        return guard(lambda: box.resume_sandbox(sid))
 
     @app.post("/sandboxes/{sid}/snapshots", status_code=201)
     def snapshot(sid: str, p: Principal = Depends(human_only)):
-        box.log_human("snapshot_request", sid, {})
-        snap = guard(lambda: box.sandboxes.snapshot(sid, reason="manual"))
-        box.log_human("snapshot", sid, {"snapshot_id": snap["id"], "image": snap["image"]})
-        return snap
+        return guard(lambda: box.snapshot_sandbox(sid))
 
     @app.get("/sandboxes/{sid}/snapshots")
     def list_snapshots(sid: str, p: Principal = Depends(human_only)):
@@ -212,19 +203,11 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     @app.post("/sandboxes/{sid}/restore")
     def restore(sid: str, body: Restore, p: Principal = Depends(human_only)):
-        box.log_human("restore_request", sid, {"snapshot_id": body.snapshot_id})
-        box.end_desktop(sid, "sandbox_restored")
-        rec = guard(lambda: box.sandboxes.restore(sid, body.snapshot_id))
-        box.reset_gui_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
-        box.log_human("restored", sid, {"snapshot_id": body.snapshot_id, "container_id": rec["container_id"]})
-        return rec
+        return guard(lambda: box.restore_sandbox(sid, body.snapshot_id))
 
     @app.delete("/sandboxes/{sid}")
     def delete(sid: str, p: Principal = Depends(human_only)):
-        box.log_human("sandbox_delete", sid, {})
-        box.end_desktop(sid, "sandbox_deleted")
-        guard(lambda: box.sandboxes.delete(sid))
-        box.drop_captures(sid)
+        guard(lambda: box.delete_sandbox(sid))
         return {"deleted": sid}
 
     # ---- 도구 ----------------------------------------------------------
@@ -438,7 +421,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         finally:
             # 정리 중에 await가 취소될 수 있으니 등록 해제와 기록을 먼저 한다.
             box.desktop.drop_conn(conn)
-            box._safe_log(sid, None, "desktop_disconnect", {
+            box.log_best_effort(sid, None, "desktop_disconnect", {
                 "session": session, "mode": mode, "conn": conn.id, "seconds": round(loop.time() - started, 1),
                 "client_bytes": up, "server_bytes": down, **({"reason": ended} if ended else {})}, actor="human")
             for t in tasks:
