@@ -1,0 +1,77 @@
+{
+ "body_bytes": 8388580,
+ "rss_idle_mb": 59,
+ "healthz_idle_s": 0.003,
+ "single": {
+  "result": {
+   "status": 401,
+   "s": 0.69
+  },
+  "rss_after_mb": 260,
+  "hwm_mb": 268
+ },
+ "concurrent_4": {
+  "results": [
+   {
+    "status": 401,
+    "s": 3.4
+   },
+   {
+    "status": 401,
+    "s": 3.15
+   },
+   {
+    "status": 401,
+    "s": 1.72
+   },
+   {
+    "status": 401,
+    "s": 1.72
+   }
+  ],
+  "healthz_during_s": 1.226,
+  "server_alive": true,
+  "hwm_mb": 703,
+  "exit": null
+ },
+ "concurrent_8": {
+  "results": [
+   {
+    "status": 401,
+    "s": 0.39
+   },
+   {
+    "status": 401,
+    "s": 1.0
+   },
+   {
+    "status": 401,
+    "s": 1.0
+   },
+   {
+    "status": 401,
+    "s": 2.68
+   },
+   {
+    "status": 401,
+    "s": 2.67
+   },
+   {
+    "status": 401,
+    "s": 3.04
+   },
+   {
+    "status": 401,
+    "s": 3.29
+   },
+   {
+    "status": 401,
+    "s": 3.72
+   }
+  ],
+  "healthz_during_s": 0.471,
+  "server_alive": true,
+  "hwm_mb": 734,
+  "exit": null
+ }
+}

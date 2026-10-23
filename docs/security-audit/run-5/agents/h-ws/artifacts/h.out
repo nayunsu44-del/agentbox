@@ -1,0 +1,14 @@
+journal_mode wal
+S0 baseline: healthz=200 latency_s=0.0
+S1 link-session WS, no contention: healthz=200 latency_s=0.0 ws=None ws_s=0.01
+S2 link-session WS while another conn holds BEGIN IMMEDIATE 7s: healthz=200 latency_s=4.72 ws=rejected:WebSocketDisconnect:1011 ws_s=5.02
+S3 junk-cookie (unauthenticated) WS while BEGIN IMMEDIATE 7s: healthz=200 latency_s=0.0 ws=rejected:WebSocketDisconnect:4401 ws_s=0.0
+S4 no-cookie (unauthenticated) WS while BEGIN IMMEDIATE 7s: healthz=200 latency_s=0.0 ws=rejected:WebSocketDisconnect:4401 ws_s=0.01
+  writer error: OperationalError database is locked
+S5 junk-cookie WS while login waits on write lock holding DesktopControl._lock: healthz=200 latency_s=4.41 ws=rejected:WebSocketDisconnect:4401 ws_s=4.72
+S6 link-session WS while worker holds AuditLog._lock 4s: healthz=200 latency_s=3.53 ws=None ws_s=3.9
+S7 junk-cookie WS while worker holds AuditLog._lock 4s: healthz=200 latency_s=0.0 ws=rejected:WebSocketDisconnect:4401 ws_s=0.0
+db_bytes 51691248
+recent_s 0.034
+verify_s 0.836 ok False
+S8 link-session WS while a worker runs audit.verify() over 100k rows: healthz=200 latency_s=0.13 ws=None ws_s=0.82

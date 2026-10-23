@@ -424,16 +424,85 @@
   "prior_status": "prior_deferred",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-ws",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/audit.py",
+   "agentbox/desktop.py",
+   "agentbox/desktop_ws.py",
+   "agentbox/retention.py",
+   "agentbox/sandbox.py",
+   "agentbox/sandbox_desktop.py",
+   "agentbox/service.py",
+   "agentbox/templates/sandbox.html",
+   "agentbox/web.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-ws",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/desktop.py"
+    ],
+    "invariant": "Pre-authentication work imbalance: an unauthenticated WS upgrade to /sandboxes/{sid}/desktop/ws must not do expensive or blocking work before it is rejected.",
+    "method": "source",
+    "result": "api.py:408-416 (desktop_ws) runs on the event loop. With no cookie, desktop.session -> session_scope returns None before any DB access (desktop.py:150-151). With any cookie value it does one SHA-256 plus a primary-key SELECT under DesktopControl._lock (desktop.py:152-160). The DELETE branch only runs for an existing row that is expired or has the wrong gen, so an unauthenticated client cannot reach a write. The DB is in WAL mode (audit.py:260), so the SELECT never waits on a writer. The per-request cost is about the same as any cookie route, so there is no pre-auth imbalance on its own. The only pre-auth stall is through DesktopControl._lock contention (see the local check, S5), and that needs a concurrent human desktop write plus another SQLite writer.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-ws",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/desktop_ws.py",
+     "agentbox/desktop.py",
+     "agentbox/audit.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "Worker/event-loop starvation: a desktop WS connect (pre- or post-auth) must not block the shared asyncio event loop on SQLite locks, audit locks or Docker calls, which would stall every HTTP route.",
+    "method": "local",
+    "result": "Harness h.py ran in tools/sbx with the real agentbox.api.build() app and the Docker SDK faked in-process. It timed GET /healthz (a sync route) sent 0.3 s after a WS upgrade. Baseline 0.0 s. S2: desktop-link session WS while another SQLite connection held BEGIN IMMEDIATE (as retention.prune does) gave healthz 4.72 s and WS close 1011 after 5.02 s; log_human waited out the 5 s default busy timeout on the event loop. S3/S4: junk cookie or no cookie under the same write lock gave 0.0 s. S5: junk-cookie (unauthenticated) WS while a human new_session() waited on the write lock holding DesktopControl._lock gave healthz 4.41 s. S6: link-session WS while a worker held AuditLog._lock for 4 s gave healthz 3.53 s. S7: junk cookie under the same audit lock gave 0.0 s. S8: audit.verify() over 100k rows held the lock briefly (verify 0.84 s total, healthz 0.13 s). The event-loop stall is shown with real handler code.",
+    "artifact": "agents/h-ws/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-ws",
+    "reviewed_paths": [
+     "agentbox/desktop_ws.py",
+     "agentbox/sandbox_desktop.py",
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "Relay setup and teardown work must run off the event loop.",
+    "method": "source",
+    "result": "These synchronous calls run on the event loop. Setup: relay -> box.sandboxes.vnc_command (desktop_ws.py:20) -> _desktop -> template_of/_require_running -> _rec (SandboxManager._lock + SQLite, sandbox.py:185-186) and client.containers.get, a blocking Docker HTTP call (sandbox.py:230). Then box.log_human, an audit BEGIN IMMEDIATE under AuditLog._lock (desktop_ws.py:21, service.py:658-662, audit.py:292-296). Per connection: add_conn and touch(), and touch() takes DesktopControl._lock on every client message in control mode (desktop_ws.py:41,57). Session re-check every 30 s (desktop_ws.py:72). Teardown: log_best_effort audit append in finally (desktop_ws.py:91). Only the x11vnc subprocess spawn and the I/O are async. How Docker daemon latency affects containers.get cannot be observed offline (the client is faked); the SQLite and lock paths are enough for the stall.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-ws",
+    "reviewed_paths": [
+     "agentbox/retention.py",
+     "agentbox/audit.py",
+     "agentbox/web.py",
+     "agentbox/templates/sandbox.html"
+    ],
+    "invariant": "Which principals can create the long lock holds that the event loop then waits on.",
+    "method": "source",
+    "result": "Long holders found: retention.prune keeps the SQLite write lock for its whole BEGIN IMMEDIATE transaction (retention.py:91,106-129; timeout=30), started by the host operator. AuditLog.verify fetches the whole table under _lock (audit.py:338-340), reached from human /audit/verify and /ui/verify. AuditLog.recent runs COUNT(*) WHERE sandbox_id under _lock with no index on sandbox_id (audit.py:26-37,311-316); the sandbox page polls it every 3 s (templates/sandbox.html:19, web.py:290-293). The agent cannot hold these locks itself. It can only grow the audit table, which makes the human-run reads take longer (measured 0.034 s for recent and 0.84 s for verify per 100k rows). The trigger is a desktop WS connect, disconnect or auto-reconnect from a human or desktop-link session.",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/desktop_ws.py:relay+agentbox/api.py:desktop_ws:blocking-sqlite-audit-docker-on-event-loop"
+  ],
   "unresolved": [],
   "x_hunter": "h-ws",
   "x_prior_unit": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws%20upgrade%20before%20ws.accept%28%29::agentbox%2Fapi.py%23desktop_ws%20async%20handler%3A%20synchronous%20SQLite%20%28session%2C%20lease%29%20and%20Docker%20SDK%20calls%20on%20the%20event%20loop%20before%20accept%20%2B%20agentbox%2Fdesktop_ws.py%23relay%20setup::agentbox%2Fapi.py%20%2B%20agentbox%2Fdesktop_ws.py%20%2B%20agentbox%2Fdesktop.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
   "x_prior_fingerprints": [],
-  "x_source": "run-4 critic-1 deferred unit (api.py desktop_ws is now at api.py:408-418)."
+  "x_source": "run-4 critic-1 deferred unit (api.py desktop_ws is now at api.py:408-418).",
+  "x_hardening": [
+   "No cap on concurrent desktop WS relays per session or per sandbox (desktop_ws.py:26): each view connection spawns a host-side docker exec CLI process plus x11vnc+socat in the container, bounded only by the desktop container pids limit (AGENTBOX_DESKTOP_PIDS 1024). A desktop-link holder can open hundreds. Add a small per-session/per-sandbox connection cap.",
+   "sqlite3.connect without an explicit timeout (audit.py:259, desktop.py:92, sandbox.py:164, approvals.py:46) means the default 5 s busy wait applies to every write while retention.prune (timeout=30) holds the write lock. Consider documenting that prune should run with the server stopped, or keep its transaction short (batch the DELETEs)."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fcli.py%23agentbox%20prune%20--before%20--archive%20%5B--dry-run%5D%20%2B%20agentbox%20verify%20--archive%20%28host%20CLI%2C%20direct%20SQLite%29%20and%20every%20later%20AuditLog.verify%28%29%2Fappend%20over%20a%20pruned%20database::Audit-log%20tamper%20evidence%20across%20pruning%3A%20retention.prune%20drops%20and%20recreates%20the%20audit_no_delete%20trigger%20inside%20BEGIN%20IMMEDIATE%2C%20records%20an%20audit_anchor%20%28last%20id%2Fhash%2C%20archive%20sha256%29%20and%20an%20audit_pruned%20row%3B%20verify%28%29%20starts%20at%20the%20latest%20anchor%20and%20verify_archives%28%29%20chains%20GENESIS%20-%3E%20archives%20-%3E%20live%20table.%20Invariant%3A%20a%20deletion%20or%20edit%20of%20audit%20history%20that%20the%20prune%20command%20did%20not%20perform%20is%20still%20detected%2C%20prune%20never%20removes%20pending%2Fapproved%20approvals%20or%20rows%20at%2Fafter%20the%20cutoff%2C%20and%20a%20failed%20prune%20leaves%20the%20database%20and%20archive%20consistent.::agentbox%2Fretention.py%20%2B%20agentbox%2Faudit.py%23SCHEMA%2Faudit_anchor%2Flatest_anchor%2Fcheck_chain%2Fread_archive%2Finsert_record%2Fappend%2Fverify%2Fverify_archives%20%2B%20agentbox%2Fcli.py%23cmd_prune%2Fcmd_verify::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
