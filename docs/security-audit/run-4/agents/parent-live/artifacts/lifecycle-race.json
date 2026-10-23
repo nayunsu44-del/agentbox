@@ -1,0 +1,104 @@
+{
+ "trials": [
+  {
+   "offset_s": 0.02,
+   "calls": {
+    "delete": "APIError: 409 Client Error for http+docker://localnpipe/v1.56/containers/672d518b3f29f4f1ebab82865be923c8dd4bfa5ea7089f1620d9afda98f7ffaf?v=False&link=False&force=True: C",
+    "restore": "ok"
+   },
+   "after": {
+    "status": "running",
+    "container_id": "696ab66fc8ccc6613b7e45653ee63ad8ad80ecde38e5487e00c8884475d04b97",
+    "container_alive": true
+   },
+   "old_token_matches": true,
+   "old_token_maps_to_sid": true,
+   "resurrected": true
+  },
+  {
+   "offset_s": 0.08,
+   "calls": {
+    "delete": "APIError: 409 Client Error for http+docker://localnpipe/v1.56/containers/31f7d53329c8073b852bc0f48bab5fa6cf2018735193f0070d911a92e68e7e23?v=False&link=False&force=True: C",
+    "restore": "ok"
+   },
+   "after": {
+    "status": "running",
+    "container_id": "4775a7062aab09780987cd4474b1f92b66e1e18641666a1e22926f3579942362",
+    "container_alive": true
+   },
+   "old_token_matches": true,
+   "old_token_maps_to_sid": true,
+   "resurrected": true
+  },
+  {
+   "offset_s": 0.15,
+   "calls": {
+    "delete": "APIError: 409 Client Error for http+docker://localnpipe/v1.56/containers/ee7bcee7e25791f0126d8ece3f92882570fdbb58a94e4920571c99e32d21dea7?v=False&link=False&force=True: C",
+    "restore": "ok"
+   },
+   "after": {
+    "status": "running",
+    "container_id": "4d9ff584487f9c0f886b82e7c94ec639599492ee0ceba38703ff4bcde0007b52",
+    "container_alive": true
+   },
+   "old_token_matches": true,
+   "old_token_maps_to_sid": true,
+   "resurrected": true
+  },
+  {
+   "offset_s": 0.25,
+   "calls": {
+    "delete": "ok",
+    "restore": "ok"
+   },
+   "after": {
+    "status": "running",
+    "container_id": "d1a2176e46c58fe5f734150362504474868059f5ce22dce010e7f1dccce3ba63",
+    "container_alive": true
+   },
+   "old_token_matches": true,
+   "old_token_maps_to_sid": true,
+   "resurrected": true
+  },
+  {
+   "offset_s": 0.4,
+   "calls": {
+    "delete": "ok",
+    "restore": "ok"
+   },
+   "after": {
+    "status": "running",
+    "container_id": "f964fc03f7710f703096a008c39a6670f517865c7f0f3b0f142f1f5161374a23",
+    "container_alive": true
+   },
+   "old_token_matches": true,
+   "old_token_maps_to_sid": true,
+   "resurrected": true
+  },
+  {
+   "offset_s": 0.7,
+   "calls": {
+    "restore": "ok",
+    "delete": "ok"
+   },
+   "after": {
+    "status": "deleted",
+    "container_id": "182c907855539483528ae5580188aded5de9da028a23c0f6f0188760141b2cf4",
+    "container_alive": false
+   },
+   "old_token_matches": false,
+   "old_token_maps_to_sid": false,
+   "resurrected": false
+  }
+ ],
+ "control": {
+  "restore_after_delete": "ImageNotFound: 404 Client Error for http+docker://localnpipe/v1.56/images/create?tag=sb_3330d473-snap_1a9f8e5e&fromImage=agentbox-snap: Not Found (\"pull access denied for agen",
+  "after": {
+   "status": "deleted",
+   "container_id": "1a81cd4d29ced93e7261ef842cb696ab7aafe11cc15d3c633caa6506824ae1fd",
+   "container_alive": false
+  },
+  "old_token_matches": false
+ },
+ "error": null
+}

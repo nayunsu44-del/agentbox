@@ -1,0 +1,370 @@
+{
+  "units": [
+    {
+      "coverage_id": "agentbox%2Fweb.py%23%2Fui%20pages%20%2B%20agentbox%2Fdesktop.py%23page%20rendered%20in%20a%20frame::agentbox%2Fapi.py%23X-Frame-Options%20%2B%20CSP%20frame-ancestors%20%27self%27%20on%20cookie-authenticated%20pages%20%2B%20SameSite%3DStrict%20%2B%20same_origin::agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py%20%2B%20agentbox%2Fdesktop.py::CLIENT-SIDE.md%23Clickjacking",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "agentbox/api.py",
+        "agentbox/web.py",
+        "agentbox/desktop.py",
+        "agentbox/templates/sandbox.html",
+        "tests/test_m4_acceptance.py",
+        "deploy/Caddyfile"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/web.py",
+            "agentbox/desktop.py"
+          ],
+          "invariant": "Every cookie-authenticated HTML response (login page, /ui redirect, /ui fragments, desktop page) refuses cross-origin framing.",
+          "method": "local",
+          "result": "Built the real app with api.build (Docker client stubbed; nothing else replaced) and drove it over ASGI in sbx. GET /login 200, GET /ui 303 -> /login, GET /ui/approvals 401, GET /sandboxes/sb_deadbeef/desktop 401; every response carried x-frame-options: SAMEORIGIN and content-security-policy: frame-ancestors 'self'. _NoFraming (api.py:63-80) is installed unconditionally at api.py:113 and appends both headers to every http.response.start, so error responses and redirects are covered too.",
+          "artifact": "agents/h-webui/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/templates/sandbox.html",
+            "agentbox/api.py",
+            "tests/test_m4_acceptance.py"
+          ],
+          "invariant": "The framing policy must still allow agentbox's own desktop iframe, so 'self'/SAMEORIGIN is the correct value rather than DENY.",
+          "method": "source",
+          "result": "sandbox.html:11 frames /sandboxes/{sb.id}/desktop, which is same-origin, so frame-ancestors 'self' keeps the in-app desktop view working while blocking every other origin. tests/test_m4_acceptance.py:219-225 asserts exactly these two headers on the framed paths.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "deploy/Caddyfile",
+            "agentbox/api.py"
+          ],
+          "invariant": "Proxy-mode deployments inherit the same framing policy without proxy configuration.",
+          "method": "source",
+          "result": "deploy/Caddyfile:4-6 is a bare reverse_proxy agentbox:8765 that adds no response headers, but the middleware lives inside the app, so the headers are emitted in direct-TLS, behind-proxy and loopback modes alike.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "agentbox%2Fweb.py%23%2Fui%2F%2A%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fapi.py%23same_origin%20%2B%20SameSite%3DStrict%20HttpOnly%20cookie::agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
+      "disposition": "candidate",
+      "reviewed_paths": [
+        "agentbox/api.py",
+        "agentbox/web.py",
+        "agentbox/desktop.py",
+        "agentbox/cli.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/web.py"
+          ],
+          "invariant": "Every cookie-authenticated state-changing route is bound to the same single origin gate.",
+          "method": "source",
+          "result": "Inventory: the cookie dependency screen_principal calls same_origin unconditionally at api.py:145; the routes behind it are POST /ui/sandboxes (web.py:174), POST /ui/approvals/{aid}/{decision} (web.py:217), POST /ui/sandboxes/{sid}/snapshots (web.py:245), /restore/{snap_id} (web.py:252), /delete (web.py:259), POST /sandboxes/{sid}/files (api.py:276), POST /sandboxes/{sid}/desktop/takeover (api.py:332) and /handback (api.py:338); POST /login (web.py:132) and POST /logout (web.py:144) call same_origin explicitly, and the desktop WebSocket checks it at api.py:347. No cookie-authenticated mutation lacks the gate.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/desktop.py",
+            "agentbox/api.py",
+            "agentbox/cli.py"
+          ],
+          "invariant": "The ambient credential is scoped and transported so that only a same-site browser context can present it.",
+          "method": "source",
+          "result": "desktop.py:58-60 sets the session cookie httponly=True, samesite='strict', max_age=12h, with no Domain attribute (host-only) and the default Path=/; secure is settings.secure_cookie or request.url.scheme == 'https' (api.py:135-136, web.py:113-114) and cli.py:102 forces secure_cookie for direct TLS and for --behind-tls-proxy. Sessions and tickets carry the token_gen fingerprint and are dropped when the human token rotates (desktop.py:99-105).",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/web.py"
+          ],
+          "invariant": "The origin gate must reject an Origin whose scheme differs from the served origin, and must not be bypassable with a crafted Origin value.",
+          "method": "local",
+          "result": "ASGI fixtures in sbx: POST /login with Origin http://agentbox.example + Host agentbox.example -> 200 (accepted; scheme never compared), Origin https://agentbox.example -> 200, Origin http://evil.example -> 403, Origin: null -> 403, Origin http://agentbox.example@evil.example -> 403, no Origin -> 200. With a real session cookie from desktop.new_session('*'): POST /ui/approvals/apr_000000000000/approve with the cross-scheme Origin -> 200 (handler ran; approval-not-found rendered) and with Origin https://evil.example -> 403; POST /ui/sandboxes with the cross-scheme Origin reached create_sandbox (the Docker stub raised); POST /logout with the cross-scheme Origin -> 303 carrying Set-Cookie agentbox_session empty with Max-Age=0 and Path=/, both with a valid cookie (server session then ended: GET /ui -> 303 /login) and with no cookie at all.",
+          "artifact": "agents/h-webui/artifacts/h.out"
+        }
+      ],
+      "candidate_fingerprints": [
+        "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare"
+      ],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "container-controlled%20strings%20rendered%20to%20humans%20%28outbox%20names%2C%20gui_changes%20paths%2C%20ps%20args%2C%20exec%20output%2C%20errors%2C%20approval%20cards%29::agentbox%2Fdisplay.py%23escape_controls%20%2B%20agentbox%2Fweb.py%23describe%2F_shown%2Ffinalize%20%2B%20Jinja%20autoescape%20%2B%20agentbox%2Fcli.py%23_safe::agentbox%2Fdisplay.py%20%2B%20agentbox%2Fweb.py%20%2B%20agentbox%2Fcli.py%20%2B%20agentbox%2Ftemplates::AI-AND-LLM.md%23Insecure%20output%20rendering",
+      "disposition": "candidate",
+      "reviewed_paths": [
+        "agentbox/templates/_approvals.html",
+        "agentbox/web.py",
+        "agentbox/display.py",
+        "agentbox/cli.py",
+        "agentbox/agent.py",
+        "agentbox/templates/base.html",
+        "agentbox/templates/_outbox.html",
+        "agentbox/templates/_verify.html",
+        "agentbox/audit.py",
+        "agentbox/desktop.py",
+        "agentbox/sandbox.py",
+        "agentbox/api.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/templates/_approvals.html",
+            "agentbox/web.py",
+            "agentbox/display.py"
+          ],
+          "invariant": "The approval card shows the agent's command and the system-computed paths with every character that can reorder or hide text neutralised.",
+          "method": "local",
+          "result": "Rendered the real _approvals.html through web.py's exact Jinja wiring (Jinja2Templates + env.finalize = _shown + the short filter) with a command containing U+202E, U+2066, U+200E, U+061C, U+200B, U+2028 and an inline script tag. Output: U+202E/U+2066/U+200E were replaced by their literal backslash-u escapes and the script tag was HTML-escaped (the run-3 RLO/LRI fix works, markup is safe), but U+061C, U+200B and U+2028 survived raw into both the command cell and the affected-path cell.",
+          "artifact": "agents/h-webui/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/display.py",
+            "agentbox/cli.py"
+          ],
+          "invariant": "The shared control-character filter covers every character class that changes how a human reads the same bytes.",
+          "method": "source",
+          "result": "escape_controls (display.py:13-21) escapes C0/DEL/C1 and the bidi set U+200E/U+200F/U+202A-E/U+2066-2069, identically for the web variant (keep_newlines=True) and cli._safe (keep_newlines=False). It omits U+061C (Unicode Bidi_Control=Yes, the ALM sibling of the LRM/RLM it does cover) and the format/separator characters U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028 and U+2029, so both human surfaces share the same residual gap.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/cli.py",
+            "agentbox/agent.py"
+          ],
+          "invariant": "Container and model output printed by the CLI agent goes through cli._safe (prior run-3 confirmed record revalidation).",
+          "method": "source",
+          "result": "cmd_agent.log (cli.py:355-357) now applies _safe line-by-line to 'say', 'call' and 'result', so ToolClient.call_text's raw read_file/list_dir content (agent.py:116-126) is neutralised at the sink; cmd_audit applies _safe to the whole detail (cli.py:293) and _show_approval/cmd_approve do the same for rule text, command lines, affected paths, notes and stderr (cli.py:188-208, 241-248). The run-3 root cause no longer holds. Residual raw prints are server-generated only: cmd_snapshots (cli.py:312), cmd_verify (cli.py:305), _check detail (cli.py:53).",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/templates/base.html",
+            "agentbox/templates/_outbox.html",
+            "agentbox/templates/_verify.html",
+            "agentbox/audit.py"
+          ],
+          "invariant": "Container-controlled names, counts and paths reach only escaping or plain-text sinks in the remaining templates.",
+          "method": "source",
+          "result": "No template uses |safe or Markup, and finalize applies to every output expression. The outbox file name (container-controlled) is autoescaped in text, in the download attribute and in data-text, and data-text is consumed by new Notification(body) and dataset reads (base.html:69-76), which are plain-text sinks; _outbox.html:7 urlencodes the name in the href. _verify.html:4 interpolates only an int (audit.py:100 broken_at: int | None) into a script block.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-webui",
+          "reviewed_paths": [
+            "agentbox/desktop.py",
+            "agentbox/sandbox.py",
+            "agentbox/api.py"
+          ],
+          "invariant": "The desktop page's string-replacement HTML build cannot be injected through the sandbox id or runtime name.",
+          "method": "source",
+          "result": "desktop.page (desktop.py:356-358) substitutes __SID__/__RUNTIME__ into PAGE with no escaping, including inside a script block (desktop.py:309,317), but the id is always 'sb_' + secrets.token_hex(4) (sandbox.py:273), the page is only served for an existing sandbox row with a valid session scope (api.py:319-323), and runtime comes from Settings. No attacker-controlled string reaches that replacement.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [
+        "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized"
+      ],
+      "unresolved": []
+    }
+  ],
+  "candidates": [
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized",
+      "title": "The approval card still renders U+061C (a Bidi_Control character) and other format/separator characters raw, so a prompt-injected agent can still make the displayed command differ from the executed one",
+      "description": "The run-3 fix routes every template output through web._shown -> display.escape_controls (web.py:33-37, 94), and that closes the reported RLO/LRO/PDF/LRI/PDI and LRM/RLM cases: rendering the real _approvals.html with a crafted command turns them into literal escapes while HTML markup is autoescaped. The filter itself is a hand-written character class (display.py:13-21) that misses U+061C ARABIC LETTER MARK - a member of Unicode's Bidi_Control class, the ALM sibling of the LRM/RLM it does cover - together with the format characters U+200B-200D, U+2060, U+FEFF, U+00AD and the separator characters U+2028/U+2029. A prompt-injected agent therefore still chooses characters that the browser's bidi algorithm may use to reorder a command or a container-derived path in the card, and that force a line break inside the same pre block, while the argv that box.decide executes keeps the original bytes. This is a display-integrity failure on the human approval surface, not XSS.",
+      "claimed_root_cause": "display.py:13/15 enumerate C0/C1 and the bidi controls by hand and omit U+061C (Bidi_Control=Yes) plus the Cf invisibles U+200B-200D, U+2060, U+FEFF, U+00AD and the line/paragraph separators U+2028-U+2029; web._shown applies that class to every str template output (web.py:35-36), so the residual characters reach the approval card verbatim and the terminal path (cli._safe, cli.py:33-35) has the identical gap.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "agentbox/api.py",
+          "line": 215,
+          "scope": "POST /sandboxes/{sid}/tools/{tool} (agent token)",
+          "description": "A prompt-injected agent supplies args.command for an exec call; policy.decide sends it to the approval queue and the string is stored verbatim."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/web.py",
+          "line": 208,
+          "scope": "approvals_view",
+          "description": "Pending approvals, including the agent's args and the system-computed preview paths, are rendered into _approvals.html."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/web.py",
+          "line": 94,
+          "scope": "tpl.env.finalize = _shown",
+          "description": "finalize applies _shown to each output expression, which calls escape_controls(value, keep_newlines=True) for str values only (web.py:33-37)."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/templates/_approvals.html",
+          "line": 8,
+          "scope": "pre block with the agent's command",
+          "description": "The single sink that shows the human what will run; only autoescape and the finalize hook apply, and autoescape does not touch format characters."
+        },
+        {
+          "kind": "sink",
+          "file": "agentbox/display.py",
+          "line": 13,
+          "scope": "UNSAFE / _UNSAFE_KEEP_NEWLINES",
+          "description": "The regex does not contain U+061C, U+200B-200D, U+2060, U+FEFF, U+00AD or U+2028-U+2029, so those code points are written into the HTML and handed to the renderer unchanged, while the executed argv carries the same bytes."
+        }
+      ],
+      "evidence": [
+        {
+          "file": "agentbox/display.py",
+          "line": 13,
+          "description": "UNSAFE covers x00-x1f, x7f-x9f, U+200E/U+200F, U+202A-202E, U+2066-2069; U+061C is absent although it has Bidi_Control=Yes and the same visual-reordering role as the U+200F it replaces."
+        },
+        {
+          "file": "agentbox/display.py",
+          "line": 15,
+          "description": "The keep_newlines variant used by the web UI omits exactly the same characters, so neither surface filters them."
+        },
+        {
+          "file": "agentbox/web.py",
+          "line": 35,
+          "description": "_shown returns non-str values unchanged; today every template output is a str or an int, so containers do not reach a sink, but the filter's coverage depends on that."
+        },
+        {
+          "file": "agentbox/templates/_approvals.html",
+          "line": 14,
+          "description": "Container-derived affected paths are rendered in the same card with the same unfiltered character class, so a reordered path is shown to the approver too."
+        },
+        {
+          "file": "agentbox/templates/base.html",
+          "line": 23,
+          "description": "The pre/pre-wrap styling makes U+2028/U+2029 render as a real line break inside the command box, so one argv can read as two shell lines."
+        },
+        {
+          "file": "agentbox/cli.py",
+          "line": 35,
+          "description": "cli._safe uses the same escape_controls class, so the terminal approval view agrees with the web view but carries the same omission."
+        },
+        {
+          "file": "docs/security-audit/run-4/agents/h-webui/artifacts/h.out",
+          "line": 1,
+          "description": "Local render of the real template plus the per-code-point coverage table: U+202E/U+2066/U+200E escaped, U+061C/U+200B/U+2028 present raw in both cells."
+        }
+      ],
+      "blockers": [
+        "Renderer behaviour is not observable in the sandbox: sbx has no browser, terminal renderer or network (only fastapi/jinja2/pyyaml plus the repo), so the claimed visual reordering from U+061C and the forced break from U+2028 are unverified; the local check proves only that the code points reach the HTML while the argv keeps the same bytes.",
+        "Which browser engine versions and terminal/font stacks the operator actually uses - the fact that decides whether ALM and the separator characters produce a visible difference between the approved view and the executed command."
+      ],
+      "validation_plan": {
+        "local": "Already executed (agents/h-webui/artifacts/h.out): render _approvals.html through web.py's exact Jinja wiring with a command containing U+202E, U+2066, U+200E, U+061C, U+200B, U+2028 and an inline script tag; confirm the first three and the markup are neutralised while U+061C/U+200B/U+2028 stay raw. Next: a loopback browser fixture that renders that fragment beside the intended argv and captures the rendered order (Playwright Chromium/Firefox/WebKit, dummy data). Regression: extend each regex in display.py to the full Bidi_Control and Cf classes (keeping tab/newline in the web variant) and assert escape_controls neutralises U+061C, U+200B and U+2028.",
+        "deployment": "Owner opens a real pending exec approval whose command contains U+061C and U+2028 in the operator's browser and terminal and compares the rendered order with the argv shown by agentbox approve; no probing of live endpoints."
+      }
+    },
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+      "title": "same_origin compares only the Origin netloc with Host, so an http:// page on the same host passes the CSRF origin check of a TLS deployment and can clear the session cookie",
+      "description": "Every cookie-authenticated mutation in agentbox funnels through one origin check, api.same_origin (api.py:131-133), which compares urlsplit(Origin).netloc with the Host header and never the scheme, and also accepts a missing Origin. A page served as plaintext http://H is a different web origin from https://H but has the same netloc, so the check passes. Locally the app accepted Origin http://agentbox.example with Host agentbox.example and then ran the handler for POST /ui/approvals/{aid}/approve (with a real session cookie), POST /ui/sandboxes and POST /logout, while a foreign host, Origin: null and a userinfo-tricked Origin were rejected. Two consequences: with a cookie attached (browsers without schemeful same-site) the cross-scheme POST executes the human action - approve/deny, sandbox creation with an attacker-chosen source_dir, or session end; and even where the SameSite=Strict cookie is not attached, POST /logout still answers a cross-scheme request with a 303 that unconditionally carries a cookie-clearing Set-Cookie for the https origin, so an on-path attacker who can answer http://H can force the operator's browser to drop its session cookie without ending the server-side session.",
+      "claimed_root_cause": "api.py:131-133: same_origin() returns True when urlsplit(origin).netloc == headers.get('host') (and when Origin is absent); the scheme is never compared and nothing in agentbox/ or deploy/ emits Strict-Transport-Security, so the CSRF gate degrades to whatever same-site semantics the browser applies to http://H versus https://H.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "agentbox/web.py",
+          "line": 217,
+          "scope": "decide - POST /ui/approvals/{aid}/{decision} (peers: create web.py:174, logout web.py:142)",
+          "description": "Cookie-authenticated, form-encodable mutations with no anti-CSRF token; the only origin binding is same_origin."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/api.py",
+          "line": 145,
+          "scope": "screen_principal",
+          "description": "Resolves the browser cookie via box.desktop.session_scope() and then calls same_origin(request.headers); logout calls the same closure directly at web.py:144."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/api.py",
+          "line": 133,
+          "scope": "same_origin",
+          "description": "Netloc-only comparison, no scheme check, missing Origin accepted - verified locally: Origin http://agentbox.example with Host agentbox.example passes, http://evil.example, null and the userinfo trick fail."
+        },
+        {
+          "kind": "sink",
+          "file": "agentbox/web.py",
+          "line": 223,
+          "scope": "box.decide (also web.py:178 create_sandbox, web.py:146 end_ui_session)",
+          "description": "With the request accepted the human-scoped action runs: decide executes the agent's stored args with actor='human', create builds a sandbox for an attacker-chosen source_dir, and logout ends the session when the cookie did arrive."
+        }
+      ],
+      "evidence": [
+        {
+          "file": "agentbox/api.py",
+          "line": 133,
+          "description": "urlsplit(origin).netloc == headers.get('host'): the scheme component is dropped, so http://H and https://H are indistinguishable to the gate."
+        },
+        {
+          "file": "agentbox/desktop.py",
+          "line": 60,
+          "description": "The session cookie is SameSite=strict and Secure in TLS deployments; whether it travels on a cross-scheme POST is browser policy (schemeful same-site), which is the decisive unknown."
+        },
+        {
+          "file": "agentbox/web.py",
+          "line": 149,
+          "description": "logout builds a 303 and calls delete_cookie unconditionally (web.py:149-150), even when end_ui_session returned None because no cookie was attached."
+        },
+        {
+          "file": "docs/security-audit/run-4/agents/h-webui/artifacts/h.out",
+          "line": 1,
+          "description": "Origin matrix and cookie-bearing cases: cross-scheme Origin accepted on /login, /ui/approvals approve, /ui/sandboxes and /logout; cross-scheme /logout returns 303 with an empty Set-Cookie even with no cookie, and ends the server session when a valid cookie is supplied."
+        },
+        {
+          "file": "deploy/Caddyfile",
+          "line": 4,
+          "description": "Bare reverse_proxy block: no Strict-Transport-Security, and grep over agentbox/ and deploy/ finds none, so the browser is never forced to upgrade http://H."
+        },
+        {
+          "file": "agentbox/cli.py",
+          "line": 102,
+          "description": "secure_cookie is forced for direct TLS and for --behind-tls-proxy, i.e. exactly the deployments where the http/https scheme fork exists."
+        }
+      ],
+      "blockers": [
+        "Decisive browser fact: whether a browser in use lacks schemeful same-site, so that the SameSite=Strict Secure cookie is attached to a cross-scheme http://H -> https://H POST. Run-3 parent-live Chromium 141 did not attach it; Firefox and WebKit are unobserved and older engines are unverified, and no browser runs in sbx, so the scripted check cannot decide it.",
+        "Deployment fact: whether an attacker can serve plaintext http://H on the same host name (an on-path network attacker or a plaintext listener on that name). No HSTS is emitted anywhere in agentbox/ or deploy/, so nothing forces the upgrade; whether an on-path attacker is in scope is an owner decision.",
+        "Deployment fact: whether the deployment exposes both schemes at the same effective netloc (direct TLS on 443 plus plaintext 80, or behind-proxy mode where the proxy owns the http-to-https redirect). In a loopback http-only deployment the scheme fork does not exist."
+      ],
+      "validation_plan": {
+        "local": "Repo-side half already executed (agents/h-webui/artifacts/h.out): api.build with the Docker client stubbed, driven over ASGI - cross-scheme Origin accepted for /login, /ui/approvals approve (200, handler ran) and /ui/sandboxes (reached create_sandbox), foreign host 403, and cross-scheme /logout returns 303 with the cookie-clearing Set-Cookie whether or not a cookie is sent. Next, a loopback-only browser lab: one https listener with a dummy human token plus a plaintext page on the same host name that auto-submits to /logout and /ui/sandboxes; confirm in a schemeful browser that the cookie is withheld (only the forced logout happens) and in a non-schemeful browser or version that it is attached and the mutation lands (a ui_logout row in /audit, a new sandbox). Regression: after comparing scheme and netloc, both cross-scheme requests must return 403 and the forced logout must disappear.",
+        "deployment": "Owner confirms whether the deployment hostname sends HSTS or is on the preload list, and which browser engines and versions operators use; if HSTS is present or every browser is schemeful, only the forced-logout residual remains and the same scheme check removes it. No probing of live endpoints."
+      }
+    }
+  ],
+  "hardening": [
+    "display.escape_controls also leaves the invisible Cf characters U+200B-200D, U+2060, U+FEFF and U+00AD raw on both the web and terminal surfaces (see the linked approval-card candidate for the bidi member U+061C and for U+2028/U+2029, which render as a line break inside the pre block).",
+    "web._shown returns non-str values unchanged (web.py:35-36); every current template output is a str or an int (timeout, e.id, f.bytes, v.broken_at), so nothing is reachable today, but a future output of a container would be str()ed by Jinja after finalize and skip control filtering.",
+    "cli.py still prints some server strings without _safe: cmd_snapshots (cli.py:312, reason/created_at/image), cmd_verify (cli.py:305, reason) and _check (cli.py:53, the HTTP detail). All are server-generated today, so no container-controlled path, but the sibling sinks (cli.py:355-357, 293, 188-208, 241-248) do apply it and should be the rule.",
+    "_created.html shows a copy-paste MCP config and a claude mcp add command line whose AGENTBOX_URL comes from request.base_url (web.py:181-185), i.e. the unvalidated Host header (no TrustedHostMiddleware anywhere). A browser-only attacker cannot choose Host for the operator's own authenticated page, so this is not a finding, but deriving the URL from Settings would keep a host-derived value off a copy-paste surface.",
+    "same_origin accepts a missing Origin header (api.py:133). No current browser omits Origin on a cross-site POST, yet a Sec-Fetch-Site or Referer fallback would make the gate fail closed instead of open.",
+    "POST /logout emits its cookie-clearing Set-Cookie even when the request carried no valid session, and the deletion cookie uses Starlette defaults (SameSite=lax, no HttpOnly/Secure) while the original is SameSite=strict, HttpOnly and Secure (web.py:149-150 versus desktop.py:60); emitting delete_cookie only on a real session end, with matching attributes, narrows the accepted-origin forced logout.",
+    "_NoFraming appends content-security-policy: frame-ancestors 'self' to every response, including JSON, PNG captures and file downloads (api.py:63-80). Harmless today because no route sets its own CSP and multiple CSP headers intersect, but a future route-level CSP would silently be ANDed with it."
+  ],
+  "uncovered": [],
+  "artifacts_to_promote": [
+    "h.out"
+  ]
+}

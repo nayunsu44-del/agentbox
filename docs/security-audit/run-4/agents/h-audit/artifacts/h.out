@@ -1,0 +1,21 @@
+﻿max logged args keys: ['args_bytes', 'args_head', 'args_sha256', 'args_truncated'] head bytes: 16384
+AUDIT bytes per tool call (max args): 30076
+AUDIT bytes per tool call (small args): 9476
+AUDIT total rows: 160
+APPROVAL bytes per row (400 KB args): 416120
+approval rows: 5
+DELETE blocked: audit -> audit log is append-only
+DELETE allowed: approvals
+DELETE FROM approvals compiles to: no such statement in repo
+list(limit=-1) rows: 160 of 160
+python : Traceback (most recent call last):
+위치 줄:1 문자:129
++ ... ew($false); python "<WINDOWS_HOST_ROOT>/projects/agentbox/do ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "/scratch/h2.py", line 69, in <module>
+    head = la["args_head"]
+           ~~^^^^^^^^^^^^^
+KeyError: 'args_head'

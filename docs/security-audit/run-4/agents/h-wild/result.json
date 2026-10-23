@@ -1,0 +1,136 @@
+{
+  "units": [
+    {
+      "coverage_id": "agentbox%2Fagent.py%23LLM%20loop%20%2B%20agentbox%2Fmcp_server.py%20tools::agentbox%2Fagent.py%23prompt-injection%20to%20tool%20action%20and%20operator%20terminal%20output%20%28approval%20is%20the%20only%20control%29::agentbox%2Fagent.py%20%2B%20agentbox%2Fmcp_server.py%20%2B%20agentbox%2Fcli.py%23cmd_agent::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "agentbox/agent.py",
+        "agentbox/cli.py",
+        "agentbox/config.py",
+        "agentbox/display.py",
+        "agentbox/mcp_server.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-wild",
+          "reviewed_paths": [
+            "agentbox/cli.py",
+            "agentbox/display.py",
+            "agentbox/agent.py"
+          ],
+          "invariant": "Container- and model-controlled text printed by `agentbox agent` to the operator terminal is control-escaped line by line before it reaches the tty (revalidation of run-3 record agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe).",
+          "method": "local",
+          "result": "Bounded harness applied cmd_agent's exact transform (\"\\n\".join(_safe(line) for line in msg.split(\"\\n\"))) at cli.py:355-365 to a container-style payload holding ESC[2K, CR, OSC ']0;title' BEL, U+202E/U+202C and TAB. Output was 'ok\\x1b[2K\\x0dAPPROVE harmless\\x1b]0;title\\x07 bidi:\\u202eevil\\u202c tab\\x09c1' with raw_ESC=False, raw_bidi=False and the literal '\\x1b' marker present. The run-3 root cause (log() printing say/call/result strings raw, agent.py ToolClient.call_text passing read_file content and list_dir listings verbatim) no longer reaches an unescaped terminal sink.",
+          "artifact": "agents/h-wild/artifacts/h_revalidate.out"
+        },
+        {
+          "agent_id": "h-wild",
+          "reviewed_paths": [
+            "agentbox/agent.py"
+          ],
+          "invariant": "The LLM loop dispatches only the three declared tools, and injected content can reach no authority beyond the agent token's own tool calls: the only sinks are the escaped terminal log and the model context.",
+          "method": "source",
+          "result": "agent.py:38-66 declares list_dir/read_file/exec only; run() rejects any other model-chosen name at 261-262 before dispatch, so no alias reaches the API. ToolClient (88-126) holds an agent token and issues only POST /sandboxes/{sid}/tools/{tool} and GET /approvals/{aid}; nothing in agent.py posts a decision to /approvals/{aid} or any other human-only route, so a prompt-injected model cannot approve its own pending exec. call_text handing file content to the model is by design (untrusted tool output) and the operator sees it only through the escaped log callback."
+        },
+        {
+          "agent_id": "h-wild",
+          "reviewed_paths": [
+            "agentbox/mcp_server.py"
+          ],
+          "invariant": "MCP tool identity and credential are bound to the process environment (one stdio client per server process) rather than to attacker-influenceable server/tool names, request ids or URIs, and no approval-mutating tool is exposed.",
+          "method": "source",
+          "result": "URL/SID/TOKEN are read once at import (37-40) and each call builds a fresh AsyncClient with that Bearer token (52-55); the fixed tool set (107-165) maps 1:1 onto /sandboxes/{SID}/tools/{tool}, accepts no sandbox id or token argument, and contains no approve/deny tool. mcp.run() (168-169) is stdio-only, so two clients cannot share one server identity and one server's result cannot satisfy another connection's pending call. The 423 branch (92-95) only re-posts the same tool after a handback. No identity-confusion path found."
+        },
+        {
+          "agent_id": "h-wild",
+          "reviewed_paths": [
+            "agentbox/cli.py",
+            "agentbox/config.py"
+          ],
+          "invariant": "`agentbox agent` refuses to hand a human-authority credential to the model loop.",
+          "method": "source",
+          "result": "cmd_agent exits when the token text starts with hum_ (cli.py:340-341) and the file-backed human token always carries that prefix (config.py:97-99), so the shipped configuration cannot give the loop human authority. The guard is string-shaped only: config.Settings.human_token() returns AGENTBOX_HUMAN_TOKEN verbatim with no format assertion (config.py:88-92), so an operator-chosen prefix-less token would pass the check. Recorded as hardening, not a candidate, because the loop still exposes no approval or lifecycle endpoint and the reachable authority stays the three tools."
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "whole-repo%23undocumented%2Fedge%20surfaces::whole-repo%23feature%20interactions%20not%20covered%20by%20other%20units::whole-repo::ATTACK-CLASSES.md%23Wildcard",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "agentbox/api.py",
+        "agentbox/audit.py",
+        "agentbox/cli.py",
+        "agentbox/gui_bursts.py",
+        "agentbox/service.py",
+        "agentbox/web.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-wild",
+          "reviewed_paths": [
+            "agentbox/audit.py",
+            "agentbox/web.py",
+            "agentbox/cli.py"
+          ],
+          "invariant": "Human audit timeline readers return the newest rows plus the real total instead of the oldest limit rows (revalidation of run-3 record agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines).",
+          "method": "local",
+          "result": "With 5200 appended rows in a scratch DB, AuditLog.recent(limit=400) returned 400 rows spanning ids 4801..5200 newest-first with total=5200 (audit.py:209-217), while list(limit=5000) without after_id still returned ids 1..5000 - exactly the run-3 freeze shape. web.py:265-269 now builds the fragment from recent() and passes that total, and cmd_audit pages with after_id until an empty page (cli.py:255-260) and collected all 5200 rows in the harness. The truncation root cause is no longer reachable from either human reader.",
+          "artifact": "agents/h-wild/artifacts/h_revalidate.out"
+        },
+        {
+          "agent_id": "h-wild",
+          "reviewed_paths": [
+            "agentbox/gui_bursts.py",
+            "agentbox/service.py"
+          ],
+          "invariant": "GUI-burst timers and container binding cannot survive a container swap, so restore/pause cannot suppress the next burst snapshot (revalidation of run-3 record agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause).",
+          "method": "local",
+          "result": "GuiBursts driven with fake sandbox/desktop objects: after mark_input+mark_snapshot needs_snapshot=False; closing the burst without resetting timers (the run-3 end_desktop shape) left both timers set and needs_snapshot stayed False, i.e. the next burst was suppressed; GuiBursts.end (157-162, close+reset_timers) left both timers cleared and needs_snapshot=True, so the first GUI input after restore opens a fresh burst and snapshot; a burst whose container_id no longer matches is closed as gui_burst_close_failed rather than diffed against the new desktops (113-119).",
+          "artifact": "agents/h-wild/artifacts/h_revalidate.out"
+        },
+        {
+          "agent_id": "h-wild",
+          "reviewed_paths": [
+            "agentbox/service.py",
+            "agentbox/api.py",
+            "agentbox/gui_bursts.py"
+          ],
+          "invariant": "Every lifecycle path closes the burst and clears burst state before the container is paused or replaced, and a failed close is recorded rather than silently dropped.",
+          "method": "source",
+          "result": "pause_sandbox logs, then bursts.end, then pauses (service.py:444-448); resume_sandbox resets timers after resume (450-454); restore_sandbox calls end_desktop (462-469), which calls bursts.end before lease cleanup (579-587) and resets timers again after the swap; delete_sandbox does the same (471-475). api.py:189-212 routes all reach these methods. _finish writes gui_burst_close_failed on container mismatch or exec failure (gui_bursts.py:95-126) and _stop_strays failures are logged with the stray list (79-93), so the record's second half (burst popped before its enforcement steps and failures returning silently) is also closed."
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [],
+  "hardening": [
+    "agentbox/web.py:196-204: the /ui/sandboxes/{sid} page route checks only that some session cookie resolves (session_of) and never the scope, while every data fragment on that page requires screen_human scope '*' (web.py:206-257) - a desktop-link session scoped to sandbox A can render the shell of sandbox B (id/template/runtime/status and iframe src). No data fragment follows, so impact is a cross-sandbox metadata/existence oracle, not a read. Hand to the h-session unit (session scope) if it is not already covered there.",
+    "agentbox/config.py:88-100: human_token() writes the new token and only then chmods it to 0600, so the admin secret is briefly created under the process umask; use os.open(..., 0o600) + os.fdopen, or mkstemp + rename. Same write-then-chmod shape at cli.py:157-159 (--env-file with the agent token).",
+    "agentbox/config.py:95-96 + agentbox/api.py:118-119: an existing human_token file that is empty or whitespace-only yields human_token()=='' and secrets.compare_digest('', '') then matches an 'Authorization: Bearer ' request as human. Reject tokens shorter than ~16 chars (fail closed) instead of trusting whatever the file contains.",
+    "agentbox/cli.py:340-341: the human-token refusal is a literal 'hum_' prefix test rather than a check of the credential class; config.py:90-92 never asserts that prefix on AGENTBOX_HUMAN_TOKEN, so the guard is bypassable by configuration. Compare against a kind returned by the server (e.g. a /whoami route) or refuse any token that authenticates as human.",
+    "agentbox/cli.py:47-53 (_check) prints the server's 'detail' string raw to the operator terminal; container-derived text can reach it through human CLI commands (ServiceError(400, str(e)) at service.py:362). Not a cross-principal boundary (the human already owns the token), but it is the one remaining unescaped terminal sink in cli.py and belongs to the h-webui escape_controls unit.",
+    "agentbox/cli.py:163-166 (cmd_list) prints s['source_dir'] without _safe. Settled negative for a cross-principal claim: POST /sandboxes is human_only (api.py:174-176), so only a human can choose that host path; no lower-trust principal can inject into it.",
+    "demo/injected_agent.py:41 forwards every AGENTBOX_* variable from the caller into the agent-side MCP subprocess, which includes AGENTBOX_HUMAN_TOKEN when the operator configures the token that way (config.py:88-92), contradicting the 'the human token never enters this code' invariant at agent.py:5; demo/run_demo.sh:81-85 also offers --auto y, which approves every pending request in a loop. Demo hygiene, not a demonstrated crossing."
+  ],
+  "uncovered": [
+    {
+      "surface": "demo/injected_agent.py + demo/run_demo.sh + demo/policy.yaml (the documented prompt-injection demo harness)",
+      "boundary": "demo#launcher environment propagation into the agent-side MCP process and the demo's deliberate default:allow policy operated with --auto approval",
+      "subsystem": "demo",
+      "attack_class": "ATTACK-CLASSES.md#Wildcard",
+      "starting_paths": [
+        "demo/injected_agent.py",
+        "demo/run_demo.sh",
+        "demo/policy.yaml"
+      ],
+      "reason": "No assigned or peer-owned unit lists demo/, yet it is the workflow the README tells an operator to run with an intentionally hijacked agent: it selects the environment handed to the low-trust side (injected_agent.py:37-42) and decides how approvals are answered (run_demo.sh:66-85). Whether that harness can leak AGENTBOX_HUMAN_TOKEN or normalise auto-approval is a deterministic question that should be owned by its own unit rather than a wildcard note."
+    }
+  ],
+  "artifacts_to_promote": [
+    "h_revalidate.out"
+  ]
+}

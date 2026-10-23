@@ -1,0 +1,8 @@
+stored args: {'command': 'rm -rf /workspace/x'} | equal: True
+status: pending
+public attrs for mutation: ['claim', 'conn', 'create', 'finish', 'get', 'list']
+concurrent claim winners: 1 of 16
+status after: approved
+expire then approve: True -> False | final: expired
+deny then approve: True -> False | final: denied
+args after decisions: {'command': 'rm -rf /workspace/x'}

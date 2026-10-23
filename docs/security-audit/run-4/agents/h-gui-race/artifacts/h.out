@@ -1,0 +1,157 @@
+﻿{
+ "control_seed": {
+  "status": 200,
+  "snaps": 1,
+  "burst_open": true,
+  "events": [
+   "tool_request",
+   "policy_decision",
+   "snapshot",
+   "tool_result"
+  ]
+ },
+ "control_after_idle_close": {
+  "snaps": 1,
+  "clicks": 1,
+  "manifest": [
+   "gui_created_1.txt"
+  ],
+  "events": [
+   "tool_request",
+   "policy_decision",
+   "snapshot",
+   "tool_result",
+   "gui_changes"
+  ]
+ },
+ "race": {
+  "seed_events": [
+   "tool_request",
+   "policy_decision",
+   "snapshot",
+   "tool_result"
+  ],
+  "needs_snapshot_while_lease": false,
+  "events_while_click_waiting": [
+   "tool_request",
+   "policy_decision",
+   "snapshot",
+   "tool_result",
+   "gui_changes",
+   "human_takeover",
+   "tool_request",
+   "policy_decision"
+  ],
+  "handback": "lease released + forget_input",
+  "after_waiting_click": {
+   "result": [
+    200,
+    {
+     "status": "executed",
+     "result": {
+      "x": 20,
+      "y": 20,
+      "button": "left",
+      "double": false
+     }
+    }
+   ],
+   "snaps": 1,
+   "clicks": 2,
+   "burst_open": false,
+   "events": [
+    "tool_request",
+    "policy_decision",
+    "snapshot",
+    "tool_result",
+    "gui_changes",
+    "human_takeover",
+    "tool_request",
+    "policy_decision",
+    "human_handback",
+    "tool_result"
+   ]
+  },
+  "following_inputs": [
+   {
+    "status": 200,
+    "snaps": 1,
+    "burst_open": false,
+    "needs_snapshot": false
+   },
+   {
+    "status": 200,
+    "snaps": 1,
+    "burst_open": false,
+    "needs_snapshot": false
+   },
+   {
+    "status": 200,
+    "snaps": 1,
+    "burst_open": false,
+    "needs_snapshot": false
+   }
+  ],
+  "final": {
+   "snaps": 1,
+   "clicks": 5,
+   "manifest": [
+    "gui_created_1.txt",
+    "gui_created_2.txt",
+    "gui_created_3.txt",
+    "gui_created_4.txt",
+    "gui_created_5.txt"
+   ],
+   "burst_open": false,
+   "gui_changes": [
+    {
+     "actor": "system",
+     "event": "gui_changes",
+     "sandbox_id": "sb",
+     "tool": null,
+     "payload": {
+      "snapshot_id": "snap_1",
+      "reason": "human_takeover",
+      "counts": {
+       "added": 1,
+       "modified": 0,
+       "deleted": 0
+      },
+      "added": [
+       "gui_created_1.txt"
+      ],
+      "modified": [],
+      "deleted": [],
+      "truncated": false
+     }
+    }
+   ],
+   "events": [
+    "tool_request",
+    "policy_decision",
+    "snapshot",
+    "tool_result",
+    "gui_changes",
+    "human_takeover",
+    "tool_request",
+    "policy_decision",
+    "human_handback",
+    "tool_result",
+    "tool_request",
+    "policy_decision",
+    "tool_result",
+    "tool_request",
+    "policy_decision",
+    "tool_result",
+    "tool_request",
+    "policy_decision",
+    "tool_result"
+   ]
+  }
+ },
+ "unit1": {
+  "GUI_LOCK_WAIT": 30,
+  "_X_TIMEOUT": 15,
+  "type_timeout_2000": 115
+ }
+}

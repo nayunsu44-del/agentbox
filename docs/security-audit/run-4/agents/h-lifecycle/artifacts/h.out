@@ -1,0 +1,50 @@
+{
+ "runtime": "runc",
+ "race": {
+  "delete": "success",
+  "restore": "returned",
+  "status_after": "running",
+  "container_id": "c2",
+  "container_alive": true,
+  "old_token_valid": true,
+  "token_maps_to_sid": true,
+  "snapshot_rows_left": 1,
+  "tool_after_delete": {
+   "status": 200,
+   "body": "{'status': 'executed', 'result': {'path': '/workspace', 'listing': 'total 0\\n'}}"
+  },
+  "audit_events_for_race": [
+   "sandbox_created",
+   "restore_request",
+   "sandbox_delete",
+   "restored",
+   "tool_request"
+  ]
+ },
+ "seq_error": "ImageNotFound: no such image: agentbox-snap:sb_54e49093-snap_b2f2d73f",
+ "seq_status": "deleted",
+ "seq_token_valid": false,
+ "bad_snap": {
+  "lease_before": true,
+  "error": "SandboxError: 이 샌드박스의 스냅샷이 아님: snap_bogus",
+  "lease_after": false,
+  "handback_rows": [
+   "human_handback"
+  ],
+  "status_after": "running"
+ },
+ "pending_create": {
+  "status": 202,
+  "body": {
+   "status": "pending",
+   "approval_id": "apr_5701b4e75308",
+   "expires_in": "300",
+   "message": "사람의 승인을 기다리는 중. GET /approvals/{id}로 결과를 확인."
+  }
+ },
+ "pending_after_delete": [
+  "pending"
+ ],
+ "decide_after_delete": "ServiceError: 스냅샷 또는 기록 실패, 실행하지 않음: 삭제된 샌드박스: sb_f4b6bc40",
+ "pending_status_final": "failed"
+}

@@ -1,0 +1,22 @@
+﻿ps: ps from procps-ng 4.0.4
+== ps raw records seen for probe children (repr of the args tail) ==
+CR pid 9 -> ["'/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'"] | nlines: 1
+VT pid 10 -> ["'/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'"] | nlines: 1
+FF pid 11 -> ["'/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'"] | nlines: 1
+FS pid 12 -> ["'/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'"] | nlines: 1
+GS pid 13 -> ["'/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'"] | nlines: 1
+NEL pid 14 -> ["'python3 -c import time;time.sleep(40) A??X 0 X 65534 forgedB'"] | nlines: 1
+LS pid 15 -> ["'/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'"] | nlines: 1
+== parsed records containing 'forged' (attacker-chosen numeric fields) ==
+{'pid': 9, 'ppid': 7, 'sid': 1, 'uid': 65534, 'args': '/usr/bin/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'}
+{'pid': 10, 'ppid': 7, 'sid': 1, 'uid': 65534, 'args': '/usr/bin/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'}
+{'pid': 11, 'ppid': 7, 'sid': 1, 'uid': 65534, 'args': '/usr/bin/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'}
+{'pid': 12, 'ppid': 7, 'sid': 1, 'uid': 65534, 'args': '/usr/bin/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'}
+{'pid': 13, 'ppid': 7, 'sid': 1, 'uid': 65534, 'args': '/usr/bin/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'}
+{'pid': 14, 'ppid': 7, 'sid': 1, 'uid': 65534, 'args': '/usr/bin/python3 -c import time;time.sleep(40) A??X 0 X 65534 forgedB'}
+{'pid': 15, 'ppid': 7, 'sid': 1, 'uid': 65534, 'args': '/usr/bin/python3 -c import time;time.sleep(40) A?X 0 X 65534 forgedB'}
+clean, no window      -> [160]
+window lists pid 160  -> []
+window lists parent 150(new? in baseline) -> [160]
+forged ancestor ps    -> []
+clean twin ps         -> [160]

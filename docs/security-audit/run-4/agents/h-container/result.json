@@ -1,0 +1,149 @@
+{
+ "units": [
+  {
+   "coverage_id": "GUI-burst%20writes%20outside%20%2Fworkspace%20by%20uid%201001%20%28%2Fhome%2Fdesktop%2C%20%2Ftmp%2C%20%2Fdev%2Fshm%2C%20%2Frun%2Fuser%2C%20XDG%20dirs%29%20that%20persist%20through%20snapshot%2C%20restore%20or%20restart::images%2Fdesktop%2Fagentbox-desktop-start%23%2Fhome%2Fdesktop%20reset%20at%20start%20%2B%20agentbox%2Fgui_state.py%23workspace%20manifest%20scope::images%2Fdesktop%20%2B%20agentbox%2Fsandbox.py%23restore%2Fstart%20%2B%20agentbox%2Fgui_bursts.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+   "disposition": "covered",
+   "reviewed_paths": [
+    "agentbox/config.py",
+    "agentbox/gui_bursts.py",
+    "agentbox/gui_state.py",
+    "agentbox/sandbox.py",
+    "agentbox/sandbox_desktop.py",
+    "agentbox/service.py",
+    "images/desktop/Dockerfile",
+    "images/desktop/agentbox-desktop-start"
+   ],
+   "checks": [
+    {
+     "agent_id": "h-container",
+     "reviewed_paths": [
+      "images/desktop/agentbox-desktop-start"
+     ],
+     "invariant": "The root-run start script performs its /tmp work (mkdir -p /tmp/.X11-unix && chmod 1777, and 2>/tmp/xvfb.log, >/tmp/xfce.log) on names that uid 1000/uid 1001 can pre-create in a 1777 sticky /tmp, and validates none of them (no [ -L ] test, no ownership test, no O_NOFOLLOW).",
+     "method": "local",
+     "result": "Harness (uid 65534, /scratch fixtures, 1777 sticky fixture dir) replayed the exact script fragments: line 17 'mkdir -p' on a symlink-to-directory exited 0 and 'chmod 1777' on that symlink changed the referent from 0700 to 1777; the line 30 style 'exec 2>link' truncated and overwrote a 0600 sentinel file through the link; both links remained symlinks, so nothing in the script detects them. The same run read the host-global kernel settings that decide the uid-0 case: fs.protected_symlinks=1 (root may not follow a uid-1000/1001-owned link under a root-owned sticky dir) and fs.protected_regular=0 (the plain regular-file redirect variant is NOT blocked). It also confirmed agentbox.config.Settings().template('desktop').command == ['/usr/local/bin/agentbox-desktop-start'], i.e. the script is the container's root entrypoint.",
+     "artifact": "agents/h-container/artifacts/h.out"
+    },
+    {
+     "agent_id": "h-container",
+     "reviewed_paths": [
+      "images/desktop/agentbox-desktop-start",
+      "images/desktop/Dockerfile",
+      "agentbox/config.py",
+      "agentbox/sandbox.py"
+     ],
+     "invariant": "Revalidate prior record agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore: can burst-written $HOME state still be reintroduced by restore?",
+     "method": "source",
+     "result": "No longer holds. agentbox-desktop-start:13-16 deletes /home/desktop and re-copies the pristine baseline /usr/local/share/agentbox-desktop-home (Dockerfile:31-32 makes it root:root) before the X session starts, then chowns it to desktop:desktop with mode 700, so ~/.config/autostart, .bashrc and session caches from a burst are gone. The reset is not create-only: restore force-removes the container and re-creates it from the snapshot image (sandbox.py:393-397) with the template command (config.py:74), which is the start script again, and _wait_display follows only after it ran. The baseline that is copied is root-owned and 700, so neither principal can poison the reset source. Residual is limited to state outside /home/desktop (hardening).",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-container",
+     "reviewed_paths": [
+      "agentbox/gui_bursts.py",
+      "agentbox/gui_state.py",
+      "agentbox/sandbox.py"
+     ],
+     "invariant": "What a GUI burst records or isolates when uid 1001 writes outside /workspace, and which of those paths survive a commit and are consumed at the next start.",
+     "method": "source",
+     "result": "Nothing outside /workspace is recorded: open() (gui_bursts.py:65-77) and _finish() (113-135) build both manifests from workspace_manifest (sandbox.py:372-381, 'find /workspace -xdev') and log only that diff, so /home/desktop, /tmp, /var/tmp and /run writes produce no gui_changes row. Of those, only /tmp and /var/tmp sit in the container layer and therefore land in the docker commit (sandbox.py:355); /dev/shm is a per-container tmpfs and /run has no consumer in this image. /home/desktop is sanitized at start (previous check); /tmp is consumed by exactly one privileged reader, the root start script, which is why the hardening notes centre on it.",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-container",
+     "reviewed_paths": [
+      "images/desktop/agentbox-desktop-start",
+      "agentbox/sandbox_desktop.py"
+     ],
+     "invariant": "Whether uid 1000/uid 1001 can take over /tmp/.X11-unix or the X cookie so that a human takeover stream or the control plane's GUI tools talk to an agent-controlled X server.",
+     "method": "source",
+     "result": "No source-visible path. /tmp/.X11-unix is created by root on the first start (line 17) inside a 1777 sticky /tmp, so neither principal can rmdir/replace the root-owned directory or unlink the desktop-owned X0 socket; the X cookie is regenerated per start into the freshly re-created /home/desktop (lines 13-28) and is only reachable through DESKTOP_ENV in sandbox_desktop.py:45-47. An attacker-owned socket directory would additionally require a listener that cannot exist before the new container's X starts (restore kills every old process), so the 'x11vnc -auth' connection cannot be redirected.",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-container",
+     "reviewed_paths": [
+      "agentbox/sandbox.py",
+      "agentbox/service.py",
+      "images/desktop/agentbox-desktop-start"
+     ],
+     "invariant": "What a failed desktop start during restore does to the recorded/actual lifecycle state when the start script is blocked by attacker-planted /tmp state.",
+     "method": "source",
+     "result": "A FIFO at /tmp/xvfb.log (or /tmp/xfce.log) makes the background redirection at line 30/38 block forever, Xvfb never starts, the 10 s wait loop expires and _wait_display raises. sandbox.py:398 has already set the new container_id and status=running before _wait_display (399-400); service.py:462-469 writes restore_request but never the 'restored' row. Net effect: one sandbox left running without a desktop and an audit trail with a request and no outcome, no cause recorded. Kept as hardening: the attacker is the sandbox's own principal and can break its desktop by other means.",
+     "artifact": null
+    }
+   ],
+   "candidate_fingerprints": [],
+   "unresolved": []
+  },
+  {
+   "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs%20%28sandbox.py%2C%20sandbox_desktop.py%29::agentbox%2Fsandbox.py%20%2B%20agentbox%2Fsandbox_desktop.py%20%2B%20images%2Fdesktop::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",
+   "disposition": "covered",
+   "reviewed_paths": [
+    "agentbox/sandbox.py",
+    "agentbox/sandbox_desktop.py",
+    "images/desktop/Dockerfile",
+    "images/desktop/agentbox-desktop-start"
+   ],
+   "checks": [
+    {
+     "agent_id": "h-container",
+     "reviewed_paths": [
+      "agentbox/sandbox.py",
+      "images/desktop/Dockerfile",
+      "images/desktop/agentbox-desktop-start"
+     ],
+     "invariant": "Whether code inside the sandbox can select privileged mode, extra capabilities, host namespaces, host paths, device mounts, the runtime socket or a service-account token, i.e. cross from container identity into node/control-plane authority.",
+     "method": "source",
+     "result": "The container's security configuration is fixed in _run_container (sandbox.py:243-265) and no request field reaches it: network_mode='none', mounts=[_source_mount(source_dir)] only (127-132: bind, read_only=True, NonRecursive), cap_drop ALL with only CHOWN/DAC_OVERRIDE/FOWNER/SETUID/SETGID, security_opt no-new-privileges, default seccomp, mem/cpu/pids limits, no user namespace, no docker.sock, no host path beyond /source. /workspace is deliberately container-layer storage (sandbox.py:5), so the single host-backed mount is read-only and writes there fail even for container root without SYS_ADMIN. Container root is reachable only through the image entrypoint's path handling (unit-1 local check), and even then its host reach stays that read-only bind.",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-container",
+     "reviewed_paths": [
+      "agentbox/sandbox.py",
+      "agentbox/sandbox_desktop.py"
+     ],
+     "invariant": "Whether any root-run docker exec takes an agent-selected program, argument or filesystem path (privileged helper as confused deputy at the exec layer).",
+     "method": "source",
+     "result": "Only two root execs exist in sandbox.py: the create-time workspace setup (302, constant 'mkdir -p /workspace && cp -a /source/. ... && chown -R 1000 ...' string built from constants) and the burst manifest (376-378, constant 'find /workspace -xdev ! -type d -printf ...' plus a numeric head cap). Every other exec runs as 1000:1000 with safe_path/clean_name-validated paths or fixed argv (428-567). sandbox_desktop.py:55 runs 'ps -eo pid=,ppid=,sid=,uid=,args=' as the image default user (root) with constant argv, and its output is parsed as data by a peer-owned parser. No root exec resolves its program through an agent-writable PATH entry (/usr/local/bin and /usr/bin are root:root in the image) and none receives an agent-chosen file path.",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-container",
+     "reviewed_paths": [
+      "agentbox/sandbox_desktop.py"
+     ],
+     "invariant": "Whether the throwaway container used to read noVNC assets out of the desktop image runs with weaker confinement that a lower-trust caller can exercise.",
+     "method": "source",
+     "result": "containers.create(desktop_image, ['true'], network_mode='none') (sandbox_desktop.py:152) is created with Docker defaults (no cap_drop, no no-new-privileges), but it is never started: only get_archive('/usr/share/novnc') is issued and the container is removed in a finally; the tar is filtered to isfile/isdir members and extracted with filter='data'. No reachable operation inherits those defaults (hardening note only).",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-container",
+     "reviewed_paths": [
+      "agentbox/sandbox.py",
+      "images/desktop/Dockerfile"
+     ],
+     "invariant": "Whether uid 1000 or uid 1001 can obtain a capability, setuid path or hardlink that converts container work into host or control-plane authority.",
+     "method": "source",
+     "result": "No. The five added capabilities attach to container root only and cannot be set on a caller's own files (no file capabilities in the image); no-new-privileges blocks setuid elevation and no image binary is setuid-to-root beyond the stock set; fs.protected_hardlinks=1 (observed on this kernel) blocks linking root-owned files into /workspace; and the control plane keeps its docker client, SQLite database, audit chain and human token on the host, with nothing mounted into the sandbox.",
+     "artifact": null
+    }
+   ],
+   "candidate_fingerprints": [],
+   "unresolved": []
+  }
+ ],
+ "candidates": [],
+ "hardening": [
+  "images/desktop/agentbox-desktop-start:8,17: the root-run script touches fixed /tmp names that uid 1000/uid 1001 can pre-create in a 1777 sticky /tmp (rm -f /tmp/.X0-lock /tmp/.X11-unix/X0, mkdir -p && chmod 1777 /tmp/.X11-unix) and validates none of them; the only thing standing between root and an attacker-selected target is the host kernel (fs.protected_symlinks=1 observed, fs.protected_regular=0 observed, so the redirect variant is not covered). Add explicit guards ('[ -L /tmp/.X11-unix ] && exit 1' before install -d -m 1777, and refuse a pre-existing non-regular /tmp/xvfb.log or /tmp/xfce.log) so a host that does not ship systemd's fs.protected_symlinks=1 default cannot be walked into a root chmod/truncate of an attacker-chosen path.",
+  "images/desktop/agentbox-desktop-start:30,38 plus agentbox/sandbox.py:398-400 and agentbox/service.py:462-469: a FIFO planted at /tmp/xvfb.log or /tmp/xfce.log (uid 1001, GUI terminal, no approval) blocks the background redirection forever, so a restored sandbox never brings up a desktop; the row is already updated to the new container id with status=running, _wait_display raises, and no failure or cause row is written (restore_request without restored). Start the log writers against a validated regular file (O_NOFOLLOW) and log or roll back a failed post-restore _wait_display.",
+  "images/desktop/agentbox-desktop-start:13-16 replaces /home/desktop only at container start, so burst-era $HOME state (xfconf keybindings, panel launchers, ~/.config/autostart) stays live for the rest of the container's life and remains invisible to gui_changes, which diffs only /workspace (agentbox/gui_bursts.py:113-135). Recording a $HOME diff at burst close would close the audit half of the run-3 finding that the start-time reset only fixes at restore.",
+  "agentbox/sandbox_desktop.py:152 creates the noVNC extraction container with Docker defaults instead of the hardened flag set used by _run_container; it is created with command ['true'] and never started today, so this is only a trap for a future change that starts it."
+ ],
+ "uncovered": [],
+ "artifacts_to_promote": [
+  "h.out"
+ ]
+}

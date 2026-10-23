@@ -1,0 +1,15 @@
+[audit] appended 5200 rows in 27.3s
+[audit] recent(limit=400): returned=400 newest_id=5200 oldest_returned_id=4801 total=5200
+[audit] list(limit=5000) no after_id: returned=5000 id_span=1..5000 ; rows[-400:] spans 4601..5000
+[audit] cli-style after_id paging: total_returned=5200 last_id=5200
+[audit] RESULT recent() returns the newest rows and the true total; pre-fix reader shape froze at id<=5000
+[burst] open(sb1,snap1) = True
+[burst] needs_snapshot after input+snapshot = False
+[burst] close-only: burst_open=False timers=(True, True) needs_snapshot=False  <- run-3 defect shape (suppressed)
+[burst] end(): burst_open=False timers=(False, False) needs_snapshot=True  <- fresh burst opens after restore
+[burst] close after container swap: events=['gui_burst_close_failed']
+[burst] RESULT end() resets both timers; a burst bound to the old container_id is refused, not diffed
+[term] container bytes : 'ok\x1b[2K\rAPPROVE harmless\x1b]0;title\x07 bidi:\u202eevil\u202c tab\tc1'
+[term] operator output : 'ok\\x1b[2K\\x0dAPPROVE harmless\\x1b]0;title\\x07 bidi:\\u202eevil\\u202c tab\\x09c1'
+[term] raw_ESC=False raw_bidi=False escaped_ESC_marker=True
+[term] RESULT the cmd_agent log path rewrites ESC/CR/C1/bidi before printing

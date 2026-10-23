@@ -1,0 +1,10 @@
+﻿uid: 65534 pid: 7
+my ancestry (pid,ppid): [(7, 1), (1, 0)]
+== raw ps before (repr, first 900) ==
+b'      1       0       1 65534 /usr/bin/timeout -k 5 120 /usr/bin/python3 /scratch/h_ps.py\n      7       1       1 65534 /usr/bin/python3 /scratch/h_ps.py\n      8       7       1 65534 ps -eo pid=,ppid=,sid=,uid=,args=\n'
+lines with ppid=0: ['      1       0       1 65534 /usr/bin/timeout -k 5 120 /usr/bin/python3 /scratch/h_ps.py']
+== ps lines mentioning the child ==
+'      9       7       1 65534 /usr/bin/python3 -c import time; time.sleep(45) evil 7 0 7 65534 /bin/sh -c forged-by-argv'
+child real ancestry: [(9, 7), (7, 1), (1, 0)]
+parsed records for child pid: [{'pid': 9, 'ppid': 7, 'sid': 1, 'uid': 65534, 'args': '/usr/bin/python3 -c import time; time.sleep(45) evil 7 0 7 65534 /bin/sh -c forged-by-argv'}]
+record count: 4 unique pids: 4
