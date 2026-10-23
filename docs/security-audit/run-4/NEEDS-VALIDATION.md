@@ -20,6 +20,14 @@
 **검증 계획.** 로컬: H를 127.0.0.1로 잡고 자체 서명 TLS로 `https://H:443`을 띄운다. `http://H:80`에서 `/logout`과 `/ui/sandboxes`로 자동 제출하는 폼을 둔다. 로그인한 상태로 http 페이지를 열어 쿠키 전송 여부, 응답 코드, 세션 종료, 샌드박스 생성 여부를 Chromium·Firefox·WebKit에서 기록한다.
 수정 방향(결과와 관계없이 권장): `same_origin`이 `request.url.scheme`까지 함께 비교하게 한다.
 
+**부모 실측 (run 뒤, 에이전트 예산 밖).** 판정은 바꾸지 않았다. 판정을 바꾸려면 새 검증자가 필요하다.
+
+Chromium 141에서 실측했다(`agents/parent-live/parent_live_scheme.py`, 결과 `artifacts/scheme-csrf.json`). 실제 앱을 `https://agentbox.test`(TLS, 443)로, 공격 페이지를 `http://agentbox.test`(80)로 띄웠다.
+- 로그인 쿠키는 `Secure; SameSite=Strict; HttpOnly`였다.
+- 공격 페이지의 `POST /ui/sandboxes`와 `POST /logout` 모두 서버에 쿠키 없이 도착했다. 샌드박스는 0개 생겼다.
+- 다만 `/logout` 응답의 쿠키 삭제가 브라우저에 적용돼 세션 쿠키가 사라졌고, 다음 `/ui` 요청은 `/login`으로 갔다. 서버 쪽 세션 종료(`ui_logout` 행)는 없었다.
+- 결론: Chromium에서는 '강제 로그아웃'만 성립하고, 사람 권한 실행은 성립하지 않는다. Firefox·WebKit은 이 환경에 없어 확인하지 못했다.
+
 <details><summary>레코드 원문 (영어, 기준)</summary>
 
 **description** Every cookie-authenticated UI mutation funnels through api.same_origin (api.py:131-133), which returns True when Origin is absent or when urlsplit(Origin).netloc equals the Host header; the scheme is never compared. A plaintext http://H page is a different web origin from the TLS deployment https://H but carries the same netloc, so the gate accepts it. Independently reproduced (agents/v02/scratch/v02_origin.py, artifact v02_origin.out; api.build with docker.from_env stubbed, ASGI served as https://agentbox.example): Origin http://agentbox.example was accepted for POST /login (303, issuing the Secure SameSite=strict HttpOnly host-only session cookie), POST /ui/approvals/apr_000000000000/approve (200; box.decide entered with the '*' session and rendered approval-not-found), POST /ui/sandboxes (handler reached box.create_sandbox) and POST /logout (303; end_ui_session entered, server session ended - a later GET /ui with the same cookie redirected to /login). Origin https://agentbox.example was accepted identically; Origin https://evil.example, Origin: null, Origin http://agentbox.example@evil.example and Origin http://agentbox.example:8443 against Host agentbox.example were all 403; a POST with no Origin was accepted. Consequence (1): where a browser attaches the Strict cookie to a cross-scheme POST, the human-scoped action runs - approve/deny for a known apr_ id, a sandbox built for an attacker-chosen source_dir, or server-side session end. Consequence (2), browser-independent once the request is sent: POST /logout answers even a cookieless cross-origin request with 303 plus an unconditional cookie-clearing Set-Cookie (web.py:149-150), so a page served at http://H forces a client-side logout while the server-side session survives. No anti-CSRF token, Referer or Sec-Fetch check exists anywhere in agentbox/ (grep finds none) and the only response-wide guard is X-Object-Frame/CSP frame-ancestors (api.py:66), which stops iframe clickjacking but not a top-level auto-submitted form; no Strict-Transport-Security is emitted in agentbox/ or deploy/ (no response carries one; only audit docs mention it), so nothing forces the upgrade of http://H. The decisive unknown stays the browser's schemeful same-site behaviour: the run-3 loopback Chromium 141 run had the Secure cookie withheld (only the forced browser logout occurred), no browser exists in sbx, and Firefox/WebKit are unobserved, so whether consequence (1) is reachable cannot be decided from source or from this sandbox.
@@ -67,6 +75,20 @@
 
 **검증 계획.** 로컬(이미 수행): 스크래치 DB로 `_call_tool`이 쓰는 행을 재생해 위 수치를 얻었다. 디스크가 차서 503이 나는 과정은 포화 테스트라 직접 돌리지 않았다.
 배포: 작은 볼륨(예: 64 MiB tmpfs)에 데이터 폴더를 두고, 더미 에이전트로 최대 크기 호출을 반복한다. 503이 모든 샌드박스로 번지는지, 정리 뒤 `verify()` 결과가 어떤지 기록한다.
+
+**부모 실측 (run 뒤, 에이전트 예산 밖).** 판정은 바꾸지 않았다. 판정을 바꾸려면 새 검증자가 필요하다.
+
+실제 Docker와 16 MiB 볼륨(ext4 11 MB 사용 가능)으로 실측했다(`agents/parent-live/parent_live_diskfull.py`, `_recovery.py`, 결과 `artifacts/diskfull*.json`).
+- 샌드박스 A의 에이전트 하나가 스레드 4개로 허용된 `ls` 호출 417번을 보내 **18.9초 만에** 볼륨을 채웠다.
+- 그 뒤 실패한 것:
+  - 샌드박스 B의 에이전트 호출: 503
+  - 사람의 B 스냅샷: 503
+  - 사람의 A·B 삭제: 503. 문제를 일으킨 샌드박스조차 지울 수 없었다.
+  - 사람의 승인 결정: 503이 아니라 처리되지 않은 `sqlite3.OperationalError`가 났다. API에서는 500이다.
+- 읽기와 `verify()`는 됐다.
+- 실행이 끝난 호출 3개는 `tool_result` 기록이 빠졌다(`tool_request` 420, `tool_result` 417).
+- 복구: 오래된 100행을 지우면 `verify()`가 '1 다음에 101'로 영구 실패한다. 전부 지우면 0행을 검사하고 통과한다.
+- 남은 배포 사실은 실제 볼륨 크기뿐이다(소진 시간이 그것에 비례한다).
 
 <details><summary>레코드 원문 (영어, 기준)</summary>
 
@@ -118,6 +140,20 @@
 
 **검증 계획.** 로컬: 일회용 샌드박스(`AGENTBOX_DISK=2g`, 네트워크 없음)의 `/workspace`에 빈 파일 약 20만 개를 만든다. `list_dir` 호출 전후로 컨트롤 플레인 VmHWM을 잰다. 대조군으로 같은 디렉터리를 상한이 있는 exec(`ls -la`)로 읽는다. outbox와 `rm /workspace/*` 미리보기도 같은 방식으로 잰다. 데스크톱 샌드박스에서는 스크린숏 경로를 `/dev/zero`로 바꿔 증가가 보이면 바로 멈춘다.
 배포: compose 스택에서 같은 비교를 하고, 메모리 제한과 OOM 동작을 기록한다.
+
+**부모 실측 (run 뒤, 에이전트 예산 밖).** 판정은 바꾸지 않았다. 판정을 바꾸려면 새 검증자가 필요하다.
+
+실제 Docker와 데스크톱 샌드박스로 실측했다(`agents/parent-live/parent_live_readers.py`, 결과 `artifacts/readers-*.json`). 파일은 20만 개이고, 측정값은 프로세스 VmHWM 증가분이다.
+
+| 리더 | 최대 메모리 증가 |
+|---|---|
+| `list_dir` (`ls -la` 출력 17.4 MB, 반환 64 KiB) | 33.6 MiB |
+| 상한 있는 exec(`ls -la`, 대조군) | 0.5 MiB |
+| outbox 목록 | 90.2 MiB |
+| `rm /workspace/many/*` 미리보기 glob | 64.7 MiB |
+| 스크린숏 경로를 `/dev/zero` 링크로 | 77.8 MiB, 15초 X 제한 시간에 끊김 |
+
+결론: 증가는 실제이고 파일 수에 비례한다. 다만 스크린숏 최악 경우도 제한 시간으로 묶인다. 메모리 상한이 없는 배포에서 해가 되려면 수백만 개 파일이나 많은 동시 호출이 필요하다.
 
 <details><summary>레코드 원문 (영어, 기준)</summary>
 
@@ -171,6 +207,16 @@
 3. 1×1 창의 `_NET_WM_PID`를 데몬 pid로 설정한다. 도구가 없으면 여기서 멈추고 '위조 경로 불성립'으로 기록한다.
 4. 실제 `desktop_processes`와 `gui_strays`로 정리 목록에 그 pid가 빠지는지 본다.
 
+**부모 실측 (run 뒤, 에이전트 예산 밖).** 판정은 바꾸지 않았다. 판정을 바꾸려면 새 검증자가 필요하다.
+
+실제 `agentbox-desktop:0.1` 샌드박스에서 끝까지 재현했다(`agents/parent-live/parent_live_netwmpid.py`, `netwmpid_forge.py`, 결과 `artifacts/netwmpid-stray.json`).
+- 이미지 도구 확인: xprop과 컴파일러는 없다. 하지만 `python3`와 `libX11.so.6`이 있어, ctypes로 아무 `_NET_WM_PID`나 쓸 수 있다.
+- 구간 시작 세션에 넣기: `xfconf-query`로 사용자 단축키 명령을 등록하고 키를 누르면, 기준 프로세스인 `xfsettingsd`가 쓰기 데몬을 띄운다. 데몬은 sid 1에 있고 docker exec 출신이 아니다. 에이전트가 GUI 입력만으로 할 수 있는 경로다.
+- 위조 창(1×1, `_NET_WM_PID`=데몬 pid)을 띄우자 실제 `desktop_processes`가 그 pid를 창 pid로 보고했다. `gui_strays`는 데몬을 정리 목록에서 뺐고, `kill_processes` 뒤에도 데몬이 살아 `/workspace` 파일을 계속 갱신했다.
+- 대조: 위조 창을 빼면 데몬이 정리 목록에 들어갔다.
+- 한 번 살아남으면 다음 구간의 기준(baseline)에 들어가 계속 면제된다.
+- 막힌 지점 세 개(이미지 도구, 세션 배치, 실제 정리)가 모두 풀렸다.
+
 <details><summary>레코드 원문 (영어, 기준)</summary>
 
 **description** Verified in the audited tree (9805d91): at GUI-burst close GuiBursts._finish (gui_bursts.py:120) calls _stop_strays, which reads desktop_processes (gui_bursts.py:83) and kills gui_strays(procs, wins, burst['pids']) (gui_bursts.py:84-85). For a new uid-1001 process the only remaining exemption is the window test: p['pid'] in window_pids or a non-baseline ancestor pid in window_pids (gui_state.py:85-86); baseline pids, pid 1, other uids and docker-exec roots are exempted earlier (gui_state.py:80). window_pids are the decimal tokens of `xdotool getwindowpid` over `xdotool search --onlyvisible --name .` (sandbox_desktop.py:59-61), i.e. the _NET_WM_PID property the X client writes for itself; the parser filters with isdigit only, never checks that the pid owns a window or is the declaring client, and xdotool is run as the desktop account on the desktop-owned display (sandbox_desktop.py:46-47, images/desktop/agentbox-desktop-start:20,30,38). I re-ran the real gui_state.gui_strays and the real GuiBursts._stop_strays in the sandbox (agents/v05/artifacts/v05_probe.out): a headless uid-1001 daemon 300 in the burst-start session sid 1, parented by the baseline Thunar 85, is killed when window_pids is empty (line 2) and is spared when the window list merely names 300 (line 3); naming an unrelated pid 301 does not spare it (line 4), and a windowed but baseline ancestor 85 does not spare it (line 5). With the real _stop_strays the forged case killed nothing and emitted no gui_processes_stopped record at all, while the control case killed [300] and logged it (lines 20-22). Two preconditions bound the claim, and both are runtime facts of the image rather than source facts. (1) The window test is reached only when p['sid'] is in base_sids, the sessions of the uid-1001 baseline pids (gui_state.py:63,82-84); a new session is killed regardless of window, which my run confirms for a daemon in sid 777 (line 8). tests/test_unit.py:330-334 encodes exactly that for a terminal opened during a burst: the terminal window 150 is spared but its shell 152 and the shell's job 160 are killed as a new session, so a daemon typed into a terminal opened during the burst is not in this candidate's class. (2) The attacker needs an X client that can set _NET_WM_PID to another process's pid and then have xdotool report it; the image recipe installs xdotool, socat and x11-xserver-utils but not x11-utils (xprop), python or a compiler (images/desktop/Dockerfile:17-23), so whether such a client exists in the running image is unobserved. Impact is bounded and detective-control shaped: GUI input is approval-free by design (N-1) and the burst's snapshot and gui_changes are its documented record. A spared daemon keeps writing /workspace after the close, where the only manifest read (gui_bursts.py:122) has already happened, and its writes produce no gui_changes and no gui_processes_stopped row; because it is then present at the next burst open (gui_bursts.py:70,76), gui_state.py:80 treats it as baseline forever, which is the candidate's 'survives every burst close'. Calibration, not dismissal: the by-design ancestor clause already spares a helper of any windowed app opened during the burst (tests/test_unit.py:335-336; my line 9), so the forgery route adds capability mainly for a process with no new windowed ancestor, for example one started from a baseline windowed app such as the pre-existing file manager (tests/test_unit.py:337 keeps such a script in the kill list).
@@ -218,6 +264,14 @@
 
 **검증 계획.** 로컬: 같은 카드 조각을 루프백 정적 파일로 Playwright Chromium·Firefox·WebKit에 띄운다. 남은 문자만으로 만든 문자열을 캡처한다. 예: `echo 'x' + ALM + ';>' + ALM + ' ; python3 …'`, U+2028 삽입, 옵션 안의 ZWSP. 화면에 보이는 순서가 실제 argv와 다른지 기록한다.
 수정(결과와 관계없이 권장): display.py 두 정규식에 U+061C와 Cf·Zl·Zp 문자를 더하고 회귀 테스트를 추가한다.
+
+**부모 실측 (run 뒤, 에이전트 예산 밖).** 판정은 바꾸지 않았다. 판정을 바꾸려면 새 검증자가 필요하다.
+
+실제 앱의 `/ui/approvals` 카드를 Chromium 141로 그려 캡처했다(`agents/parent-live/parent_live_bidi.py`, 결과 `artifacts/bidi-*.png`, `bidi-render.json`).
+- `cat /workspace/notes.txt ALM>ALM /workspace/outbox/copy.txt`는 카드에 **`cat /workspace/notes.txt < /workspace/outbox/copy.txt`**로 보였다. 두 ALM 사이의 `>`가 오른쪽→왼쪽으로 풀리며 `<`로 거울 반전됐다.
+- 같은 문자열을 bash로 실행하면 이름이 ALM인 새 파일을 만들고 내용을 써 넣는다(`artifacts/bidi-bash-exec.txt`). 화면은 '입력 리디렉션(읽기)'인데 실제는 '출력 리디렉션(쓰기)'이다.
+- U+2028은 같은 줄에 공백처럼 보였고, ZWSP는 보이지 않았다. 둘 다 위험한 쪽으로 오해시키지는 않았다.
+- 결론: Chromium에서 승인 카드가 다른 명령처럼 읽힌다. Firefox·WebKit은 확인하지 못했다.
 
 <details><summary>레코드 원문 (영어, 기준)</summary>
 

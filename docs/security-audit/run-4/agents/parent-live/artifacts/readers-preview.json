@@ -1,0 +1,11 @@
+{
+ "mode": "preview",
+ "rlimit_as_bytes": 3221225472,
+ "status": 202,
+ "body_status": "pending",
+ "affected_rows": 200,
+ "seconds": 2.4,
+ "vmhwm_before_kib": 55920,
+ "vmhwm_after_kib": 122176,
+ "vmhwm_delta_mib": 64.7
+}

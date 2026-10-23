@@ -1,0 +1,86 @@
+{
+ "engine": "chromium 141.0.7390.37",
+ "steps": {
+  "cookie_after_login": [
+   {
+    "name": "agentbox_session",
+    "secure": true,
+    "sameSite": "Strict",
+    "httpOnly": true
+   }
+  ],
+  "create": {
+   "requests": [
+    {
+     "method": "POST",
+     "path": "/ui/sandboxes",
+     "origin": "http://agentbox.test",
+     "session_cookie_sent": false
+    },
+    {
+     "method": "GET",
+     "path": "/favicon.ico",
+     "origin": null,
+     "session_cookie_sent": true
+    }
+   ],
+   "landed_on": "https://agentbox.test/ui/sandboxes",
+   "cookie_still_in_browser": true
+  },
+  "logout": {
+   "requests": [
+    {
+     "method": "POST",
+     "path": "/logout",
+     "origin": "http://agentbox.test",
+     "session_cookie_sent": false
+    },
+    {
+     "method": "GET",
+     "path": "/login",
+     "origin": null,
+     "session_cookie_sent": false
+    },
+    {
+     "method": "GET",
+     "path": "/static/htmx.min.js",
+     "origin": null,
+     "session_cookie_sent": false
+    },
+    {
+     "method": "GET",
+     "path": "/ui/notify",
+     "origin": null,
+     "session_cookie_sent": false
+    }
+   ],
+   "landed_on": "https://agentbox.test/login",
+   "cookie_still_in_browser": false
+  },
+  "sandboxes_created_by_cross_scheme_post": 0,
+  "after_attack_get_ui": {
+   "landed_on": "https://agentbox.test/login",
+   "requests": [
+    {
+     "method": "GET",
+     "path": "/ui",
+     "origin": null,
+     "session_cookie_sent": false
+    },
+    {
+     "method": "GET",
+     "path": "/login",
+     "origin": null,
+     "session_cookie_sent": false
+    },
+    {
+     "method": "GET",
+     "path": "/ui/notify",
+     "origin": null,
+     "session_cookie_sent": false
+    }
+   ]
+  }
+ },
+ "audit_ui_logout_rows": 0
+}

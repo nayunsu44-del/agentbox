@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import RUN  # noqa: E402
 from ko_text import KO  # noqa: E402
+from report_notes import LIVE_SUMMARY  # noqa: E402
 
 B = chr(96)
 F3 = B * 3
@@ -155,6 +156,8 @@ for r in nv:
 R.append("")
 R.append(f"로컬·배포 검증 계획은 {c('NEEDS-VALIDATION.md')}에 있다.")
 R.append("")
+R.extend(LIVE_SUMMARY)
+R.append("")
 hard = sum(len(u.get("x_hardening", []) or []) for u in L)
 R.append("## 5. 하드닝 (취약점 아님)")
 R.append("")
@@ -227,6 +230,11 @@ for r in nv:
     N.append("")
     N.append("**검증 계획.** " + ko(r, "plan"))
     N.append("")
+    if ko(r, "live"):
+        N.append("**부모 실측 (run 뒤, 에이전트 예산 밖).** 판정은 바꾸지 않았다. 판정을 바꾸려면 새 검증자가 필요하다.")
+        N.append("")
+        N.append(ko(r, "live"))
+        N.append("")
     N.extend(original(r, ["description", "claimed_root_cause", "trace", "blockers", "validation_plan"]))
 
 

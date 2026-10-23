@@ -1,0 +1,8 @@
+{
+ "mode": "baseline",
+ "rlimit_as_bytes": 3221225472,
+ "seconds": 0.0,
+ "vmhwm_before_kib": 55924,
+ "vmhwm_after_kib": 55924,
+ "vmhwm_delta_mib": 0.0
+}

@@ -1,0 +1,14 @@
+{
+ "integrity_after_restart": "ok",
+ "events": {
+  "approval_requested": 1,
+  "policy_decision": 420,
+  "sandbox_create_request": 2,
+  "sandbox_created": 2,
+  "tool_request": 420,
+  "tool_result": 417
+ },
+ "verify_as_is": "VerifyResult(ok=True, checked=1262, broken_at=None, reason=None)",
+ "verify_after_deleting_oldest_100": "VerifyResult(ok=False, checked=0, broken_at=101, reason='id가 1 다음에 101로 건너뜀 (항목 삭제 의심)')",
+ "verify_after_deleting_all": "VerifyResult(ok=True, checked=0, broken_at=None, reason=None)"
+}

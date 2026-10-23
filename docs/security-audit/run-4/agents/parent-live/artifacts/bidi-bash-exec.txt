@@ -1,0 +1,15 @@
+cat: ''$'\330\234': input file is output file
+rc=1
+--- files:
+/w:
+notes.txt
+outbox
+\330\234
+
+/w/outbox:
+copy.txt
+--- copy.txt:
+OLD
+--- file named ALM:
+SECRET
+OLD

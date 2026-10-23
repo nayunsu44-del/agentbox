@@ -70,7 +70,8 @@
   "Review pass: critic-1's two proposed units were missing from the ledger; added as deferred, reconstructed from the first-pass report summary because critic-1's raw output was not retained.",
   "Review pass: tools/oneoff/_fix.py rewrote agents/h-policy/raw.txt and mapped units by position, so the approval-card unit carried the approval-binding check; its local_checks[0] was rebuilt from h-policy's retained artifact h_prev.out. Transcribed hunters with raw.txt are h-policy, h-queue, h-gui-race and h-pool (the first-pass list named h-preauth instead of h-pool).",
   "Review pass: r03 and r09 non-material replacements cannot be re-checked because their result files stayed in scratch and were not retained.",
-  "Review pass: run_status 'complete_with_deferred_units' is not a skill value; set to incomplete/budget_exhausted."
+  "Review pass: run_status 'complete_with_deferred_units' is not a skill value; set to incomplete/budget_exhausted.",
+  "After the run (owner request, no agent invocations): the parent ran parent-live checks for all five needs_validation records on real Docker, the desktop image and Playwright Chromium 141 (scripts and outputs under agents/parent-live/). Results are reported in NEEDS-VALIDATION.md and REPORT.md section 4; record verdicts were not changed because promotion needs a fresh verifier and the 50-call budget is spent."
  ],
  "incomplete_reason": "budget_exhausted"
 }

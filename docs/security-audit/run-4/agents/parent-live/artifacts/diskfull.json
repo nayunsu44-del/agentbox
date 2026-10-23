@@ -1,0 +1,47 @@
+{
+ "volume_bytes": 11513856,
+ "b_pending_approval": "apr_f01fa5caa43b",
+ "fill": {
+  "calls": 419,
+  "first_failure": {
+   "after_calls": 417,
+   "error": "ServiceError: 503 감사 로그 기록 실패: database or disk is full. 기록할 수 없어서 실행하지 않음."
+  },
+  "seconds": 18.9,
+  "free_bytes_after": 0
+ },
+ "after_full": {
+  "sandbox_B_agent_ls": {
+   "ok": false,
+   "error": "ServiceError: 503 감사 로그 기록 실패: database or disk is full. 기록할 수 없어서 실행하지 않음."
+  },
+  "human_decide_B_approval": {
+   "ok": false,
+   "error": "OperationalError:  database or disk is full"
+  },
+  "human_snapshot_B": {
+   "ok": false,
+   "error": "ServiceError: 503 감사 로그 기록 실패: database or disk is full. 기록할 수 없어서 실행하지 않음."
+  },
+  "human_list_audit": {
+   "ok": true,
+   "result": "50"
+  },
+  "human_verify_audit": {
+   "ok": true,
+   "result": "VerifyResult(ok=True, checked=1262, broken_at=None, reason=None)"
+  },
+  "human_delete_A": {
+   "ok": false,
+   "error": "ServiceError: 503 감사 로그 기록 실패: database or disk is full. 기록할 수 없어서 실행하지 않음."
+  },
+  "human_delete_B": {
+   "ok": false,
+   "error": "ServiceError: 503 감사 로그 기록 실패: database or disk is full. 기록할 수 없어서 실행하지 않음."
+  }
+ },
+ "live_db_read_while_control_plane_running": {
+  "integrity": "ok"
+ },
+ "db_path": "/tmp/claude-0/-home-user-agentbox/fcd2f048-3e17-52e2-9d78-d39b755653f3/scratchpad/pl/small/home/agentbox.db"
+}

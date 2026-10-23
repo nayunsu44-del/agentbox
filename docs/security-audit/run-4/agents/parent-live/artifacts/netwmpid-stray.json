@@ -1,0 +1,33 @@
+{
+ "writer": {
+  "pid": 236,
+  "ppid": 151,
+  "sid": 1,
+  "uid": 1001,
+  "args": "sh -c while :; do date +%s >> /workspace/_v05_probe; sleep 2; done"
+ },
+ "writer_in_window_pids": true,
+ "window_pids": [
+  121,
+  155,
+  172,
+  182,
+  186,
+  236
+ ],
+ "forger_pids": [
+  282
+ ],
+ "control_kill_list_without_forged_window": [
+  236,
+  320
+ ],
+ "kill_list_with_forged_window": [],
+ "writer_spared": true,
+ "writer_alive_after_kill": true,
+ "probe_mtime_advances": {
+  "before": "1792745068",
+  "after_5s": "1792745074",
+  "advanced": true
+ }
+}
