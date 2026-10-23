@@ -25,8 +25,10 @@ import sys
 import time
 import uuid
 
-RUN = "<WINDOWS_HOST_ROOT>/projects/agentbox/docs/security-audit/run-4"
-SP = os.environ.get("AUDIT_SCRATCHPAD", "<WINDOWS_HOST_ROOT>/temp/agentbox-run4")
+RUN = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).replace("\\", "/")
+SP = os.environ.get("AUDIT_SCRATCHPAD")  # Windows scratchpad holding src-audited/ and sbx.log
+if not SP:
+    sys.exit("sbx: set AUDIT_SCRATCHPAD")
 TARGET = f"{SP}/src-audited"
 LOG = f"{SP}/sbx.log"
 IMAGE = "agentbox-audit-sbx:1"

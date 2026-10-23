@@ -4,14 +4,15 @@ import os
 import re
 import subprocess
 
+RUN = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).replace("\\", "/")
 if os.name == "nt":  # Windows continuation host (phases 2-6 of the first pass)
-    RUN = "<WINDOWS_HOST_ROOT>/projects/agentbox/docs/security-audit/run-4"
-    SP = os.environ.get("AUDIT_SCRATCHPAD", "<WINDOWS_HOST_ROOT>/temp/agentbox-run4")
+    SP = os.environ.get("AUDIT_SCRATCHPAD")  # e.g. <WINDOWS_HOST_ROOT>/temp/agentbox-run4
+    if not SP:
+        raise SystemExit("set AUDIT_SCRATCHPAD to the Windows scratchpad (holds skill/ and src-audited/)")
     SBX = f"{RUN}/tools/sbx.py"  # Windows host: bash sbx cannot run; sbx.py keeps the same container boundary
     SBX_CMD = f"python {SBX}"
     PY = "/usr/bin/python3"  # agentbox-audit-sbx:1 image, Python 3.12
 else:  # Linux cloud container (recon and the follow-up verifier/critic)
-    RUN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     SP = os.environ.get("AUDIT_SCRATCHPAD", "/tmp/claude-0/-home-user-agentbox/fcd2f048-3e17-52e2-9d78-d39b755653f3/scratchpad")
     SBX = f"{RUN}/tools/sbx"  # bash sbx: host /usr read-only, 256 MiB loop scratch
     SBX_CMD = SBX

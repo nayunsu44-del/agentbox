@@ -216,7 +216,9 @@ pytest                                                 # 160 passed
    - `git clone --depth 1 https://github.com/cloudflare/security-audit-skill skill`
    - `git worktree add --detach <scratchpad>/src-audited 9805d91`
 3. `run-4/tools/common.py`는 호스트(`os.name`)에 따라 경로와 `sbx`를 고른다.
-   - 리눅스에서는 `AUDIT_SCRATCHPAD`를 설정하거나 기본값을 바꾼다. `tools/sbx`의 `TARGET`·`LOG` 줄도 새 스크래치패드로 바꾼다.
+   - run 폴더 경로는 도구 파일 위치에서 계산한다.
+   - 스크래치패드는 `AUDIT_SCRATCHPAD`로 준다. Windows(`sbx.py`, `common.py`, `parent_live_lifecycle.py`)에서는 반드시 설정해야 하고, 리눅스에서는 설정하지 않으면 기본값을 쓴다. 리눅스 bash `tools/sbx`의 `TARGET`·`LOG` 줄은 새 스크래치패드로 바꾼다.
+   - 1차 Windows 기록의 사용자 경로는 `<WINDOWS_HOST_ROOT>`로 가렸다.
    - 승격은 `tools/promote_linux.py`, Windows에서는 `tools/promote.py`·`tools/sbx.py`를 쓴다.
 4. 도구:
    - 지시문 생성: `gen_hunt.py`, `gen3.py`, `gen5.py`, `gen_critic.py`

@@ -4,7 +4,7 @@ Runs the audited control plane in-process against the REAL Docker engine with a 
 AGENTBOX_HOME, one CLI sandbox and one snapshot per trial, and repeats the race at several
 delete offsets so the answer is a distribution rather than one lucky schedule.
 
-usage: python parent_live_lifecycle.py <out.json>
+usage: AUDIT_SCRATCHPAD=<scratchpad> python parent_live_lifecycle.py <out.json>
 """
 import json
 import os
@@ -14,8 +14,9 @@ import time
 import traceback
 from pathlib import Path
 
-SRC = r"<WINDOWS_HOST_ROOT>/temp/agentbox-run4/src-audited"
-HOME = Path(r"<WINDOWS_HOST_ROOT>/temp/agentbox-run4/parent-live/lifecycle")
+SP = os.environ["AUDIT_SCRATCHPAD"]  # scratchpad holding src-audited/
+SRC = f"{SP}/src-audited"
+HOME = Path(SP) / "parent-live" / "lifecycle"
 OUT = Path(sys.argv[1])
 OFFSETS = [0.02, 0.08, 0.15, 0.25, 0.4, 0.7]
 

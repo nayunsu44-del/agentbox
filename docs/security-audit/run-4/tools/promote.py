@@ -26,7 +26,7 @@ import os
 import stat
 import sys
 
-RUN = "<WINDOWS_HOST_ROOT>/projects/agentbox/docs/security-audit/run-4"
+RUN = os.path.dirname(os.path.dirname(os.path.abspath(__file__))).replace("\\", "/")
 PER_FILE = 256 * 1024
 PER_AGENT = 1024 * 1024
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
