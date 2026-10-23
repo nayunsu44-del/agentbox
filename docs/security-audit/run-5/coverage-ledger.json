@@ -136,6 +136,54 @@
   "x_decided_by": "v-gui-lease"
  },
  {
+  "coverage_id": "AuditLog._lock%20as%20a%20global%20contention%20point%20reachable%20by%20agent-grown%20table%20size%20and%20by%20unauthenticated%20traffic%3A%20GET%20%2Fui%2Faudit%20%28polled%20every%203%20s%20by%20templates%2Fsandbox.html%29%2C%20GET%20%2Fui%2Fverify%2C%20GET%20%2Faudit%2Fverify%2C%20AuditLog.recent%20%28unindexed%20COUNT%28%2A%29%20WHERE%20sandbox_id%29%2C%20AuditLog.verify%20%28fetchall%20of%20the%20whole%20table%2C%20audit.py%3A336-350%29%2C%20AuditLog.list%2C%20versus%20every%20AuditLog.append%2Finsert_record%20from%20agent%20tool%20calls%20and%20every%20fail-closed%20log_human%3B%20plus%20the%20unauthenticated%20POST%20%2Flogin%20failure%20throttle%20%28web.py%3A93-114%29%20and%20extract_novnc%20single-flight%20%28sandbox_desktop.py%3A174%29::Agent%20and%20unauthenticated%20clients%20to%20human%20availability%20and%20audit%20evidence%3A%20AuditLog.recent%2Fverify%20scan%20the%20agent-grown%20table%20under%20the%20same%20_lock%20append%20needs%20%28fail-closed%20log_human%20returns%20503%20while%20it%20is%20held%29%2C%20verify%20loads%20the%20whole%20table%2C%20the%20F8%20login%20throttle%20shares%20one%20global%20window%2C%20and%20F5%20extract_novnc%20holds%20a%20global%20lock%20across%20docker%20create.%20Invariant%3A%20no%20agent%20or%20unauthenticated%20sequence%20holds%20these%20locks%20long%20enough%20to%20refuse%20human%20actions%2C%20exhaust%20memory%2C%20or%20hide%20credential-guessing%20evidence.::agentbox%2Faudit.py%23recent%2Fverify%2Flist%2Fappend%2Finsert_record%2F_lock%20%2B%20agentbox%2Fweb.py%23note_login_failure%2Faudit%20and%20verify%20routes%20%2B%20agentbox%2Fapi.py%23%2Faudit%2Fverify%20%2B%20agentbox%2Fsandbox_desktop.py%23extract_novnc%2F_NOVNC_LOCK%20%2B%20agentbox%2Ftemplates%2Fsandbox.html%20%283%20s%20poll%29::Resource%20exhaustion%3A%20lock%20contention%20and%20pre-authentication%20work%20imbalance",
+  "canonical_refs": {
+   "surface": "AuditLog._lock as a global contention point reachable by agent-grown table size and by unauthenticated traffic: GET /ui/audit (polled every 3 s by templates/sandbox.html), GET /ui/verify, GET /audit/verify, AuditLog.recent (unindexed COUNT(*) WHERE sandbox_id), AuditLog.verify (fetchall of the whole table, audit.py:336-350), AuditLog.list, versus every AuditLog.append/insert_record from agent tool calls and every fail-closed log_human; plus the unauthenticated POST /login failure throttle (web.py:93-114) and extract_novnc single-flight (sandbox_desktop.py:174)",
+   "boundary": "Agent and unauthenticated clients to human availability and audit evidence: AuditLog.recent/verify scan the agent-grown table under the same _lock append needs (fail-closed log_human returns 503 while it is held), verify loads the whole table, the F8 login throttle shares one global window, and F5 extract_novnc holds a global lock across docker create. Invariant: no agent or unauthenticated sequence holds these locks long enough to refuse human actions, exhaust memory, or hide credential-guessing evidence.",
+   "subsystem": "agentbox/audit.py#recent/verify/list/append/insert_record/_lock + agentbox/web.py#note_login_failure/audit and verify routes + agentbox/api.py#/audit/verify + agentbox/sandbox_desktop.py#extract_novnc/_NOVNC_LOCK + agentbox/templates/sandbox.html (3 s poll)",
+   "attack_class": "Resource exhaustion: lock contention and pre-authentication work imbalance"
+  },
+  "surface": "AuditLog._lock as a global contention point reachable by agent-grown table size and by unauthenticated traffic: GET /ui/audit (polled every 3 s by templates/sandbox.html), GET /ui/verify, GET /audit/verify, AuditLog.recent (unindexed COUNT(*) WHERE sandbox_id), AuditLog.verify (fetchall of the whole table, audit.py:336-350), AuditLog.list, versus every AuditLog.append/insert_record from agent tool calls and every fail-closed log_human; plus the unauthenticated POST /login failure throttle (web.py:93-114) and extract_novnc single-flight (sandbox_desktop.py:174)",
+  "boundary": "Agent and unauthenticated clients to human availability and audit evidence: AuditLog.recent/verify scan the agent-grown table under the same _lock append needs (fail-closed log_human returns 503 while it is held), verify loads the whole table, the F8 login throttle shares one global window, and F5 extract_novnc holds a global lock across docker create. Invariant: no agent or unauthenticated sequence holds these locks long enough to refuse human actions, exhaust memory, or hide credential-guessing evidence.",
+  "subsystem": "agentbox/audit.py#recent/verify/list/append/insert_record/_lock + agentbox/web.py#note_login_failure/audit and verify routes + agentbox/api.py#/audit/verify + agentbox/sandbox_desktop.py#extract_novnc/_NOVNC_LOCK + agentbox/templates/sandbox.html (3 s poll)",
+  "attack_class": "Resource exhaustion: lock contention and pre-authentication work imbalance",
+  "starting_paths": [
+   "agentbox/audit.py",
+   "agentbox/web.py",
+   "agentbox/api.py",
+   "agentbox/sandbox_desktop.py",
+   "agentbox/service.py",
+   "agentbox/templates/sandbox.html"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+    "reason": "Disk growth and approval-row compaction are owned by the disk-guard unit and the retention unit."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 2,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "Deferred: proposed by post-wave critic critic-1. The owner's budget cap of 30 cannot cover a third new hunter plus its validation (budget_cannot_reserve_critics_and_validation). The desktop-WebSocket part of this lock contention is already the confirmed record agentbox/desktop_ws.py:relay+agentbox/api.py:desktop_ws:blocking-sqlite-audit-docker-on-event-loop."
+  ],
+  "x_hunter": null,
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "Proposed by post-wave critic critic-1 (agents/critic-1/result.json); companion block names mapped to existing skill blocks where the critic named a non-existent one.",
+  "x_critic_boundary": "Agent and unauthenticated clients to human availability and audit evidence. The audit table grows with agent tool calls (until disk_low), and recent() and verify() scan it while holding the same lock append needs; human state-changing routes use log_human, which fails closed with 503, so a long hold turns into refused human actions, and verify loads the whole table into memory. Hunter measurement: 0.034 s (recent) and 0.84 s (verify) per 100k rows. The F8 login throttle uses one global 60 s window with 5 logged failures (an unauthenticated client can use up the budget so later real failures are only counted), and F5 extract_novnc holds a global lock across docker create and tar extraction for every unauthenticated /static/novnc request while the negative cache is cold. Invariant: no sequence of agent calls or unauthenticated requests can hold AuditLog._lock or a shared lock long enough to make log_human fail closed for the human, make verify exhaust memory, or suppress the audit evidence of a credential-guessing attempt beyond the documented suppressed_before count."
+ },
+ {
   "coverage_id": "Every%20HTTP%20request%20before%20routing%20and%20authentication%3A%20_BodyLimit%20ASGI%20middleware%20%28Content-Length%20and%20streamed%20bodies%2C%20upload%20path%20selection%29%20%2B%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Ffiles%20multipart%20form%20%2B%20the%20%2Fui%20upload%20form%20%2B%20deploy%2FCaddyfile%20request_body::Pre-authentication%20and%20per-request%20body%20caps%20%28F1%20fix%2C%20PR%20%2316%29%3A%20JSON%2Fform%20bodies%20capped%20at%20AGENTBOX_MAX_BODY%2C%20uploads%20at%20AGENTBOX_MAX_UPLOAD_BODY%20selected%20by%20method%20and%20path%20regex%2C%20multipart%20parsed%20only%20after%20screen_human.%20Invariant%3A%20an%20unauthenticated%20or%20agent%20client%20cannot%20make%20the%20server%20buffer%2C%20parse%20or%20spool%20more%20than%20the%20cap%20%28or%20hang%20a%20worker%29%20before%20auth%2C%20through%20any%20HTTP%20framing%20%28chunked%2C%20missing%20or%20duplicate%20Content-Length%2C%20path%20variants%2C%20HEAD%2Fother%20methods%2C%20root_path%29.::agentbox%2Fapi.py%23_BodyLimit%2F_UPLOAD_PATH%2Fput_files%2Fbuild%20%2B%20agentbox%2Fweb.py%23upload%20form%20%2B%20agentbox%2Fconfig.py%23max_body_bytes%2Fmax_upload_body_bytes%20%2B%20deploy%2FCaddyfile::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Pre-authentication%20work%20imbalance",
   "canonical_refs": {
    "surface": "Every HTTP request before routing and authentication: _BodyLimit ASGI middleware (Content-Length and streamed bodies, upload path selection) + POST /sandboxes/{sid}/files multipart form + the /ui upload form + deploy/Caddyfile request_body",
@@ -522,6 +570,99 @@
    "The ancestor rule in _new_processes (gui_state.py:76-77) spares any descendant of a new windowed process; consider limiting the spare to the window owner itself plus descendants in the same process group, to narrow what a single long-lived window can shelter.",
    "Consider making desktop_processes treat a nonzero owner-query exit as an explicit logged event (e.g. gui_window_owners_failed) so a human can see when the kept/stray split was computed without window data."
   ]
+ },
+ {
+  "coverage_id": "Human%20lifecycle%20routes%20%28POST%20%2Fsandboxes%2F%7Bsid%7D%2Fpause%7Cresume%7Csnapshot%7Crestore%2C%20DELETE%20%2Fsandboxes%2F%7Bsid%7D%2C%20and%20the%20%2Fui%20equivalents%29%20racing%20the%20agent%20and%20human%20paths%20that%20do%20NOT%20take%20AgentBox._lifecycle%3A%20call_tool%2F_call_tool%2F_run_tool%20exec%20and%20file%20tools%2C%20_snapshot%20%28auto%20snapshot%20before%20destructive%20actions%29%2C%20decide%20%28approved%20run%29%2C%20import_file%2Fexport_file%2Fupload%2C%20takeover%2Fhandback%2C%20GUI%20bursts%20open%2Fclose%2C%20expire_stale%20and%20extract%2Fcapture%20paths::Agent%20and%20human%20actions%20versus%20sandbox%20lifecycle%20state%20after%20the%20F6%20fix%20%28PR%20%2318%29%3A%20_lifecycle%20%28service.py%3A500-505%29%20serialises%20only%20pause%2Fresume%2Fsnapshot%2Frestore%2Fdelete%2C%20while%20call_tool%2C%20decide%2C%20_snapshot%2C%20import_file%2C%20takeover%20and%20GUI%20bursts%20never%20take%20it.%20Invariant%3A%20after%20restore%20or%20delete%20returns%2C%20no%20agent%20or%20approved%20action%20writes%20to%2C%20snapshots%20or%20records%20results%20for%20the%20old%20container%20or%20a%20deleted%20sandbox%3B%20no%20snapshot%20row%20or%20image%20is%20orphaned%20or%20bound%20to%20the%20wrong%20container_id%3B%20and%20a%20lifecycle%20call%20cannot%20be%20starved%20or%20deadlocked%20by%20tool%20calls%2C%20takeover%20or%20burst%20close%20holding%20_snap_locks%2C%20gui_lock%20or%20concurrency%20slots%20%28and%20_life_locks%20does%20not%20grow%20without%20bound%29.::agentbox%2Fservice.py%23_lifecycle%2Fpause_sandbox%2Fresume_sandbox%2Fsnapshot_sandbox%2Frestore_sandbox%2Fdelete_sandbox%2F_snapshot%2Fdecide%2Fcall_tool%2F_busy%2F_snap_locks%2Fimport_file%20%2B%20agentbox%2Fsandbox.py%23restore%2Fdelete%2Fsnapshot%2Fpause%2Fresume%20%28status%20guards%2C%20container_id%20binding%2C%20snapshot%20rows%20and%20images%29%20%2B%20agentbox%2Fgui_bursts.py%23end%2Freset_timers%2Fclose%20under%20restore::Race%20and%20check-then-act%20on%20security-control%20state%20%28lifecycle%20and%20TOCTOU%20on%20container%20identity%29",
+  "canonical_refs": {
+   "surface": "Human lifecycle routes (POST /sandboxes/{sid}/pause|resume|snapshot|restore, DELETE /sandboxes/{sid}, and the /ui equivalents) racing the agent and human paths that do NOT take AgentBox._lifecycle: call_tool/_call_tool/_run_tool exec and file tools, _snapshot (auto snapshot before destructive actions), decide (approved run), import_file/export_file/upload, takeover/handback, GUI bursts open/close, expire_stale and extract/capture paths",
+   "boundary": "Agent and human actions versus sandbox lifecycle state after the F6 fix (PR #18): _lifecycle (service.py:500-505) serialises only pause/resume/snapshot/restore/delete, while call_tool, decide, _snapshot, import_file, takeover and GUI bursts never take it. Invariant: after restore or delete returns, no agent or approved action writes to, snapshots or records results for the old container or a deleted sandbox; no snapshot row or image is orphaned or bound to the wrong container_id; and a lifecycle call cannot be starved or deadlocked by tool calls, takeover or burst close holding _snap_locks, gui_lock or concurrency slots (and _life_locks does not grow without bound).",
+   "subsystem": "agentbox/service.py#_lifecycle/pause_sandbox/resume_sandbox/snapshot_sandbox/restore_sandbox/delete_sandbox/_snapshot/decide/call_tool/_busy/_snap_locks/import_file + agentbox/sandbox.py#restore/delete/snapshot/pause/resume (status guards, container_id binding, snapshot rows and images) + agentbox/gui_bursts.py#end/reset_timers/close under restore",
+   "attack_class": "Race and check-then-act on security-control state (lifecycle and TOCTOU on container identity)"
+  },
+  "surface": "Human lifecycle routes (POST /sandboxes/{sid}/pause|resume|snapshot|restore, DELETE /sandboxes/{sid}, and the /ui equivalents) racing the agent and human paths that do NOT take AgentBox._lifecycle: call_tool/_call_tool/_run_tool exec and file tools, _snapshot (auto snapshot before destructive actions), decide (approved run), import_file/export_file/upload, takeover/handback, GUI bursts open/close, expire_stale and extract/capture paths",
+  "boundary": "Agent and human actions versus sandbox lifecycle state after the F6 fix (PR #18): _lifecycle (service.py:500-505) serialises only pause/resume/snapshot/restore/delete, while call_tool, decide, _snapshot, import_file, takeover and GUI bursts never take it. Invariant: after restore or delete returns, no agent or approved action writes to, snapshots or records results for the old container or a deleted sandbox; no snapshot row or image is orphaned or bound to the wrong container_id; and a lifecycle call cannot be starved or deadlocked by tool calls, takeover or burst close holding _snap_locks, gui_lock or concurrency slots (and _life_locks does not grow without bound).",
+  "subsystem": "agentbox/service.py#_lifecycle/pause_sandbox/resume_sandbox/snapshot_sandbox/restore_sandbox/delete_sandbox/_snapshot/decide/call_tool/_busy/_snap_locks/import_file + agentbox/sandbox.py#restore/delete/snapshot/pause/resume (status guards, container_id binding, snapshot rows and images) + agentbox/gui_bursts.py#end/reset_timers/close under restore",
+  "attack_class": "Race and check-then-act on security-control state (lifecycle and TOCTOU on container identity)",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/sandbox.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/approvals.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+    "reason": "GUI-burst versus takeover-lease races are already owned by the gui-lease unit; this unit covers non-desktop exec/file/decide/snapshot paths against restore and delete."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 2,
+  "status": "in_progress",
+  "agent_id": "h-lifecycle",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_hunter": "h-lifecycle",
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "Proposed by post-wave critic critic-1 (agents/critic-1/result.json); companion block names mapped to existing skill blocks where the critic named a non-existent one.",
+  "x_critic_boundary": "Agent and human actions versus sandbox lifecycle state (F6 fix, PR #18). _lifecycle (service.py:500-505) is a per-sandbox mutex taken only by pause/resume/snapshot/restore/delete (service.py:507-540); call_tool, decide, import_file, takeover and the burst code never take it, so a tool exec, an approval decide or a pre-destructive snapshot can still run against a container that restore is replacing or delete is removing. Also: restore/snapshot hold the lock across a multi-second docker commit while log_human and end_desktop run inside it (human request threads and the Starlette threadpool can pile up behind one sandbox), self._life_locks (service.py:90) is a dict that grows per sandbox id and is never pruned, and SandboxManager.restore now refuses status 'deleted' (check that every other manager method that takes a snapshot, resume or exec has the same state guard). Invariant: after restore or delete returns, no agent or approved action writes to, snapshots, or records results for the old container or a deleted sandbox, no snapshot row or image is orphaned or attributed to the wrong container_id, and a lifecycle call cannot be starved or deadlocked by a tool call, takeover or burst close that holds _snap_locks, gui_lock or the per-sandbox concurrency slots."
+ },
+ {
+  "coverage_id": "POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2Fexec%20%28and%20any%20tool%20whose%20argument%20text%20reaches%20Policy.decide%20and%20preview_command%29%20with%20a%20long%20or%20adversarially%20shaped%20command%2C%20run%20on%20the%20tool_pool%20thread%20before%20any%20approval%20exists%2C%20plus%20the%20approval-card%20render%20of%20the%20same%20text::Agent%20to%20control-plane%20availability%3A%20pure-Python%20policy%20and%20preview%20parsing%20%28Policy.decide%2C%20_split_segments%2C%20shlex%20passes%2C%20_raw_hits%2C%20preview%20glob%2Fwalk%29%20of%20an%20agent%20command%20up%20to%20the%208%20MiB%20body%20cap%2C%20with%20no%20per-command%20length%20cap%2C%20holds%20the%20GIL%20shared%20with%20the%20event%20loop%20and%20human%20threads%20%28hunter%20measurement%3A%204.96%20s%20for%20a%20128%20KiB%20command%2C%204%20concurrent%20per%20sandbox%29.%20Invariant%3A%20no%20agent-supplied%20argument%20makes%20evaluation%20cost%20more%20than%20a%20small%20bounded%20amount%20of%20CPU%2C%20memory%20or%20container%20exec%20time%20before%20rejection%20or%20queueing%2C%20and%20the%20human%20API%20stays%20responsive.::agentbox%2Fpolicy.py%23decide%2F_words%2Fcommand_names%2F_raw_hits%2Fsimple_programs%2Fhas_bash_comment%20%2B%20agentbox%2Fpreview.py%23preview_command%2F_split_segments%20%2B%20agentbox%2Fsandbox.py%23_expand%2F_walk%20%28container-side%20glob%20and%20find%2C%20no%20timeout%29%20%2B%20agentbox%2Fservice.py%23call_tool%2F_call_tool%2F_logged_args%20%2B%20agentbox%2Fapi.py%23tool%20route::Resource%20exhaustion%3A%20algorithmic%20complexity%20and%20worker%20starvation",
+  "canonical_refs": {
+   "surface": "POST /sandboxes/{sid}/tools/exec (and any tool whose argument text reaches Policy.decide and preview_command) with a long or adversarially shaped command, run on the tool_pool thread before any approval exists, plus the approval-card render of the same text",
+   "boundary": "Agent to control-plane availability: pure-Python policy and preview parsing (Policy.decide, _split_segments, shlex passes, _raw_hits, preview glob/walk) of an agent command up to the 8 MiB body cap, with no per-command length cap, holds the GIL shared with the event loop and human threads (hunter measurement: 4.96 s for a 128 KiB command, 4 concurrent per sandbox). Invariant: no agent-supplied argument makes evaluation cost more than a small bounded amount of CPU, memory or container exec time before rejection or queueing, and the human API stays responsive.",
+   "subsystem": "agentbox/policy.py#decide/_words/command_names/_raw_hits/simple_programs/has_bash_comment + agentbox/preview.py#preview_command/_split_segments + agentbox/sandbox.py#_expand/_walk (container-side glob and find, no timeout) + agentbox/service.py#call_tool/_call_tool/_logged_args + agentbox/api.py#tool route",
+   "attack_class": "Resource exhaustion: algorithmic complexity and worker starvation"
+  },
+  "surface": "POST /sandboxes/{sid}/tools/exec (and any tool whose argument text reaches Policy.decide and preview_command) with a long or adversarially shaped command, run on the tool_pool thread before any approval exists, plus the approval-card render of the same text",
+  "boundary": "Agent to control-plane availability: pure-Python policy and preview parsing (Policy.decide, _split_segments, shlex passes, _raw_hits, preview glob/walk) of an agent command up to the 8 MiB body cap, with no per-command length cap, holds the GIL shared with the event loop and human threads (hunter measurement: 4.96 s for a 128 KiB command, 4 concurrent per sandbox). Invariant: no agent-supplied argument makes evaluation cost more than a small bounded amount of CPU, memory or container exec time before rejection or queueing, and the human API stays responsive.",
+  "subsystem": "agentbox/policy.py#decide/_words/command_names/_raw_hits/simple_programs/has_bash_comment + agentbox/preview.py#preview_command/_split_segments + agentbox/sandbox.py#_expand/_walk (container-side glob and find, no timeout) + agentbox/service.py#call_tool/_call_tool/_logged_args + agentbox/api.py#tool route",
+  "attack_class": "Resource exhaustion: algorithmic complexity and worker starvation",
+  "starting_paths": [
+   "agentbox/policy.py",
+   "agentbox/preview.py",
+   "agentbox/service.py",
+   "agentbox/sandbox.py",
+   "agentbox/api.py",
+   "agentbox/default_policy.yaml"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Superlinear parsing, matching, or evaluation"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+    "reason": "Container-output reader caps are run-4 N3 (needs_validation, not re-hunted); this unit is about CPU spent on agent-supplied input, not container output."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 2,
+  "status": "in_progress",
+  "agent_id": "h-policy-cpu",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_hunter": "h-policy-cpu",
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "Proposed by post-wave critic critic-1 (agents/critic-1/result.json); companion block names mapped to existing skill blocks where the critic named a non-existent one.",
+  "x_critic_boundary": "Agent to control-plane availability: pure-Python, CPU-bound policy and preview parsing of an attacker-sized command (up to the 8 MiB AGENTBOX_MAX_BODY; no per-command or per-argument length cap exists, grep finds only max_body_bytes) holds the GIL shared with the event loop and every human request thread. The h-approvals hunter measured Policy.decide at 4.96 s for a 128 KiB 'x;' command, growing at least linearly, and up to 4 such calls run concurrently per sandbox on the 32-thread tool_pool, across sandboxes. Invariant: no agent-supplied command or argument can make policy evaluation, _split_segments, simple_programs/shlex passes, _raw_hits or the preview glob/walk expansion cost more than a small bounded amount of CPU, memory or container-side exec time before the call is rejected or queued, and the human API stays responsive while it runs."
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws%20upgrade%20before%20ws.accept%28%29::agentbox%2Fapi.py%23desktop_ws%20async%20handler%3A%20synchronous%20SQLite%20%28session%2C%20lease%29%20and%20Docker%20SDK%20calls%20on%20the%20event%20loop%20before%20accept%20%2B%20agentbox%2Fdesktop_ws.py%23relay%20setup::agentbox%2Fapi.py%20%2B%20agentbox%2Fdesktop_ws.py%20%2B%20agentbox%2Fdesktop.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
