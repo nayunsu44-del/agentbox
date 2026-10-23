@@ -203,7 +203,13 @@ pytest                                                 # 160 passed
      - F2: `_run_tool`이 `gui_lock`을 잡고 제어 확인을 마친 뒤, 열린 구간이 없으면 GUI 입력을 실행하지 않는다(`GuiBursts.covers`, 400). 입력 시각을 남기지 않으므로 다시 부르면 새 스냅샷과 구간을 연다.
      - F7: 허용 경로의 커밋 직전에 스냅샷 상한을 다시 확인한다. 상한 이상이면 커밋하지 않고 409와 `tool_blocked`(`snapshot_quota_changed`)를 남긴다. 다시 부르면 승인 요청으로 간다.
      - 회귀 테스트 2개(`test_m2_unit.py`)는 수정 전 코드에서 실패한다. 전체 pytest 239개 통과.
-   - 남은 것: F6 → F4·F5·F8.
+   - **F6·F4·F5·F8 수정 완료**(브랜치 `ccr-534dd824-2jgcsj`, 건마다 커밋).
+     - F6: `AgentBox._lifecycle`가 일시정지·재개·스냅샷·복원·삭제를 샌드박스마다 직렬화한다. `SandboxManager.restore`는 `deleted`를 거절하고, 마지막 상태 쓰기를 `status != 'deleted'` 조건으로 해서, 그사이 삭제됐으면 새 컨테이너를 지우고 실패한다.
+     - F4: 미리보기 `_expand`는 `IFS=`로 단어를 쪼개지 않고 NUL로 나누며, `_walk`는 `find -print0 | head -z`를 쓴다.
+     - F5: noVNC 꺼내기는 잠금 아래 한 번만 한다. 실패하면 60초 동안 다시 하지 않고, 예외는 500 대신 404다.
+     - F8: 로그인 실패는 1분에 5개까지만 하나씩 기록하고, 나머지는 센 수(`suppressed_before`)로 다음 기록에 붙인다. `/login`과 Bearer 토큰 비교를 바이트로 바꿔 ASCII 밖 입력의 500을 없앴다.
+     - 회귀 테스트 6개(`test_m4_acceptance.py`)는 모두 수정 전 코드에서 실패한다. 전체 pytest 244개 통과.
+   - **확정 8건을 모두 고쳤다.** 남은 것은 검증 필요 5건(N2·N4·N5는 확정 후보), 보류 3단위, 다음 run이다.
 2. **보류 3단위**는 다음 run의 1순위다.
    - 데스크톱 WebSocket이 `ws.accept()` 전에 동기 SQLite·Docker를 호출한다.
    - 승인 테이블이 마스킹·상한 없이 남는다.

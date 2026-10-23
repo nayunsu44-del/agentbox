@@ -399,3 +399,24 @@ def test_novnc_extracted_once_under_concurrency(home, monkeypatch):
     with ThreadPoolExecutor(8) as ex:
         codes = list(ex.map(lambda _: c2.get("/static/novnc/core/rfb.js").status_code, range(8)))
     assert codes == [200] * 8 and len(created) == 1
+
+
+def test_failed_logins_are_aggregated(home, monkeypatch):
+    """보안 검수 run-4 F8: 인증 없는 로그인 실패가 시도마다 감사 행을 만들지 않고, ASCII 밖 입력도 500이 아니다."""
+    import time
+    from agentbox import web
+    c, box, H, _ = _build()
+
+    def failed_rows():
+        return [r for r in box.audit.list(limit=5000) if r["event"] == "ui_login_failed"]
+
+    for _ in range(12):
+        assert c.post("/login", data={"token": "hum_wrong"}).status_code == 200
+    assert len(failed_rows()) == 5                       # web.LOGIN_FAIL_LOG_MAX
+    monkeypatch.setattr(web, "LOGIN_FAIL_WINDOW", 0.2, raising=False)
+    time.sleep(0.3)
+    c.post("/login", data={"token": "hum_wrong"})
+    rows = failed_rows()
+    assert len(rows) == 6 and rows[-1]["payload"] == {"suppressed_before": 7}
+    assert c.post("/login", data={"token": "토큰"}).status_code == 200      # 예전에는 TypeError로 500
+    assert c.get("/sandboxes", headers={"Authorization": b"Bearer \xe9t\xe9"}).status_code == 401
