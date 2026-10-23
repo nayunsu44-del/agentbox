@@ -518,7 +518,7 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "blocked",
+  "status": "covered",
   "agent_id": "h-xres",
   "reviewed_paths": [
    "agentbox/gui_bursts.py",
@@ -572,13 +572,31 @@
     "method": "source",
     "result": "_stop_strays stores _kept[sid] = (burst container_id, kept pids) or clears it (gui_bursts.py:99-103); open() subtracts kept pids from the new baseline only when the stored container id equals the current one (gui_bursts.py:83-84), so a kept process is re-judged at every burst close. _finish refuses to compare when the container changed (gui_bursts.py:132-136). No path found that promotes a process started during a burst into baseline other than surviving a burst while not windowed, which the stray kill prevents.",
     "artifact": null
+   },
+   {
+    "agent_id": "parent-live",
+    "reviewed_paths": [
+     "agentbox/sandbox_desktop.py"
+    ],
+    "method": "local",
+    "artifact": "agents/parent-live/artifacts/xres.json",
+    "invariant": "In the real agentbox-desktop:0.1 image the _WINDOW_OWNERS pipeline loads libX11/libXRes, Xvfb answers XResQueryClientIds, and the returned pids are the container-namespace pids of the processes that own Xfce windows.",
+    "result": "Holds. desktop_processes returned window owners 96 xfwm4, 121 xfce4-panel, 137 xfdesktop, 148 and 152 (panel plugin wrappers), all uid 1001 in the container's ps; xdotool's client-declared _NET_WM_PID for the same windows names the same pids."
+   },
+   {
+    "agent_id": "parent-live",
+    "reviewed_paths": [
+     "agentbox/gui_bursts.py",
+     "agentbox/gui_state.py"
+    ],
+    "method": "local",
+    "artifact": "agents/parent-live/artifacts/xres.json",
+    "invariant": "A uid-1001 process without a window started in a new session during an agent GUI burst is stopped when the burst closes.",
+    "result": "Holds. After an agent click (200) opened a burst, a setsid sleep 601 (pid 265) started as the desktop user was stopped at the idle close (gui_processes_stopped reason idle, pid 265) and was gone from ps."
    }
   ],
   "result_fingerprints": [],
-  "unresolved": [
-   "Runtime confirmation in the real agentbox-desktop:0.1 image that the _WINDOW_OWNERS script loads libX11.so.6/libXRes.so.1 from root-owned system paths, that Xvfb supports X-Resource 1.2 client-id queries, and that the returned pids match container-namespace ps pids for Xfce windows (parent-live: inside a disposable desktop sandbox run the same sh -c pipeline as user desktop with DESKTOP_ENV and compare its output to ps -eo pid,args for xfwm4/xfce4-panel/thunar).",
-   "Runtime confirmation that a uid-1001 process started during a burst and lacking a mapped window is listed in gui_processes_stopped at burst close (parent-live burst open/close with a background sleep launched from a GUI-launched script)."
-  ],
+  "unresolved": [],
   "x_hunter": "h-xres",
   "x_prior_unit": null,
   "x_prior_fingerprints": [
@@ -588,7 +606,8 @@
    "By design, any process started during a burst that is in a burst-start session and itself maps a visible X window (or descends from a new windowed ancestor) is kept, not stopped; the guarantee is therefore 'GUI apps survive but are logged as gui_processes_kept and re-judged each burst', not 'everything started during a burst stops'. Consider surfacing gui_processes_kept prominently in the approvals/audit UI and optionally stopping kept processes on human request or after N consecutive kept bursts.",
    "The ancestor rule in _new_processes (gui_state.py:76-77) spares any descendant of a new windowed process; consider limiting the spare to the window owner itself plus descendants in the same process group, to narrow what a single long-lived window can shelter.",
    "Consider making desktop_processes treat a nonzero owner-query exit as an explicit logged event (e.g. gui_window_owners_failed) so a human can see when the kept/stray split was computed without window data."
-  ]
+  ],
+  "x_parent_live": "agents/parent-live/parent_live_xres.py -> agents/parent-live/artifacts/xres.json"
  },
  {
   "coverage_id": "Human%20lifecycle%20routes%20%28POST%20%2Fsandboxes%2F%7Bsid%7D%2Fpause%7Cresume%7Csnapshot%7Crestore%2C%20DELETE%20%2Fsandboxes%2F%7Bsid%7D%2C%20and%20the%20%2Fui%20equivalents%29%20racing%20the%20agent%20and%20human%20paths%20that%20do%20NOT%20take%20AgentBox._lifecycle%3A%20call_tool%2F_call_tool%2F_run_tool%20exec%20and%20file%20tools%2C%20_snapshot%20%28auto%20snapshot%20before%20destructive%20actions%29%2C%20decide%20%28approved%20run%29%2C%20import_file%2Fexport_file%2Fupload%2C%20takeover%2Fhandback%2C%20GUI%20bursts%20open%2Fclose%2C%20expire_stale%20and%20extract%2Fcapture%20paths::Agent%20and%20human%20actions%20versus%20sandbox%20lifecycle%20state%20after%20the%20F6%20fix%20%28PR%20%2318%29%3A%20_lifecycle%20%28service.py%3A500-505%29%20serialises%20only%20pause%2Fresume%2Fsnapshot%2Frestore%2Fdelete%2C%20while%20call_tool%2C%20decide%2C%20_snapshot%2C%20import_file%2C%20takeover%20and%20GUI%20bursts%20never%20take%20it.%20Invariant%3A%20after%20restore%20or%20delete%20returns%2C%20no%20agent%20or%20approved%20action%20writes%20to%2C%20snapshots%20or%20records%20results%20for%20the%20old%20container%20or%20a%20deleted%20sandbox%3B%20no%20snapshot%20row%20or%20image%20is%20orphaned%20or%20bound%20to%20the%20wrong%20container_id%3B%20and%20a%20lifecycle%20call%20cannot%20be%20starved%20or%20deadlocked%20by%20tool%20calls%2C%20takeover%20or%20burst%20close%20holding%20_snap_locks%2C%20gui_lock%20or%20concurrency%20slots%20%28and%20_life_locks%20does%20not%20grow%20without%20bound%29.::agentbox%2Fservice.py%23_lifecycle%2Fpause_sandbox%2Fresume_sandbox%2Fsnapshot_sandbox%2Frestore_sandbox%2Fdelete_sandbox%2F_snapshot%2Fdecide%2Fcall_tool%2F_busy%2F_snap_locks%2Fimport_file%20%2B%20agentbox%2Fsandbox.py%23restore%2Fdelete%2Fsnapshot%2Fpause%2Fresume%20%28status%20guards%2C%20container_id%20binding%2C%20snapshot%20rows%20and%20images%29%20%2B%20agentbox%2Fgui_bursts.py%23end%2Freset_timers%2Fclose%20under%20restore::Race%20and%20check-then-act%20on%20security-control%20state%20%28lifecycle%20and%20TOCTOU%20on%20container%20identity%29",
