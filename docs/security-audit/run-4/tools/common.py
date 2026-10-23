@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import subprocess
 
 RUN = "/home/user/agentbox/docs/security-audit/run-4"
 SP = os.environ.get("AUDIT_SCRATCHPAD", "/tmp/claude-0/-home-user-agentbox/bc796aa2-37b4-5f3d-a870-3de255943f83/scratchpad")
@@ -66,6 +67,15 @@ def make_scratch(aid):
     scratch = f"{RUN}/agents/{aid}/scratch"
     os.makedirs(scratch, exist_ok=True)
     os.makedirs(f"{RUN}/agents/{aid}/artifacts", exist_ok=True)
+    if not os.path.ismount(scratch):  # 256 MiB cap on everything the agent and sandboxed code write
+        img = f"{SP}/scratch-img/{aid}.img"
+        os.makedirs(os.path.dirname(img), exist_ok=True)
+        subprocess.run(["truncate", "-s", "256M", img], check=True)
+        subprocess.run(["mkfs.ext4", "-q", "-F", img], check=True)
+        subprocess.run(["mount", "-o", "loop,nosuid,nodev", img, scratch], check=True)
+        lf = f"{scratch}/lost+found"
+        if os.path.isdir(lf):
+            os.rmdir(lf)
     os.chown(scratch, 65534, 65534)
     return scratch
 
