@@ -8,14 +8,24 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
-# C0·DEL·C1 제어 문자와 양방향(bidi) 재배치 문자.
-UNSAFE = re.compile("[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
-# 줄바꿈(\n)과 탭(\t)은 화면에서 그대로 보여도 되니 뺀 것. 웹 UI가 쓴다.
-_UNSAFE_KEEP_NEWLINES = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+# 바꿀 문자: 제어(Cc: C0·DEL·C1), 서식(Cf: 양방향(bidi) 재배치, 폭 없는 문자, 소프트 하이픈 등), 줄·문단 구분자(Zl·Zp).
+# 손으로 나열하면 빠지는 문자가 생겨서(U+061C, U+200B 등, 보안 검수 run-4 N5) 유니코드 범주로 고른다.
+_ESCAPED = {"Cc", "Cf", "Zl", "Zp"}
+# 출력 가능한 ASCII는 범주를 볼 필요가 없다.
+_CANDIDATE = re.compile("[^\x20-\x7e]")
+
+
+def _escape(ch: str, keep_newlines: bool) -> str:
+    if keep_newlines and ch in "\n\t":
+        return ch
+    if unicodedata.category(ch) not in _ESCAPED:
+        return ch
+    o = ord(ch)
+    return f"\\x{o:02x}" if o < 0x100 else f"\\u{o:04x}" if o < 0x10000 else f"\\U{o:08x}"
 
 
 def escape_controls(s: str, keep_newlines: bool) -> str:
-    """제어 문자는 \\x1b처럼 보이게 바꾼다. keep_newlines면 줄바꿈과 탭은 그대로 둔다."""
-    pat = _UNSAFE_KEEP_NEWLINES if keep_newlines else UNSAFE
-    return pat.sub(lambda m: f"\\x{ord(m[0]):02x}" if ord(m[0]) < 0x100 else f"\\u{ord(m[0]):04x}", s)
+    """제어 문자는 \\x1b처럼 보이게 바꾼다. keep_newlines면 줄바꿈과 탭은 그대로 둔다 (웹 UI가 쓴다)."""
+    return _CANDIDATE.sub(lambda m: _escape(m[0], keep_newlines), s)

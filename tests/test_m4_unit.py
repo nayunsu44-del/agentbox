@@ -264,3 +264,19 @@ def test_audit_payload_is_bounded(tmp_path):
     assert max(len(p.encode()) for (p,) in db.execute("SELECT payload FROM audit")) <= AUDIT_PAYLOAD_MAX
     assert log.verify().ok
     assert json.loads(db.execute("SELECT payload FROM audit WHERE id=1").fetchone()[0]) == small
+
+
+def test_escape_controls_covers_invisible_and_bidi_marks():
+    """보안 검수 run-4 N5: 손으로 나열한 문자 집합이 U+061C(ALM)와 폭 없는 문자·줄 구분자를 놓쳤다."""
+    from agentbox.cli import _safe
+    from agentbox.display import escape_controls
+    hidden = "\u061c\u200b\u200c\u200d\u2060\ufeff\u00ad\u2028\u2029\u180e\U000e0041"
+    for keep in (True, False):
+        out = escape_controls("rm" + hidden + " x", keep_newlines=keep)
+        assert not any(ch in out for ch in hidden), keep
+        assert "\\u061c" in out and "\\xad" in out and "\\U000e0041" in out
+        assert escape_controls("\u202e\x1b\r", keep) == "\\u202e\\x1b\\x0d"   # 예전에 막던 것도 그대로
+    assert escape_controls("a\tb\nc", keep_newlines=True) == "a\tb\nc"
+    assert escape_controls("a\tb\nc", keep_newlines=False) == "a\\x09b\\x0ac"
+    assert escape_controls("한글 파일.txt é ✓", keep_newlines=False) == "한글 파일.txt é ✓"
+    assert _safe("x\u2028y") == "x\\u2028y"
