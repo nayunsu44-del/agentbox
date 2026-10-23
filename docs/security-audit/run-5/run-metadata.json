@@ -36,10 +36,10 @@
   "hunters": 6,
   "phase3": 0,
   "phase5": 0,
-  "retries": 1,
+  "retries": 2,
   "critics": 0,
   "reverify": 0
  },
- "agents_spent_total": 7,
+ "agents_spent_total": 8,
  "phase": "phase2_hunting"
 }
