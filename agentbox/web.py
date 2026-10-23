@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -22,10 +23,21 @@ from fastapi.templating import Jinja2Templates
 from . import approvals as A
 from . import desktop as D
 from .sandbox import SandboxError
-from .service import AgentBox, ServiceError
+from .service import AUDIT_BURST_WAIT, AgentBox, ServiceError
 
 HERE = Path(__file__).parent
 ACTORS = {"agent": "AI", "human": "사람", "system": "시스템"}
+# HTML 이스케이프는 < > & 따옴표만 바꾼다. 양방향(bidi) 재배치 문자가 남으면 브라우저가 글자 순서를 바꿔 보여서,
+# 승인 화면의 명령이 실제와 다르게 읽힌다 (보안 검수 run-3 v13). 터미널의 cli._safe와 같은 문자를 같은 모양으로
+# 바꾸되, 줄바꿈과 탭은 화면에서 그대로 보여도 되니 남긴다.
+_UNSAFE = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
+
+
+def _shown(value: Any) -> Any:
+    """템플릿의 모든 {{ }} 출력에 거는 마무리. 에이전트·컨테이너가 정한 문자열이 어디에 찍히든 같이 막는다."""
+    if isinstance(value, str):
+        return _UNSAFE.sub(lambda m: f"\\x{ord(m[0]):02x}" if ord(m[0]) < 0x100 else f"\\u{ord(m[0]):04x}", value)
+    return value
 
 
 def _short(v: Any, n: int = 160) -> str:
@@ -59,6 +71,10 @@ def describe(e: dict[str, Any]) -> str:
         procs = p.get("processes") or []
         return _short(f"GUI 구간({p.get('snapshot_id')}부터)에서 띄운 프로세스 {p.get('count', len(procs))}개 멈춤: "
                       + ", ".join(str(x.get("args", "")) for x in procs[:3]), 240)
+    if ev == "gui_burst_open_failed":
+        return _short(f"GUI 구간({p.get('snapshot_id')}부터)의 기준을 못 읽어 바뀐 파일을 기록하지 못함: {p.get('error')}", 240)
+    if ev == "gui_burst_close_failed":
+        return _short(f"GUI 구간({p.get('snapshot_id')}부터)을 끝까지 확인하지 못함 ({p.get('reason')}): {p.get('error')}", 240)
     if ev == "gui_changes":
         n = p.get("counts") or {}
         s = (f"GUI 구간({p.get('snapshot_id')}부터) 바뀐 파일: 추가 {n.get('added', 0)} · 변경 {n.get('modified', 0)}"
@@ -78,6 +94,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
     tpl = Jinja2Templates(directory=str(HERE / "templates"))
     tpl.env.globals.update(actors=ACTORS, describe=describe, runtime=box.sandboxes.runtime)
     tpl.env.filters["short"] = _short
+    tpl.env.finalize = _shown
 
     def session_of(request: Request) -> str | None:
         return box.desktop.session(request.cookies.get(D.COOKIE))
@@ -242,6 +259,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
         box.log_human("restore_request", sid, {"snapshot_id": snap_id, "session": p.session})
         box.end_desktop(sid, "sandbox_restored")
         rec = guard(lambda: box.sandboxes.restore(sid, snap_id))
+        box.reset_gui_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
         box.log_human("restored", sid, {"snapshot_id": snap_id, "container_id": rec["container_id"],
                                         "session": p.session})
         r = snapshots_frag(request, sid, p)
@@ -253,21 +271,22 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
         box.log_human("sandbox_delete", sid, {"session": p.session})
         box.end_desktop(sid, "sandbox_deleted")
         guard(lambda: box.sandboxes.delete(sid))
+        box.drop_captures(sid)
         return Response("", headers={"HX-Redirect": "/ui"})
 
     # ---- 감사 로그 타임라인 (UX-6) -----------------------------------------
     @app.get("/ui/audit", include_in_schema=False)
     def audit_frag(request: Request, sandbox_id: str | None = None, p=Depends(browser_human)):
-        box.close_idle_gui_bursts()
-        rows = box.audit.list(sandbox_id=sandbox_id, limit=5000)
-        return render(request, "_audit.html", rows=rows[-400:][::-1], total=len(rows), broken=None)
+        box.close_idle_gui_bursts(wait=AUDIT_BURST_WAIT)
+        rows, total = box.audit.recent(sandbox_id=sandbox_id, limit=400)
+        return render(request, "_audit.html", rows=rows, total=total, broken=None)
 
     @app.get("/ui/verify", include_in_schema=False)
     def verify_frag(request: Request, sandbox_id: str | None = None, p=Depends(browser_human)):
         v = box.audit.verify()
         here = None
         if v.broken_at is not None and sandbox_id:
-            here = any(r["id"] == v.broken_at for r in box.audit.list(sandbox_id=sandbox_id, limit=100000))
+            here = box.audit.belongs_to(v.broken_at, sandbox_id)
         box._safe_log(sandbox_id, None, "audit_verified", {"ok": v.ok, "checked": v.checked,
                                                            "broken_at": v.broken_at, "session": p.session},
                       actor="human")

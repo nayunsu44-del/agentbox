@@ -1,0 +1,1 @@
+{"decision": "verified", "fingerprint": "agentbox/service.py:_run_tool:gui_lock-held-across-untimed-x-exec-blocks-takeover"}

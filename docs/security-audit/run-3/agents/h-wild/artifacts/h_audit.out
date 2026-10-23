@@ -1,0 +1,23 @@
+{
+ "db_rows_and_max_id": [
+  5103,
+  5103
+ ],
+ "ui_audit_fragment_context": {
+  "template": "_audit.html",
+  "total": 5000,
+  "shown": 400,
+  "newest_shown_id": 5000,
+  "events_shown": [
+   "policy_decision",
+   "tool_request",
+   "tool_result"
+  ],
+  "marker_shown": false
+ },
+ "cli_audit_query": {
+  "returned": 5000,
+  "max_id": 5000,
+  "marker_present": false
+ }
+}

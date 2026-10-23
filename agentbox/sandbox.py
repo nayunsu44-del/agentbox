@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import posixpath
 import re
 import secrets
@@ -27,6 +28,7 @@ from typing import Any
 
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
+from docker.types import Mount
 
 from .config import Settings, Template
 
@@ -36,6 +38,11 @@ SOURCE = "/source"
 _OUT_LIMIT = 64 * 1024
 # 파일 읽기 한 번의 제한 시간(초). 일반 파일만 읽지만, 확인과 읽기 사이에 FIFO로 바뀌면 head가 끝없이 기다린다.
 _READ_TIMEOUT = 30
+# 화면(X)과 구간 기록용 exec의 제한 시간(초). X 서버가 멈추면 xdotool·scrot은 끝없이 기다리고, 그동안 gui_lock과
+# 부른 스레드가 묶인다. 컨테이너 안에서 끊어야 exec가 돌아온다 (클라이언트 쪽 시간 제한으로는 풀리지 않았다).
+_X_TIMEOUT = 15
+_MANIFEST_TIMEOUT = 30
+_TIMED_OUT = (124, 137)   # timeout(1)이 끊었을 때의 종료 코드 (TERM, 안 끝나서 KILL)
 
 # 데스크톱 템플릿 (images/desktop/Dockerfile과 맞춘다)
 DESKTOP_USER = "desktop"
@@ -225,6 +232,26 @@ def gui_strays(procs: list[dict[str, Any]], window_pids: set[int], baseline: set
     return sorted(out)
 
 
+def _source_mount(source_dir: str) -> Mount:
+    """원본 폴더 안쪽에 다른 폴더(데이터 폴더 등)가 바인드 마운트돼 있으면 docker 기본값(rbind)은 그것까지 붙이고,
+    cp -a가 작업 폴더로 복사한다. 같은 디스크의 바인드 마운트는 장치 번호가 같아 cp -x로도 못 거른다 (보안 검수 run-3 v06)."""
+    m = Mount(SOURCE, source_dir, type="bind", read_only=True)
+    m["BindOptions"] = {"NonRecursive": True}
+    return m
+
+
+def overlaps(a: Path, b: Path) -> bool:
+    """두 폴더가 같거나 한쪽이 다른 쪽 안에 있는가. 경로 문자열이 아니라 파일 시스템의 실체(장치·inode)로
+    비교한다. 대소문자를 가리지 않는 파일 시스템(WSL2 /mnt/c 등)의 다른 철자나 바인드 마운트처럼
+    심볼릭 링크가 아닌 다른 이름도 같은 폴더로 본다."""
+    def same(x: Path, y: Path) -> bool:
+        try:
+            return x == y or os.path.samefile(x, y)
+        except OSError:
+            return False
+    return any(same(x, b) for x in (a, *a.parents)) or any(same(a, y) for y in (b, *b.parents))
+
+
 def safe_path(path: str) -> str:
     """에이전트가 준 경로를 /workspace 또는 /source 아래로 제한한다."""
     p = path.strip() or WORKSPACE
@@ -240,6 +267,14 @@ def safe_path(path: str) -> str:
 # ---------------------------------------------------------------------------
 # 영향 미리보기: 승인 화면에 보여줄 '시스템이 계산한' 영향 범위
 # ---------------------------------------------------------------------------
+
+_WRAPPERS = ("xargs", "sudo", "env", "nohup", "timeout", "nice")
+
+
+def _short_seg(seg: list[str]) -> str:
+    text = " ".join(seg)
+    return text if len(text) <= 80 else text[:79] + "…"
+
 
 def _split_segments(command: str, depth: int = 0) -> list[list[str]]:
     """명령을 ; && || | 단위 argv 조각으로 나눈다. sh -c / bash -c 안쪽은 펼친다."""
@@ -268,7 +303,7 @@ def _split_segments(command: str, depth: int = 0) -> list[list[str]]:
             if i + 1 < len(s):
                 out.extend(_split_segments(s[i + 1], depth + 1))
                 continue
-        if name in ("xargs", "sudo", "env", "nohup", "timeout", "nice") and len(s) > 1:
+        if name in _WRAPPERS and len(s) > 1:
             out.append(s)  # 원래 조각도 남기고
             rest = s[1:]
             while rest and (rest[0].startswith("-") or re.match(r"^\w+=", rest[0]) or rest[0].isdigit()):
@@ -365,6 +400,7 @@ class SandboxManager:
 
     # ---- SB-1 생성·삭제 -----------------------------------------------
     def _run_container(self, tpl: Template, image: str, source_dir: str, name: str):
+        """원본 폴더는 읽기 전용으로, 그 안쪽에 걸린 다른 마운트는 빼고 붙인다."""
         kwargs: dict[str, Any] = dict(
             image=image,
             command=tpl.command or ["sleep", "infinity"],
@@ -372,7 +408,7 @@ class SandboxManager:
             detach=True,
             init=True,
             network_mode="none",                       # SB-4
-            volumes={source_dir: {"bind": SOURCE, "mode": "ro"}},
+            mounts=[_source_mount(source_dir)],
             mem_limit=tpl.mem_limit,                   # SB-5
             memswap_limit=tpl.mem_limit,
             nano_cpus=int(tpl.cpus * 1e9),
@@ -401,7 +437,7 @@ class SandboxManager:
             # 원본은 컨테이너 root가 권한 검사 없이(DAC_OVERRIDE) 복사해 에이전트 소유로 바꾼다.
             # 데이터 폴더와 겹치면 사람 토큰·DB·다른 샌드박스 원본이 에이전트에게 넘어간다.
             for d in {self.settings.home.resolve(), self.settings.db_path.resolve().parent}:
-                if src == d or d in src.parents or src in d.parents:
+                if overlaps(src, d):
                     raise SandboxError(f"원본 폴더가 agentbox 데이터 폴더({d})와 겹침. 데이터 폴더 밖의 폴더를 고를 것")
         else:
             src = (self.settings.home / "sources" / sid).resolve()
@@ -496,8 +532,11 @@ class SandboxManager:
         """/workspace의 파일 목록 {경로: (크기, mtime, ctime)}. root로 읽어 에이전트가 권한으로 숨기지 못하게 한다.
         mtime은 파일 주인이 touch로 되돌릴 수 있지만 ctime은 못 되돌린다(시계를 바꿀 권한이 없다)."""
         c = self._container(sid)
-        res = c.exec_run(["sh", "-c", f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0%C@\\0' "
-                                      f"| head -c {_MANIFEST_CAP}"], user="0:0", demux=True)
+        res = c.exec_run(["timeout", "-k", "2", str(_MANIFEST_TIMEOUT), "sh", "-c",
+                          f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0%C@\\0' "
+                          f"| head -c {_MANIFEST_CAP}"], user="0:0", demux=True)
+        if res.exit_code != 0:  # 시간 초과 등. 잘린 목록으로 비교하면 없는 파일을 지워졌다고 적는다
+            raise SandboxError(f"/workspace 파일 목록 실패 (exit {res.exit_code})")
         return _parse_manifest(res.output[0] or b"")
 
     def snapshot_count(self, sid: str) -> int:
@@ -680,13 +719,20 @@ class SandboxManager:
         return self._require_running(sid)
 
     @staticmethod
-    def _x(c, argv: list[str]):
-        return c.exec_run(argv, user=DESKTOP_USER, environment=DESKTOP_ENV, demux=True)
+    def _x(c, argv: list[str], timeout: int = _X_TIMEOUT):
+        res = c.exec_run(["timeout", "-k", "2", str(timeout), *argv],
+                         user=DESKTOP_USER, environment=DESKTOP_ENV, demux=True)
+        if res.exit_code in _TIMED_OUT:  # 반쯤 받은 결과(창 목록 등)로 판단하지 않게 실패로 돌린다
+            raise SandboxError(f"화면(X 서버)이 {timeout}초 안에 응답하지 않음")
+        return res
 
     def desktop_processes(self, sid: str) -> tuple[list[dict[str, Any]], set[int]]:
         """컨테이너의 프로세스 목록과, 보이는 창을 가진 pid (_NET_WM_PID)."""
         c = self._desktop(sid)
-        procs = _parse_ps(c.exec_run(["ps", "-eo", "pid=,ppid=,sid=,uid=,args="]).output or b"")
+        res = c.exec_run(["timeout", "-k", "2", str(_X_TIMEOUT), "ps", "-eo", "pid=,ppid=,sid=,uid=,args="])
+        if res.exit_code != 0:  # 빈 목록을 기준으로 삼으면 구간이 끝날 때 데스크톱 세션 전체를 낯선 프로세스로 본다
+            raise SandboxError(f"프로세스 목록 실패 (exit {res.exit_code})")
+        procs = _parse_ps(res.output or b"")
         res = self._x(c, ["sh", "-c", "for w in $(xdotool search --onlyvisible --name . 2>/dev/null); do "
                                       "xdotool getwindowpid $w 2>/dev/null; done"])
         wins = {int(x) for x in (res.output[0] or b"").split() if x.isdigit()}
@@ -694,7 +740,8 @@ class SandboxManager:
 
     def kill_processes(self, sid: str, pids: list[int]) -> None:
         if pids:
-            self._desktop(sid).exec_run(["kill", "-KILL", "--", *map(str, pids)], user=DESKTOP_USER)
+            self._desktop(sid).exec_run(["timeout", "-k", "2", str(_X_TIMEOUT), "kill", "-KILL", "--", *map(str, pids)],
+                                        user=DESKTOP_USER)
 
     def _wait_display(self, c, timeout: float = 45) -> None:
         deadline = time.monotonic() + timeout
@@ -741,7 +788,9 @@ class SandboxManager:
         c = self._desktop(sid)
         if len(text) > 2000:
             raise SandboxError("한 번에 2000자까지 입력할 수 있음")
-        res = self._x(c, ["xdotool", "type", "--clearmodifiers", "--delay", "12", "--", text])
+        # 글자마다 12ms를 쉬니 긴 글은 그만큼 더 기다린다 (2000자면 115초)
+        res = self._x(c, ["xdotool", "type", "--clearmodifiers", "--delay", "12", "--", text],
+                      timeout=_X_TIMEOUT + len(text) // 20)
         if res.exit_code != 0:
             raise SandboxError(_truncate(res.output[1]) or "입력 실패")
         return {"chars": len(text)}
@@ -866,6 +915,10 @@ class SandboxManager:
                     affected.append({"path": u, "effect": "외부로 보낼 파일"})
                 if not urls:
                     notes.append("curl 대상 주소를 명령에서 찾지 못함.")
+            elif name not in _WRAPPERS:  # 감싸는 명령은 안쪽 조각을 따로 본다
+                # rm·curl 말고는 영향을 계산하지 않는다. 계산한 줄이 있어도 이 조각의 영향은 표에 없다는 것을
+                # 조각마다 알린다 (보안 검수 run-3 v17: 'rm a; mv b /tmp'가 'a 삭제' 한 줄로만 보였다)
+                notes.append(f"'{_short_seg(seg)}' 부분의 영향은 자동 계산하지 못함. 명령 원문을 확인할 것.")
         if len(affected) > limit:
             notes.append(f"영향 항목 {len(affected)}개 중 앞의 {limit}개만 표시.")
             affected = affected[:limit]

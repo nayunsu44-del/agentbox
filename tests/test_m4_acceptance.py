@@ -60,6 +60,18 @@ def test_login_survives_restart(home):
     assert c3.get("/ui", follow_redirects=False).status_code in (303, 401)
 
 
+def test_human_token_rotation_logs_out_browsers(home, monkeypatch):
+    c, _, _, human = _build()
+    cookie = c.post("/login", data={"token": human}, follow_redirects=False).cookies.get(COOKIE)
+    assert cookie
+    monkeypatch.setenv("AGENTBOX_HUMAN_TOKEN", "hum_rotated_" + "x" * 24)   # 사람 토큰 교체 후 재시작
+    c2, _, H2, _ = _build()
+    c2.cookies.set(COOKIE, cookie)
+    assert c2.get("/ui", follow_redirects=False).status_code in (303, 401)
+    assert c2.get("/ui/approvals", follow_redirects=False).status_code == 401
+    assert c2.get("/sandboxes", headers=H2).status_code == 200                # 새 토큰은 그대로 쓴다
+
+
 def test_secure_cookie_behind_tls(home, monkeypatch):
     monkeypatch.setenv("AGENTBOX_SECURE_COOKIE", "1")
     c, _, _, human = _build()
@@ -172,5 +184,58 @@ def test_preview_does_not_run_find_options(home):
         assert "-delete" in str(pending[0]["preview"])
         names = tool("exec", command="ls -a /workspace").json()["result"]["stdout"].split()
         assert "keep.md" in names and "-delete" in names          # 승인 전에는 아무것도 안 지워졌다
+    finally:
+        c.delete(f"/sandboxes/{sid}", headers=H)
+
+
+def test_nested_mount_under_source_not_copied(home):
+    """보안 검수 run-3 v06 남은 틈: 원본 폴더 안쪽에 다른 폴더(데이터 폴더 등)가 마운트돼 있어도 복사하지 않는다."""
+    import os
+    import subprocess
+
+    sudo = [] if os.geteuid() == 0 else ["sudo", "-n"]
+    src, secret = home / "proj", home / "secret"
+    (src / "inner").mkdir(parents=True)
+    secret.mkdir()
+    (src / "keep.md").write_text("keep")
+    (secret / "agentbox.db").write_text("비밀")
+    if subprocess.run([*sudo, "mount", "--bind", str(secret), str(src / "inner")], capture_output=True).returncode != 0:
+        pytest.skip("바인드 마운트를 만들 수 없음")
+    c, _, H, _ = _build()
+    sid = None
+    try:
+        r = c.post("/sandboxes", json={"source_dir": str(src), "template": "cli"}, headers=H)
+        assert r.status_code == 201, r.text
+        sid, A = r.json()["id"], {"Authorization": f"Bearer {r.json()['agent_token']}"}
+        r = c.post(f"/sandboxes/{sid}/tools/exec", json={"args": {"command": "ls -R /workspace"}}, headers=A)
+        out = r.json()["result"]["stdout"]
+        assert "keep.md" in out and "inner" in out and "agentbox.db" not in out, out
+    finally:
+        if sid:
+            c.delete(f"/sandboxes/{sid}", headers=H)
+        subprocess.run([*sudo, "umount", str(src / "inner")])
+
+
+def test_ui_refuses_framing(home):
+    """보안 검수 run-3 v14: 쿠키로 로그인하는 화면을 다른 출처가 iframe에 넣지 못한다 (같은 출처의 데스크톱 iframe은 된다)."""
+    c, _, H, _ = _build()
+    for path in ("/login", "/ui", "/healthz"):
+        r = c.get(path, headers=H, follow_redirects=False)
+        assert r.headers["x-frame-options"] == "SAMEORIGIN", path
+        assert r.headers["content-security-policy"] == "frame-ancestors 'self'", path
+
+
+def test_preview_flags_every_unmodeled_segment(home):
+    """보안 검수 run-3 v17: rm이 섞인 명령의 다른 조각(mv, find -delete)도 '계산 못 함'으로 표시한다."""
+    c, _, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid, A = sb["id"], {"Authorization": f"Bearer {sb['agent_token']}"}
+    try:
+        r = c.post(f"/sandboxes/{sid}/tools/exec", headers=A, json={"args": {
+            "command": "rm -f /workspace/harmless.txt; mv /workspace/important.db /tmp/gone && sudo rm -f /workspace/x"}})
+        assert r.status_code == 202, r.text
+        prev = c.get(f"/approvals/{r.json()['approval_id']}", headers=H).json()["preview"]
+        assert [a["path"] for a in prev["affected"]] == ["/workspace/harmless.txt", "/workspace/x"]
+        assert prev["notes"] == ["'mv /workspace/important.db /tmp/gone' 부분의 영향은 자동 계산하지 못함. 명령 원문을 확인할 것."]
     finally:
         c.delete(f"/sandboxes/{sid}", headers=H)

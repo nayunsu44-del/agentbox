@@ -1,0 +1,11 @@
+exec_timeout 60 | gui idle 60
+policy: allow
+pids before: (21, 1024)
+pids at GUI input: (1024, 1024) (peak (1024, 1024)) after 1.0s
+agent GUI input -> 200 | burst recorded: True | baseline manifest entries: 0 | baseline pids: 1013
+audit events after GUI input: ['tool_request', 'policy_decision', 'snapshot', 'tool_result']
+agent exec returned after 34s: status 200 exit 254 | pids now (1022, 1024)
+pids 5s after the exec returned (background tails outlive the exec): (1022, 1024)
+pids after release: (1022, 1024)
+no gui_changes record
+done

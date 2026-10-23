@@ -1,0 +1,22 @@
+{
+  "A_killed": [
+    300
+  ],
+  "B_killed": [
+    400
+  ],
+  "C_killed": [
+    700
+  ],
+  "D_killed": []
+}
+{
+  "A: pre-existing-windowed child (300) killed": true,
+  "A: new windowed app (400) spared": true,
+  "A: child under new windowed app (500) spared [GAP]": true,
+  "B: non-windowed evil app (400) killed": true,
+  "B: spoofed-window worker (600) spared [GAP]": true,
+  "C: new-session windowed app (700) killed": true,
+  "D: exec-rooted procs spared": true
+}
+ALL_EXPECTED: True

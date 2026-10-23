@@ -202,6 +202,22 @@ def test_web_approval_shows_system_summary_and_executes(ui):
 
 
 @needs_desktop
+def test_web_approval_neutralises_bidi_controls(ui):
+    """보안 검수 run-3 v13: 승인 화면이 에이전트 명령의 양방향 문자를 그대로 내보내면 브라우저가 순서를 바꿔 보여준다."""
+    e = ui
+    login(e)
+    sid, A = create(e)
+    cmd = "sh -c 'echo ok \u2067; rm -rf /workspace/x \u2069 #\u202e'\nexit"
+    r = tool(e, sid, A, "exec", command=cmd)
+    assert r.status_code == 202, r.text
+    for path in ("/ui/approvals", "/ui/audit"):
+        page = e.c.get(path, params={"sandbox_id": sid}).text
+        assert not any(ch in page for ch in "\u2067\u2069\u202e"), path
+        assert "\\u2067" in page and "\\u202e" in page, path
+    page = e.c.get("/ui/approvals", params={"sandbox_id": sid}).text
+    assert "#\\u202e&#39;\nexit</pre>" in page                     # 줄바꿈은 그대로 보인다
+
+
 def test_approval_has_screen_capture(ui):
     e = ui
     login(e)
@@ -220,6 +236,31 @@ def test_approval_has_screen_capture(ui):
     page = e.c.get(f"/ui/sandboxes/{sid}").text
     assert f'src="/sandboxes/{sid}/desktop"' in page
     assert e.c.get(f"/sandboxes/{sid}/desktop").status_code == 200       # 로그인 세션으로 화면도 열린다
+
+
+def test_approval_captures_reclaimed_and_pending_capped(ui, monkeypatch):
+    """보안 검수 run-3 v18: 승인 요청마다 남던 화면 캡처는 결정·만료·삭제 때 지우고, 대기 요청 수에 상한을 둔다."""
+    from agentbox import service
+
+    e = ui
+    login(e)
+    sid, A = create(e, "desktop")
+    assert tool(e, sid, A, "screenshot").status_code == 200
+    first = tool(e, sid, A, "exec", command="rm -f /workspace/a").json()["approval_id"]
+    second = tool(e, sid, A, "exec", command="rm -f /workspace/b").json()["approval_id"]
+    caps = e.box.captures
+    assert {p.name for p in caps.iterdir()} == {f"{first}.png", f"{second}.png"}
+    assert e.c.post(f"/approvals/{first}", json={"decision": "deny"}, headers=e.H).status_code == 200
+    assert not (caps / f"{first}.png").exists() and e.c.get(f"/approvals/{first}/capture.png").status_code == 404
+    monkeypatch.setattr(service, "PENDING_APPROVALS_MAX", 1)
+    r = tool(e, sid, A, "exec", command="rm -f /workspace/c")
+    assert r.status_code == 429, r.text
+    assert len(list(caps.iterdir())) == 1                                # 막힌 요청은 캡처도 남기지 않는다
+    blocked = [x for x in events(e, sid) if x["event"] == "tool_blocked"]
+    assert blocked[-1]["payload"]["reason"] == "too_many_pending_approvals"
+    assert e.c.delete(f"/sandboxes/{sid}", headers=e.H).status_code == 200
+    e.sids.remove(sid)
+    assert list(caps.iterdir()) == []
 
 
 # ---- UX-6 타임라인과 검증 ----------------------------------------------------

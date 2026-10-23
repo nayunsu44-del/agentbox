@@ -1,0 +1,11 @@
+same_origin source (api.py line 108):
+def same_origin(headers) -> bool:
+        origin = headers.get("origin")
+        return not origin or urlsplit(origin).netloc == headers.get("host")
+same origin https                                            -> accepted=True
+cross-scheme http page -> https server (different origin)    -> accepted=True
+cross-scheme on explicit port (direct TLS :8765)             -> accepted=True
+sibling same-site origin                                     -> accepted=False
+other localhost port                                         -> accepted=False
+opaque null origin                                           -> accepted=False
+no Origin (no-cors GET subresource)                          -> accepted=True

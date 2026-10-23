@@ -1,0 +1,6 @@
+A: after 151s with Xvfb stopped: screenshot still blocked | takeover still blocked
+A: after SIGCONT: screenshot ('returned', 200, 153.141530871) | takeover ('returned', 'ok', 151.1409132619999)
+B: burst open on victim-owner sandbox: True
+B: unrelated sandbox list_dir after 150s: still blocked
+B: after SIGCONT: ('returned', 200, 150.284679848)
+done

@@ -30,7 +30,7 @@ from .audit import AuditLog
 from .config import Settings
 from .policy import Policy
 from .sandbox import SandboxError, SandboxManager
-from .service import AgentBox, ServiceError
+from .service import AUDIT_BURST_WAIT, AgentBox, ServiceError
 from . import web
 
 
@@ -59,6 +59,26 @@ class Restore(BaseModel):
     snapshot_id: str
 
 
+class _NoFraming:
+    """쿠키로 로그인한 화면을 다른 출처가 iframe에 넣고 승인 버튼을 누르게 하지 못하게 한다 (보안 검수 run-3 v14).
+    샌드박스 화면이 띄우는 데스크톱 iframe은 같은 출처라 그대로 된다."""
+    HEADERS = [(b"x-frame-options", b"SAMEORIGIN"), (b"content-security-policy", b"frame-ancestors 'self'")]
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                message["headers"] = [*message.get("headers", []), *self.HEADERS]
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
 def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     settings = settings or Settings()
     settings.home.mkdir(parents=True, exist_ok=True)
@@ -70,7 +90,8 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         policy=Policy.load(settings.policy_path),
         sandboxes=SandboxManager(settings, settings.db_path),
         approvals=ApprovalStore(settings.db_path),
-        desktop=D.DesktopControl(idle=settings.takeover_idle, db_path=settings.db_path),
+        desktop=D.DesktopControl(idle=settings.takeover_idle, db_path=settings.db_path,
+                                 token_gen=D.token_gen(human_token)),
         approval_timeout=settings.approval_timeout,
         captures=settings.home / "captures",
     )
@@ -88,6 +109,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     app = FastAPI(title="agentbox", version="0.1.0", lifespan=lifespan)
     app.state.box = box
+    app.add_middleware(_NoFraming)
 
     def principal(authorization: str = Header(default="")) -> Principal:
         if not authorization.lower().startswith("bearer "):
@@ -166,6 +188,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     @app.post("/sandboxes/{sid}/pause")
     def pause(sid: str, p: Principal = Depends(human_only)):
         box.log_human("sandbox_pause", sid, {})
+        box.end_gui_burst(sid, "sandbox_paused")  # 멈춘 컨테이너에서는 구간을 닫지 못한다
         guard(lambda: box.sandboxes.pause(sid))
         return box.sandboxes.get(sid)
 
@@ -173,6 +196,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     def resume(sid: str, p: Principal = Depends(human_only)):
         box.log_human("sandbox_resume", sid, {})
         guard(lambda: box.sandboxes.resume(sid))
+        box.reset_gui_timers(sid)  # 멈춘 동안의 GUI 호출이 남긴 시각 때문에 다음 구간을 건너뛰지 않게
         return box.sandboxes.get(sid)
 
     @app.post("/sandboxes/{sid}/snapshots", status_code=201)
@@ -191,6 +215,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         box.log_human("restore_request", sid, {"snapshot_id": body.snapshot_id})
         box.end_desktop(sid, "sandbox_restored")
         rec = guard(lambda: box.sandboxes.restore(sid, body.snapshot_id))
+        box.reset_gui_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
         box.log_human("restored", sid, {"snapshot_id": body.snapshot_id, "container_id": rec["container_id"]})
         return rec
 
@@ -199,6 +224,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         box.log_human("sandbox_delete", sid, {})
         box.end_desktop(sid, "sandbox_deleted")
         guard(lambda: box.sandboxes.delete(sid))
+        box.drop_captures(sid)
         return {"deleted": sid}
 
     # ---- 도구 ----------------------------------------------------------
@@ -255,7 +281,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     @app.get("/audit")
     def list_audit(sandbox_id: str | None = None, after_id: int = 0, limit: int = 500,
                    p: Principal = Depends(human_only)):
-        box.close_idle_gui_bursts()
+        box.close_idle_gui_bursts(wait=AUDIT_BURST_WAIT)
         return audit.list(sandbox_id=sandbox_id, after_id=after_id, limit=min(limit, 5000))
 
     @app.get("/audit/verify")

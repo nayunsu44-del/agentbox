@@ -1,0 +1,3 @@
+xvfb pid 18
+takeover returned within 20s: False elapsed 20.0
+after SIGCONT: takeover done: True elapsed 20.1 screenshot done: True

@@ -1,0 +1,14 @@
+login 303 set-cookie: HttpOnly; Max-Age=43200; Path=/; SameSite=strict
+pending approval apr_a2495c632cc3 pending
+GET /ui 200 {"x-frame-options": null, "content-security-policy": null, "cross-origin-opener-policy": null, "cross-origin-embedder-policy": null, "cross-origin-resource-policy": null}
+GET /ui/sandboxes/sb_dummy01 200 {"x-frame-options": null, "content-security-policy": null, "cross-origin-opener-policy": null, "cross-origin-embedder-policy": null, "cross-origin-resource-policy": null}
+GET /ui/approvals 200 {"x-frame-options": null, "content-security-policy": null, "cross-origin-opener-policy": null, "cross-origin-embedder-policy": null, "cross-origin-resource-policy": null}
+GET /sandboxes/sb_dummy01/desktop 200 {"x-frame-options": null, "content-security-policy": null, "cross-origin-opener-policy": null, "cross-origin-embedder-policy": null, "cross-origin-resource-policy": null}
+GET /login 200 {"x-frame-options": null, "content-security-policy": null, "cross-origin-opener-policy": null, "cross-origin-embedder-policy": null, "cross-origin-resource-policy": null}
+approve button markup: <button class="primary" hx-post="/ui/approvals/apr_a2495c632cc3/approve?sandbox_id=" hx-target="#approvals" hx-disabled-elt="this">승인</button>
+approve button has hx-confirm: False
+POST approve 200 HX-Trigger: audit-changed
+approval after click: executed decided_by: human
+agent args executed: [('sb_dummy01', 'exec', {'command': 'rm -rf /workspace/src'})]
+POST takeover 200 sb_dummy01
+control cross-port POST (direct CSRF) 403

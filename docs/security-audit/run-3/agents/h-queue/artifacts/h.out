@@ -1,0 +1,7 @@
+pending_approvals_created: 30 (no per-sandbox cap enforced)
+png_files_on_disk: 30
+captures_dir_bytes: 123120
+after_deny png still present: True
+expired_approvals: 29 denied_approvals: 1
+png_files_after_deny_and_expire: 30
+RESULT: captures never removed on decision/expiry; approval creation uncapped

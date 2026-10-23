@@ -258,6 +258,51 @@ def test_gui_burst_logged_before_restore(desk):
 
 
 @needs_desktop
+def test_gui_burst_restarts_after_pause_and_restore(desk):
+    """보안 검수 run-3 v12: 일시정지·복원 바로 뒤의 GUI 입력도 스냅샷을 뜨고 새 구간을 연다 (기록 없는 틈이 없다)."""
+    e = desk
+
+    def snaps():
+        return len(e.box.sandboxes.list_snapshots(e.sid))
+
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200 and snaps() == 1
+    c = e.box.sandboxes._container(e.sid)
+    assert c.exec_run(["rm", "/workspace/old-report.md"], user="desktop").exit_code == 0
+    assert e.c.post(f"/sandboxes/{e.sid}/pause", headers=e.H).status_code == 200
+    ch = [x["payload"] for x in events(e) if x["event"] == "gui_changes"]
+    assert len(ch) == 1 and ch[0]["reason"] == "sandbox_paused" and ch[0]["deleted"] == ["old-report.md"]
+    assert e.c.post(f"/sandboxes/{e.sid}/resume", headers=e.H).status_code == 200
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200 and snaps() == 2
+    snap = e.box.sandboxes.list_snapshots(e.sid)[0]["id"]
+    assert e.c.post(f"/sandboxes/{e.sid}/restore", json={"snapshot_id": snap}, headers=e.H).status_code == 200
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200 and snaps() == 3
+    burst = e.box._gui_burst[e.sid]
+    assert burst["container_id"] == e.box.sandboxes.get(e.sid)["container_id"]
+
+
+@needs_desktop
+def test_desktop_home_reset_on_restore(desk):
+    """보안 검수 run-3 v19: GUI 터미널로 ~/.config/autostart에 써 둔 것이 스냅샷에 들어가도, 복원한 뒤 다시 실행되지 않는다."""
+    e = desk
+    c = e.box.sandboxes._container(e.sid)
+    entry = "[Desktop Entry]\nType=Application\nName=t\nExec=sh -c 'id -u > /workspace/PROOF_autostart.txt'\n"
+    assert c.exec_run(["sh", "-c", f'mkdir -p ~/.config/autostart && printf "{entry}" > ~/.config/autostart/t.desktop '
+                       '&& echo "touch /workspace/PROOF_bashrc" >> ~/.bashrc'], user="desktop").exit_code == 0
+    r = e.c.post(f"/sandboxes/{e.sid}/snapshots", headers=e.H)
+    assert r.status_code == 201, r.text
+    assert e.c.post(f"/sandboxes/{e.sid}/restore", json={"snapshot_id": r.json()["id"]}, headers=e.H).status_code == 200
+    c = e.box.sandboxes._container(e.sid)
+    for _ in range(60):                                                # Xfce 세션이 autostart를 다 돌 때까지
+        if c.exec_run(["pgrep", "-u", "desktop", "-x", "xfce4-panel"]).exit_code == 0:
+            break
+        time.sleep(0.5)
+    time.sleep(5)
+    assert "PROOF_autostart.txt" not in ls(e)
+    out = c.exec_run(["sh", "-c", "ls -A ~/.config/autostart 2>&1; grep -c PROOF ~/.bashrc"], user="desktop").output
+    assert b"t.desktop" not in out and out.strip().endswith(b"0"), out
+
+
+@needs_desktop
 def test_gui_background_jobs_stopped_when_burst_closes(desk):
     """보안 검수 N-1 보강: GUI 터미널로 띄운 백그라운드 일은 구간이 끝나면 멈춘다 (정책 밖 변경이 구간 뒤로 이어지지 않게)."""
     e = desk
@@ -289,6 +334,34 @@ def test_gui_background_jobs_stopped_when_burst_closes(desk):
     assert desktop_pids("xfce4-panel") == panel                       # 데스크톱 세션은 그대로
     time.sleep(5)
     assert {"old-report.md", "new-report.md"} <= set(ls(e))           # 멈춘 일은 파일을 지우지 못했다
+
+
+@needs_desktop
+def test_frozen_display_does_not_hold_tools_or_takeover(desk):
+    """보안 검수 run-3 v11·v10: 화면(X 서버)이 멈춰도 GUI 도구는 제한 시간 안에 끝나고, 구간 닫기는 다른 호출을
+    붙잡지 않으며, 사람은 화면을 인수할 수 있다 (GUI 터미널로 `kill -STOP`을 보낸 경우와 같다)."""
+    e = desk
+    c = e.box.sandboxes._container(e.sid)
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200        # 구간 시작
+    xvfb = c.exec_run(["pgrep", "-u", "desktop", "-x", "Xvfb"]).output.decode().split()[0]
+    assert c.exec_run(["kill", "-STOP", xvfb], user="desktop").exit_code == 0
+    try:
+        t0 = time.monotonic()
+        r = tool(e, "screenshot")
+        assert r.status_code == 400 and "응답하지 않음" in r.json()["detail"], r.text
+        assert time.monotonic() - t0 < 25
+        e.box._gui_input_at[e.sid] -= 61                                  # 멈춘 화면의 구간을 닫는다
+        t0 = time.monotonic()
+        assert tool(e, "list_dir", path="/workspace").status_code == 200
+        assert e.c.get("/approvals", headers=e.H).status_code == 200
+        events(e)
+        assert time.monotonic() - t0 < 10                                 # 닫기는 전용 스레드에서 돈다
+        t0 = time.monotonic()
+        r = e.c.post(f"/sandboxes/{e.sid}/desktop/takeover", headers=_session(e))
+        assert r.status_code == 200 and r.json()["controller"] == "human", r.text
+        assert time.monotonic() - t0 < 40
+    finally:
+        c.exec_run(["kill", "-CONT", xvfb], user="desktop")
 
 
 @needs_desktop

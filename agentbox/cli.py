@@ -255,7 +255,13 @@ def cmd_approve(a: argparse.Namespace) -> None:
 def cmd_audit(a: argparse.Namespace) -> None:
     with _client() as c:
         params = {"sandbox_id": a.sandbox} if a.sandbox else {}
-        rows = _check(c.get("/audit", params=params | {"limit": 5000}))
+        rows: list[dict] = []
+        while True:   # /audit는 오래된 것부터 한 번에 최대 5000개라, after_id로 끝까지 넘겨 받는다
+            page = _check(c.get("/audit", params=params | {"limit": 5000,
+                                                         "after_id": rows[-1]["id"] if rows else 0}))
+            if not page:
+                break
+            rows += page
     icons = {"agent": "AI ", "human": "사람", "system": "SYS"}
     for e in rows:
         p = e["payload"]
@@ -351,12 +357,14 @@ def cmd_agent(a: argparse.Namespace) -> None:
         cfg.model = a.model
 
     def log(kind: str, msg: str) -> None:
+        # 모델 글과 도구 결과(컨테이너 출력)도 에이전트가 정한다. 줄마다 _safe를 걸어 줄바꿈만 살린다 (보안 검수 run-3 v03)
+        msg = "\n".join(_safe(line) for line in msg.split("\n"))
         if kind == "say":
             print(f"{CYAN}[에이전트]{RESET} {msg}", flush=True)
         elif kind == "call":
             print(f"{DIM}  → {msg}{RESET}", flush=True)
         elif kind == "result":
-            lines = msg.splitlines()
+            lines = msg.split("\n")
             head = "\n".join(lines[:6]) + (f"\n… ({len(lines) - 6}줄 더)" if len(lines) > 6 else "")
             print(f"{DIM}{head}{RESET}", flush=True)
 

@@ -7,9 +7,9 @@
 - **무엇:**
   - run-1: Cloudflare `security-audit` 스킬(6단계)로 agentbox 전체를 감사했다. 기준 커밋 `7fc501f`.
   - run-2: run-1이 남긴 needs_validation 5건을 실제 Docker에서 검증했다.
-- **브랜치·PR:** 작업 브랜치 `ccr-e10bee8e-6wt669`. PR #1(감사 수정·CI), #2(화면 링크 세션 범위), #3(FIFO), #4(runc 차단)는 `main`에 병합됐다. **PR #5(GUI 백그라운드 정리·세션 만료)는 CI 통과, 병합 대기**(사용자 승인 필요). 병합할 때마다 작업 브랜치를 최신 `main`에서 다시 시작한다.
+- **브랜치·PR:** run-3은 `ccr-e2c70e17-r0gmhn`, draft PR #8(아래 "3차 감사(run-3) 진행 상태"). run-1·2 때 작업 브랜치는 `ccr-e10bee8e-6wt669`. PR #1(감사 수정·CI), #2(화면 링크 세션 범위), #3(FIFO), #4(runc 차단), #5(GUI 백그라운드 정리·세션 만료, `8e4db9e`)는 `main`에 병합됐다. 병합할 때마다 작업 브랜치를 최신 `main`에서 다시 시작한다.
 - **현재 상태:** 감사 확정 9건 중 **8건 수정 완료**, **N-1(High)은 방안 C·A·G + 백그라운드 정리로 부분 완화**(복구·경고·기록·정리, 승인 우회는 남음). 기각 1건. README "아직 고치지 않은 것" 항목(비밀값 가림, 화면 링크 세션, FIFO, runc)도 모두 고쳤다.
-- **테스트:** 전체 `pytest` 205개 통과(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
+- **테스트:** 전체 `pytest` 214개 통과(run-3 수정 회귀 테스트 9개 포함, 2026-10-22)(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
 
 ## 전체 목록
 
@@ -71,8 +71,93 @@ pytest                                                 # 160 passed
 
 ## 파일 맵
 
+- `run-3/REPORT.md`: 3차 감사 보고서(한국어). 미완료 이유, 확정 8건, 검증 필요 5건, 보강 메모, 커버리지를 담았다. 상세 내용은 `run-3/FINDINGS-DETAIL.md`와 `run-3/NEEDS-VALIDATION.md`에 레코드 원문 그대로 있다.
+- `run-3/findings.json`, `coverage-ledger.json`, `run-metadata.json`: 최종 레코드, 장부, 실행 기록. `agents/`에는 지시문, 결과, 승격된 산출물이 있다.
 - `run-2/VALIDATION.md`: 5건 + 신규 1건의 재현·관측·수정 요약(한국어).
 - `run-2/N-1-OPTIONS.md`: N-1 대응 방안 8가지 비교와 권장 조합, 결정할 것.
 - `run-2/findings.json`: 현재 기준 전체 10건 구조화 레코드(확정 9 · 기각 1, 검증기 통과). 트레이스 줄 번호는 감사 기준 커밋 `7fc501f` 기준이다.
 - `run-2/repro/`: 재현 스크립트 8개. `run-2/n1-terminal-via-gui-tools.png`: N-1 증거 스크린샷.
 - `run-1/`: 1차 감사 산출물(REPORT, FINDINGS-DETAIL, NEEDS-VALIDATION, findings, coverage-ledger, architecture, run-metadata). 기록으로 두고 고치지 않는다.
+
+## 3차 감사(run-3) 진행 상태 — 다음 세션이 여기서 이어받는다
+
+작업 브랜치: `ccr-e2c70e17-r0gmhn` (`ccr-0da6ba34-sc9pu1`의 `d2537f0`에서 이어받음. 그 전은 `ccr-df7eb88d-1nmb5q`, PR #7). draft PR #8. **1~6단계를 마쳤고, 이어서 4차 헌팅을 하다 소유자의 사용량 한도로 멈췄다. `run_status: incomplete`(`owner_usage_limit`)다.** 보고서는 `run-3/REPORT.md`, `FINDINGS-DETAIL.md`, `NEEDS-VALIDATION.md`에 있다.
+
+### 최종 결과 (`run-3/findings.json` 14건, 두 검증기 통과)
+| 판정 | 심각도 | ID | 내용 | 수정 |
+|---|---|---|---|---|
+| 확정 | high | v11 | 유휴 GUI 구간 닫기가 남의 샌드박스 스레드와 사람 승인·감사 스레드에서 제한 시간 없는 docker exec로 돎 | `c1f88da` |
+| 확정 | medium | v02 | 감사 타임라인이 오래된 5000행에서 멈춤 | `3587c9c` |
+| 확정 | medium | v05 | 사람 토큰을 바꿔도 브라우저 세션 유지 | `3587c9c` |
+| 확정 | medium | v08 | 도구 인자가 크기 제한 없이 감사 로그에 기록 | `e63922c` |
+| 확정 | medium | v12 | 복원·일시정지 때 GUI 구간 상태 유실 | `c1f88da` |
+| 확정 | medium | v13 | 웹 승인 카드의 방향 제어 문자 | `c1f88da` |
+| 확정 | low | v03 | `agentbox agent` 터미널 출력의 제어 문자 | `28fd4c9` |
+| 확정 | low | v06 | `source_dir` 겹침 검사를 별칭으로 우회 (5단계에서 검증 필요→확정, l8 근거) | `152b8e4`, 안쪽 마운트는 `28fd4c9`(NonRecursive 바인드) |
+| 확정 | low | v17 | 승인 카드 영향 표가 `rm`과 섞인 조각을 경고 없이 뺌 | `e0add14` |
+| 확정 | low | v18 | 승인 캡처 PNG가 지워지지 않고 대기 수 상한 없음 | `e0add14` |
+| 확정 | low | v19 | `/home/desktop` autostart가 스냅샷을 거쳐 복원 뒤 uid 1001로 다시 실행 | `e0add14` |
+| 검증 필요 | — | v10 | X가 멈추면 `gui_lock`을 쥔 채 무기한 → 사람의 화면 인수가 막힘 | `c1f88da`(판정과 별개로 막음) |
+| 검증 필요 | — | v09 | GUI 구간 열 때 수집 실패를 성공으로 처리 | `c1f88da`(일부) |
+| 검증 필요 | — | v15 | `gui_strays`가 창 소유로 정리 대상에서 뺌 (근본 원인을 넓힘) | — |
+| 검증 필요 | — | v14 | frame-ancestors/X-Frame-Options 없음 | `28fd4c9`(판정과 별개로 막음) |
+| 검증 필요 | — | v01 | `same_origin`이 scheme을 비교하지 않음 | — |
+| 기각 | — | v04 | runc 별칭으로 runc 차단 우회 (운영자 설정, 경계 없음) | — |
+
+### 5단계 (이번 세션)
+- **검증 소스와 실행:** 검증자는 감사 소스 worktree(`8e4db9e`)를 읽고, 그 소스를 `/target`으로 붙인 `sbx5`로만 코드를 돌렸다. `sbx5`는 `tools/sbx`에서 `SRC=<scratchpad>/src-audited` 한 줄만 다르다.
+- **도구:**
+  - `tools/gen5.py`: 지시문 생성. `p5r-<id>`를 주면 재확인용 지시문을 만든다.
+  - `tools/ingest5.py`: 결과 수거와 형식 검사. 환경 변수 `AUDIT_SCRATCHPAD`가 필요하다.
+  - `tools/apply5.py`: 최종 레코드, 장부, 메타데이터 반영.
+- **검증자:** Sonnet 레코드 검증자 13개(`agents/p5-*`)와 Opus 재확인 4개(`agents/p5r-*`). 형식 오류로 버린 결과는 없다.
+- **결과:**
+  - verified 7건: v02, v03, v05, v11, v12, v13, v14
+  - 큰 변경이 아니라 바로 반영 2건: v01(문구), v08(수정 방향. 원래 수정안이 `write_file` 분기에서 먼저 반환하는 결함)
+  - 큰 변경이라 재확인 뒤 반영 4건: v06(확정 low로 승격), v09, v10, v15
+- **예산:** 소유자가 63까지 승인했고 62개를 썼다.
+
+### 재개 세션 (사용량 한도 뒤)
+예산 80 중 77을 썼다. `run_status`는 `incomplete`이고 사유는 `budget_exhausted`다.
+- **3단계:** v18·v19를 다시 돌렸고 둘 다 확정 low였다(Sonnet).
+- **critic-3:** 새 단위 3개를 냈다(`stop: false`).
+  - 인증 전 요청이 하는 일
+  - GUI 구간 상태의 스레드 간 경쟁
+  - 디스크·SQLite 압박 때의 감사 읽기와 기록 유실
+
+  세 단위는 장부에 `deferred`로 남겼다(`tools/intake_wave3.py`). 첫 실행은 컨테이너 재시작으로 끊겨 다시 돌렸다.
+- **5단계:** v17~v19 모두 verified였다(Sonnet, `tools/apply5_wave3.py`). 다만 셋 다 도구 호출이 5~6회로 짧았다.
+- `findings.json`은 18건이다. 확정 11(high 1, medium 5, low 5), 검증 필요 5, 기각 2. 장부는 29단위다. 검사기 둘 다 PASS.
+
+수정한 것. 모두 회귀 테스트가 있고, 새 테스트는 수정 전 코드나 이미지에서 실패하는 것을 확인했다.
+- **`c1f88da`**
+  - v11·v10: GUI와 수집 exec에 컨테이너 쪽 `timeout -k`를 씌웠다. 유휴 구간 닫기는 전용 스레드에서 돈다. 인수·반환은 30초 상한이 있고, 인수를 기다리는 동안 에이전트 GUI 도구를 막는다.
+  - v12: 일시정지 전에 구간을 닫는다. 일시정지·재개·복원·삭제 때 타이머를 초기화한다. 구간에 `container_id`를 기록하고, 닫기에 실패하면 `gui_burst_close_failed`를 남긴다.
+  - v13: 웹 템플릿 `finalize`로 모든 출력의 제어·bidi 문자를 보이는 이스케이프로 바꾼다.
+  - v09(일부): 수집 exec의 종료 코드를 확인한다. 기준을 못 읽으면 `gui_burst_open_failed`를 남긴다.
+- **`28fd4c9`**
+  - v03: 에이전트 출력에 줄마다 `_safe`를 건다.
+  - v14: `X-Frame-Options`와 `frame-ancestors 'self'`를 붙인다.
+  - v06 남은 틈: 원본을 NonRecursive 바인드로 붙인다. `cp -ax`는 같은 디스크의 바인드 마운트를 못 거른다.
+- **`e0add14`**
+  - v18: 캡처는 결정·만료·삭제 때 지운다. 승인 대기는 샌드박스마다 20개까지다.
+  - v19: 데스크톱 이미지가 시작할 때마다 `/home/desktop`을 처음 상태로 되돌린다. 이미지를 다시 빌드해야 한다.
+  - v17: 영향 표에 조각마다 "계산 못 함"을 단다.
+
+남은 것:
+- critic-3의 보류 단위 3개를 헌팅하고 검증한 뒤 최종 비평(`gen_critic.py critic-4 final-clean ...`)을 돌린다. 예산을 새로 정해야 한다.
+- 검증 필요 5건의 로컬 계획(NEEDS-VALIDATION.md).
+- v09 나머지: 기준을 못 읽었을 때 GUI 입력을 막을지(fail-closed) 정한다.
+- 다음 감사에서는 이번 수정이 바꾼 소스를 다시 검증 단위로 넣는다.
+
+### 이어서 하는 법 (환경)
+1. `nohup dockerd >/tmp/dockerd.log 2>&1 &`
+2. `pip install -e '.[test]' pyte`
+3. `docker pull buildpack-deps:noble-curl ubuntu:24.04`. 429가 나면 `mirror.gcr.io/library/<이미지>`를 받아 `docker tag`한다.
+4. `docker build -t agentbox-desktop:0.1 images/desktop`
+5. 스크래치패드에서 `git clone --depth 1 https://github.com/cloudflare/security-audit-skill skill`
+6. `run-3/tools/`의 `sbx`, `ingest.py`, `promote.py`, `ingest5.py`를 스크래치패드로 복사한다. 그중 `sbx`, `ingest.py`, `promote.py` 안의 스크래치패드 경로는 새 세션 값으로 바꾼다. `ingest5.py`는 경로 대신 환경 변수 `AUDIT_SCRATCHPAD`를 쓰므로 고칠 것이 없다. `sbx`에는 호스트 `python3`가 `/etc/alternatives`를 거치는 경우를 위해 그 폴더를 읽기 전용으로 붙여 두었다.
+7. 감사 소스가 필요하면 `git worktree add --detach <scratchpad>/src-audited 8e4db9e`를 실행하고 `sbx5`를 만든다(위 참고).
+8. 검증자별 `agents/<id>/scratch`는 `chown 65534`로 미리 만든다. `gen5.py`가 대신 해 준다.
+
+이번 세션 확인 결과: 전체 pytest 231개 통과(재개 세션, 실제 Docker와 다시 빌드한 데스크톱 이미지, 건너뛴 것 없음). 이전 세션은 214개. CI의 acceptance가 건너뛴 테스트를 실패로 처리하므로, 바인드 마운트 테스트가 root가 아니면 `sudo -n`을 쓰게 고쳤다(`192019f`).

@@ -1,0 +1,111 @@
+allowlist: ['False', 'True', 'basename', 'cat', 'cd', 'cmp', 'cut', 'date', 'df', 'diff', 'dirname', 'du', 'echo', 'egrep', 'fgrep', 'file', 'grep', 'head', 'id', 'ls', 'md5sum', 'mkdir', 'nl', 'printf', 'pwd', 'readlink', 'realpath', 'sha1sum', 'sha256sum', 'stat', 'tail', 'test', 'touch', 'tr', 'uname', 'wc', 'whoami']
+'ls -la'
+    action=allow rule=read-only-exec simple_programs={'ls'} allow_subset=True comment=False  <== ALLOWED
+'cat /workspace/x'
+    action=allow rule=read-only-exec simple_programs={'cat'} allow_subset=True comment=False  <== ALLOWED
+'./ls'
+    action=allow rule=read-only-exec simple_programs={'ls'} allow_subset=True comment=False  <== ALLOWED
+'/workspace/cat foo'
+    action=allow rule=read-only-exec simple_programs={'cat'} allow_subset=True comment=False  <== ALLOWED
+'{ rm x; }'
+    action=require_approval rule=rm-curl-needs-approval simple_programs={'{', '}'} allow_subset=False comment=False
+'( rm x )'
+    action=require_approval rule=rm-curl-needs-approval simple_programs={'rm'} allow_subset=False comment=False
+'f(){ rm x;}; f'
+    action=require_approval rule=rm-curl-needs-approval simple_programs={'{', 'f', '}'} allow_subset=False comment=False
+'{rm,cat} x'
+    action=require_approval rule=rm-curl-needs-approval simple_programs={'{rm,cat}'} allow_subset=False comment=False
+'cat <<< foo'
+    action=allow rule=read-only-exec simple_programs={'cat'} allow_subset=True comment=False  <== ALLOWED
+'cat <<EOF\nrm x\nEOF'
+    action=require_approval rule=rm-curl-needs-approval simple_programs={'cat', 'rm', 'EOF'} allow_subset=False comment=False
+'cat < /etc/passwd'
+    action=allow rule=read-only-exec simple_programs={'cat'} allow_subset=True comment=False  <== ALLOWED
+'echo hi >/dev/null'
+    action=allow rule=read-only-exec simple_programs={'echo'} allow_subset=True comment=False  <== ALLOWED
+'echo hi 2>/dev/null'
+    action=allow rule=read-only-exec simple_programs={'echo'} allow_subset=True comment=False  <== ALLOWED
+'echo hi &>/dev/null'
+    action=allow rule=read-only-exec simple_programs={'echo'} allow_subset=True comment=False  <== ALLOWED
+'cat secret &>/workspace/leak'
+    action=require_approval rule=exec-needs-approval simple_programs=None allow_subset=False comment=False
+'echo x >/dev/null cat'
+    action=allow rule=read-only-exec simple_programs={'echo'} allow_subset=True comment=False  <== ALLOWED
+'echo x >/dev/null rm y'
+    action=require_approval rule=rm-curl-needs-approval simple_programs={'echo'} allow_subset=True comment=False
+'cat x >&2'
+    action=allow rule=read-only-exec simple_programs={'cat'} allow_subset=True comment=False  <== ALLOWED
+'exec cat'
+    action=require_approval rule=exec-needs-approval simple_programs={'exec'} allow_subset=False comment=False
+'time cat x'
+    action=require_approval rule=exec-needs-approval simple_programs={'time'} allow_subset=False comment=False
+'ls < f; rm y'
+    action=require_approval rule=rm-curl-needs-approval simple_programs={'rm', 'ls'} allow_subset=False comment=False
+'printf -v x hi'
+    action=allow rule=read-only-exec simple_programs={'printf'} allow_subset=True comment=False  <== ALLOWED
+'touch newfile'
+    action=allow rule=read-only-exec simple_programs={'touch'} allow_subset=True comment=False  <== ALLOWED
+"touch -d '2000-01-01' existing"
+    action=allow rule=read-only-exec simple_programs={'touch'} allow_subset=True comment=False  <== ALLOWED
+'mkdir d'
+    action=allow rule=read-only-exec simple_programs={'mkdir'} allow_subset=True comment=False  <== ALLOWED
+'PATH=. ls'
+    action=require_approval rule=exec-needs-approval simple_programs=None allow_subset=False comment=False
+'LD_PRELOAD=/x cat y'
+    action=require_approval rule=exec-needs-approval simple_programs=None allow_subset=False comment=False
+'echo a | grep b'
+    action=allow rule=read-only-exec simple_programs={'echo', 'grep'} allow_subset=True comment=False  <== ALLOWED
+'cat a |& grep b'
+    action=allow rule=read-only-exec simple_programs={'cat', 'grep'} allow_subset=True comment=False  <== ALLOWED
+'xargs cat </workspace/list'
+    action=require_approval rule=exec-needs-approval simple_programs={'xargs'} allow_subset=False comment=False
+'find . -delete'
+    action=require_approval rule=exec-needs-approval simple_programs={'find'} allow_subset=False comment=False
+'cat $(whoami)'
+    action=require_approval rule=exec-needs-approval simple_programs=None allow_subset=False comment=False
+'cat `whoami`'
+    action=require_approval rule=exec-needs-approval simple_programs=None allow_subset=False comment=False
+'echo ${HOME}'
+    action=require_approval rule=exec-needs-approval simple_programs=None allow_subset=False comment=False
+'ls \\ncat'
+    action=allow rule=read-only-exec simple_programs={'ls'} allow_subset=True comment=False  <== ALLOWED
+'\\ls'
+    action=allow rule=read-only-exec simple_programs={'ls'} allow_subset=True comment=False  <== ALLOWED
+'cat <&3'
+    action=allow rule=read-only-exec simple_programs={'cat'} allow_subset=True comment=False  <== ALLOWED
+'0<file cat'
+    action=require_approval rule=exec-needs-approval simple_programs={'0'} allow_subset=False comment=False
+'< file cat secret'
+    action=allow rule=read-only-exec simple_programs={'cat'} allow_subset=True comment=False  <== ALLOWED
+'tee out.txt'
+    action=require_approval rule=exec-needs-approval simple_programs={'tee'} allow_subset=False comment=False
+'file -C -m magic'
+    action=allow rule=read-only-exec simple_programs={'file'} allow_subset=True comment=False  <== ALLOWED
+'cat a > b < c'
+    action=require_approval rule=exec-needs-approval simple_programs=None allow_subset=False comment=False
+'cat;rm x'
+    action=require_approval rule=rm-curl-needs-approval simple_programs={'cat', 'rm'} allow_subset=False comment=False
+
+=== ALLOWED-WITHOUT-APPROVAL commands ===
+  ALLOW: 'ls -la' progs= {'ls'}
+  ALLOW: 'cat /workspace/x' progs= {'cat'}
+  ALLOW: './ls' progs= {'ls'}
+  ALLOW: '/workspace/cat foo' progs= {'cat'}
+  ALLOW: 'cat <<< foo' progs= {'cat'}
+  ALLOW: 'cat < /etc/passwd' progs= {'cat'}
+  ALLOW: 'echo hi >/dev/null' progs= {'echo'}
+  ALLOW: 'echo hi 2>/dev/null' progs= {'echo'}
+  ALLOW: 'echo hi &>/dev/null' progs= {'echo'}
+  ALLOW: 'echo x >/dev/null cat' progs= {'echo'}
+  ALLOW: 'cat x >&2' progs= {'cat'}
+  ALLOW: 'printf -v x hi' progs= {'printf'}
+  ALLOW: 'touch newfile' progs= {'touch'}
+  ALLOW: "touch -d '2000-01-01' existing" progs= {'touch'}
+  ALLOW: 'mkdir d' progs= {'mkdir'}
+  ALLOW: 'echo a | grep b' progs= {'echo', 'grep'}
+  ALLOW: 'cat a |& grep b' progs= {'cat', 'grep'}
+  ALLOW: 'ls \\ncat' progs= {'ls'}
+  ALLOW: '\\ls' progs= {'ls'}
+  ALLOW: 'cat <&3' progs= {'cat'}
+  ALLOW: '< file cat secret' progs= {'cat'}
+  ALLOW: 'file -C -m magic' progs= {'file'}

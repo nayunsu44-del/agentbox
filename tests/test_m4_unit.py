@@ -19,6 +19,43 @@ def test_session_survives_restart(tmp_path):
     assert DesktopControl(db_path=db).session(cookie) is None  # 로그아웃은 저장소에서 지운다
 
 
+def test_human_token_rotation_drops_sessions_and_tickets(tmp_path):
+    # run-3 v05: 사람 토큰을 바꿔도 예전 토큰으로 받은 브라우저 세션이 12시간 살아 있었다.
+    db = tmp_path / "a.db"
+    a = DesktopControl(db_path=db, token_gen="A")
+    cookie, public = a.new_session()
+    t = a.issue_ticket("*")
+    assert DesktopControl(db_path=db, token_gen="A").session(cookie) == public   # 같은 토큰: 로그인 유지
+    assert a.session(cookie) == public
+    b = DesktopControl(db_path=db, token_gen="B")                                # 토큰 교체 후 재시작
+    assert b.session(cookie) is None and b.redeem(t, "*") is None
+    assert a.session(cookie) is None                                               # 행 자체가 지워졌다
+    assert DesktopControl(db_path=db, token_gen="A").session(cookie) is None     # 되돌려도 살아나지 않는다
+
+
+def test_session_db_without_token_column_is_migrated(tmp_path):
+    import sqlite3
+    db = tmp_path / "a.db"
+    raw = sqlite3.connect(db)
+    raw.executescript("""
+CREATE TABLE ui_tickets (hash TEXT PRIMARY KEY, scope TEXT NOT NULL, expires REAL NOT NULL);
+CREATE TABLE ui_sessions (hash TEXT PRIMARY KEY, public TEXT NOT NULL, created TEXT NOT NULL,
+  expires REAL NOT NULL, scope TEXT NOT NULL DEFAULT '*');
+INSERT INTO ui_sessions VALUES ('h', 'hs_old', 'x', 9e99, '*');
+""")
+    raw.commit()
+    d = DesktopControl(db_path=db, token_gen="A")      # 누가 내줬는지 모르는 예전 세션은 버린다
+    assert raw.execute("SELECT COUNT(*) FROM ui_sessions").fetchone()[0] == 0
+    cookie, public = d.new_session()
+    assert DesktopControl(db_path=db, token_gen="A").session(cookie) == public
+
+
+def test_token_gen_is_stable_and_distinct():
+    from agentbox.desktop import token_gen
+    assert token_gen("hum_a") == token_gen("hum_a") != token_gen("hum_b")
+    assert "hum_a" not in token_gen("hum_a")
+
+
 def test_ticket_survives_restart_once(tmp_path):
     db = tmp_path / "a.db"
     t = DesktopControl(db_path=db).issue_ticket("sb_1")
@@ -128,3 +165,39 @@ def test_runtime_problem():
     assert "runc" in runtime_problem("runc", exposed=True)
     for strong in ("runsc", "kata-fc", "kata-qemu-firecracker"):
         assert runtime_problem(strong, exposed=True) is None
+
+
+def test_overlap_uses_filesystem_identity(tmp_path, monkeypatch):
+    # run-3 v06: 경로 문자열만 비교해서, 같은 폴더의 다른 이름(대소문자를 가리지 않는 파일 시스템의 다른 철자,
+    # 바인드 마운트)은 데이터 폴더와 겹쳐도 통과했다.
+    import os
+    from agentbox.sandbox import overlaps
+    proj = tmp_path / "Users" / "Me" / "proj"
+    (proj / "data").mkdir(parents=True)
+    (tmp_path / "users" / "me" / "proj").mkdir(parents=True)
+    other = tmp_path / "other"
+    other.mkdir()
+    data = proj / "data"
+    assert overlaps(proj, data) and overlaps(data, data) and overlaps(data / "x", data)
+    assert not overlaps(other, data)
+    real = os.path.samefile
+    monkeypatch.setattr(os.path, "samefile", lambda a, b: str(a).lower() == str(b).lower() or real(a, b))
+    assert overlaps(tmp_path / "users" / "me" / "proj", data)   # 대소문자만 다른 철자
+    assert not overlaps(other, data)
+
+
+def test_overlap_sees_bind_mount_alias(tmp_path):
+    import os
+    import subprocess
+    from agentbox.sandbox import overlaps
+    # 바인드 마운트는 root가 필요하다. CI 러너처럼 root가 아니면 비밀번호 없는 sudo로 만든다.
+    sudo = [] if os.geteuid() == 0 else ["sudo", "-n"]
+    proj, alias = tmp_path / "proj", tmp_path / "alias"
+    (proj / "data").mkdir(parents=True)
+    alias.mkdir()
+    if subprocess.run([*sudo, "mount", "--bind", str(proj), str(alias)], capture_output=True).returncode != 0:
+        pytest.skip("바인드 마운트를 만들 수 없음")
+    try:
+        assert overlaps(alias, proj / "data")
+    finally:
+        subprocess.run([*sudo, "umount", str(alias)])

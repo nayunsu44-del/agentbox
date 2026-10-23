@@ -1,0 +1,3 @@
+B click: 200 burst open: True
+A list_dir returned within 20s: False elapsed 20.0
+after SIGCONT: A done: True elapsed 20.3

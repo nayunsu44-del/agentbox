@@ -1,0 +1,4 @@
+=== v16 mechanism repro: timeout does not reap backgrounded children when bash exits before the deadline ===
+Mirrors sandbox.py:531  timeout -k 5 <t> bash -c "umask 002\n<command>"
+timeout exit code (bash exited 0 well before 30s deadline): 0
+RESULT: backgrounded child pid 11 SURVIVED after timeout returned -> no group kill ran (deadline never fired)

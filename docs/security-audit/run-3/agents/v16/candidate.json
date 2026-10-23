@@ -1,0 +1,20 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion",
+ "title": "Background processes started by an approval-free exec outlive the exec's timeout, so one exec can leave the sandbox pinned at its pids limit",
+ "description": "Parent-proposed from a live observation after Phase 3 (no hunter wrote this candidate). SandboxManager.exec runs `timeout -k 5 <exec_timeout> bash -c 'umask 002\\n' + command`. GNU timeout signals the process group only when the deadline expires; if bash itself exits first, timeout exits with bash's status and never signals the group. The default policy allows `tail` under read-only-exec and treats `&` as a command separator, so `tail -f /dev/null & ` x1100 + `tail -f /dev/null` is approval-free. Live (parent, desktop template, pids.max 1024): the cgroup reached 1024/1024 within about 1 s, bash then failed to fork and exited 254 after 34 s (before exec_timeout 60 s), and about 1000 uid-1000 tail processes survived. pids stayed at 1022/1024 after the exec returned and 5 s later, and a root `docker exec pkill -x tail` by the parent did not release it. While pinned, container-side execs that the control plane runs for the human (GUI burst manifest/ps collection, see v09; approval preview; read_file and others) cannot start new processes. Whether this crosses a boundary beyond the agent's own sandbox, and what the human can still do to recover (restore, delete, pause), is the open question.",
+ "claimed_root_cause": "exec's only bound on agent-started work is GNU timeout around bash (sandbox.py:531), which does not reap background children when bash exits before the deadline; nothing else (process-group kill after the exec, per-exec pids cap, or cleanup) bounds processes an allowlisted exec leaves behind, so they persist and can hold the container at pids.max.",
+ "trace": [
+  {"kind": "entrypoint", "file": "agentbox/api.py", "line": 205, "scope": "POST /sandboxes/{sid}/tools/{tool} (call_tool)", "description": "Agent token sends exec with a command made of many backgrounded allowlisted programs."},
+  {"kind": "propagation", "file": "agentbox/default_policy.yaml", "line": 25, "scope": "read-only-exec only_commands", "description": "tail is allowlisted; the policy splits on & so every segment is tail and the decision is allow without approval."},
+  {"kind": "sink", "file": "agentbox/sandbox.py", "line": 531, "scope": "SandboxManager.exec", "description": "timeout -k 5 <t> bash -c ... : background children are not reaped when bash exits before the deadline."}
+ ],
+ "evidence": [
+  {"file": "agentbox/sandbox.py", "line": 531, "description": "exec_create argv is timeout -k 5 str(t) bash -c 'umask 002\\n' + command; no process-group cleanup after exec_inspect."},
+  {"file": "agentbox/config.py", "line": 64, "description": "desktop_pids default 1024 (AGENTBOX_DESKTOP_PIDS); config.py:40 pids_limit default 256 for other templates."},
+  {"file": "agents/parent-live/artifacts/l9_agent_pressure.out", "line": 7, "description": "Live: agent exec returned exit 254 after 34 s; pids 1022/1024 after return, after 5 s, and after a root pkill (lines 7-9)."},
+  {"file": "agents/parent-live/artifacts/l9_probe.out", "line": 2, "description": "Live: about 1002 uid-1000 tail processes in state S remained after the exec returned."}
+ ],
+ "blockers": ["Whether the pinned state affects anything beyond the agent's own sandbox, and which human recovery actions (restore, delete, pause/resume, snapshot) still work while the container is at pids.max."],
+ "validation_plan": {"local": "In sbx5 with a small pids limit, run `timeout -k 1 5 bash -c 'sleep 30 & exit 0'` and check whether sleep survives after timeout returns (mechanism). The parent can run the Docker-backed parts: after reproducing l9, try restore, delete, pause/resume and a manual snapshot as the human and record which succeed."}
+}

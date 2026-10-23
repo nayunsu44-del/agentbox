@@ -1,0 +1,9 @@
+== check 1: cross-sandbox burst close runs on another sandbox's call ==
+sbA list_dir status 200 elapsed 0.50s
+manifest calls (sid, thread): [('sbB', 'sbA-request')]
+busy counters after: {'sbA': 0}
+== check 1b: same close runs in the human expire_stale path ==
+expire_stale elapsed 0.50s manifest calls: [('sbB', 'human-request')]
+== check 2: snapshot quota under concurrency ==
+statuses: [200, 200, 200, 202, 429, 429, 429, 429]
+snapshots taken: 3 quota 3

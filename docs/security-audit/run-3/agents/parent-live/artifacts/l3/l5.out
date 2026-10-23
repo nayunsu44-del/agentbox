@@ -1,0 +1,1 @@
+logical text: "echo 'summary done ⁧' ; python3 /workspace/job.py ; echo '⁩'"

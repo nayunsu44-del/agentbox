@@ -112,6 +112,13 @@ def compute_hash(prev_hash: str, record: dict[str, Any]) -> str:
     return hashlib.sha256(prev_hash.encode() + b"\n" + _canonical(record)).hexdigest()
 
 
+def _row(r: tuple) -> dict[str, Any]:
+    return {
+        "id": r[0], "ts": r[1], "sandbox_id": r[2], "actor": r[3], "event": r[4],
+        "tool": r[5], "payload": json.loads(r[6]), "prev_hash": r[7], "hash": r[8],
+    }
+
+
 class AuditLog:
     def __init__(self, path: Path | str):
         self.path = Path(path)
@@ -197,13 +204,22 @@ class AuditLog:
         args.append(limit)
         with self._lock:
             rows = self.conn.execute(q, args).fetchall()
-        return [
-            {
-                "id": r[0], "ts": r[1], "sandbox_id": r[2], "actor": r[3], "event": r[4],
-                "tool": r[5], "payload": json.loads(r[6]), "prev_hash": r[7], "hash": r[8],
-            }
-            for r in rows
-        ]
+        return [_row(r) for r in rows]
+
+    def recent(self, sandbox_id: str | None = None, limit: int = 400) -> tuple[list[dict[str, Any]], int]:
+        """최신 limit개(새것부터)와 같은 조건의 실제 전체 개수. list()는 오래된 것부터라 화면용으로 못 쓴다."""
+        where, args = (" WHERE sandbox_id = ?", [sandbox_id]) if sandbox_id else ("", [])
+        with self._lock:
+            total = self.conn.execute("SELECT COUNT(*) FROM audit" + where, args).fetchone()[0]
+            rows = self.conn.execute(
+                "SELECT id, ts, sandbox_id, actor, event, tool, payload, prev_hash, hash FROM audit" + where
+                + " ORDER BY id DESC LIMIT ?", args + [limit]).fetchall()
+        return [_row(r) for r in rows], total
+
+    def belongs_to(self, rid: int, sandbox_id: str) -> bool:
+        with self._lock:
+            return self.conn.execute("SELECT 1 FROM audit WHERE id = ? AND sandbox_id = ?",
+                                     (rid, sandbox_id)).fetchone() is not None
 
     def verify(self) -> VerifyResult:
         with self._lock:

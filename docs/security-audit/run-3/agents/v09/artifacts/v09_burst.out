@@ -1,0 +1,15 @@
+== Case 1: workspace_manifest raises at burst open ==
+burst recorded: False
+audit events: ['snapshot']
+next GUI input needs snapshot (new burst)?: False
+after idle close: kill calls: [] | events: ['snapshot']
+
+== Case 2: SandboxManager collectors when the in-container command fails (exit 126, no stdout) ==
+workspace_manifest -> ({}, False) (no exception)
+desktop_processes -> ([], set()) (no exception)
+kill_processes -> None (no exception, exit status ignored)
+
+== Case 3: degraded baseline (empty manifest) then real change; human-visible gui_changes ==
+counts: {'added': 301, 'modified': 0, 'deleted': 0} truncated: True listed added: 100 | real change listed: False
+control (correct baseline):
+counts: {'added': 1, 'modified': 0, 'deleted': 0} added: ['zz_changed_by_gui.txt']
