@@ -34,6 +34,10 @@ FP = {
     "v12": "agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause",
     "v13": "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized",
     "v14": "agentbox/web.py:register:cookie-ui-frameable-no-frame-ancestors-single-click-approve",
+    # wave 3
+    "v17": "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row",
+    "v18": "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed",
+    "v19": "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore",
 }
 
 # fixes already committed on the working branch after Phase 3 (for check 6 only, never as refutation)

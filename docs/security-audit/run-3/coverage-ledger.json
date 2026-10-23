@@ -1,5 +1,56 @@
 [
  {
+  "coverage_id": "Concurrent%20entry%20points%20that%20read%20and%20write%20the%20in-memory%20GUI-burst%20state%3A%20POST%20tools%20click%2Ftype%2Fkey%20through%20call_tool%3B%20decide%28%29%20for%20approved%20calls%20via%20POST%20%2Fapprovals%2F%7Baid%7D%20and%20POST%20%2Fui%2Fapprovals%2F%7Baid%7D%2F%7Bdecision%7D%3B%20close_idle_gui_bursts%20via%20expire_stale%20on%20every%20UI%20poll%20%28%2Fui%2Fnotify%2C%20%2Fui%2Fapprovals%2C%20GET%20%2Fapprovals%2C%20GET%20%2Faudit%2C%20%2Fui%2Faudit%29%20and%20via%20call_tool%3B%20takeover%20and%20handback%3B%20end_desktop%20on%20restore%20and%20delete::Agent%20GUI%20input%20-%3E%20burst%20bookkeeping%20%28restore-point%20snapshot%2C%20%2Fworkspace%20manifest%2C%20baseline%20pids%2C%20stray%20kill%2C%20gui_changes%20record%29.%20The%20dicts%20_gui_burst%2C%20_gui_input_at%20and%20_gui_snap_at%20are%20shared%20by%20tool-pool%20threads%20and%20human%20request%20threads%20with%20no%20lock.%20_snapshot%20registers%20the%20burst%20%28agentbox%2Fservice.py%3A206-213%2C%20258-268%29%20before%20_run_tool%20stamps%20_gui_input_at%20%28service.py%3A105-108%2C%20under%20gui_lock%29.%20close_idle_gui_bursts%20%28250-256%29%20treats%20a%20missing%20or%20stale%20stamp%20as%20idle%2C%20so%20a%20concurrent%20poll%20could%20close%20a%20just-opened%20burst.%20decide%28%29%20%28384-422%29%20takes%20neither%20_snap_locks%20nor%20_busy%2C%20so%20approved%20calls%20run%20a%20parallel%20path%20to%20call_tool.::agentbox%2Fservice.py%23_snapshot%20%2B%20_open_gui_burst%20%2B%20_close_gui_burst%20%2B%20close_idle_gui_bursts%20%2B%20_run_tool%20%2B%20decide%20%2B%20takeover%2Fend_desktop::Race%20and%20check-then-act%20on%20security-control%20state%3A%20burst%20open%20versus%20idle-close%20ordering%2C%20double%20close%20or%20open%2C%20approved-path%20parity%20with%20call_tool%2C%20control-plane%20restart%20dropping%20bursts.%20Mitigation%20is%20only%20partial%20%28the%20accepted%20N-1%20GUI%20bypass%29.",
+  "canonical_refs": {
+   "surface": "Concurrent entry points that read and write the in-memory GUI-burst state: POST tools click/type/key through call_tool; decide() for approved calls via POST /approvals/{aid} and POST /ui/approvals/{aid}/{decision}; close_idle_gui_bursts via expire_stale on every UI poll (/ui/notify, /ui/approvals, GET /approvals, GET /audit, /ui/audit) and via call_tool; takeover and handback; end_desktop on restore and delete",
+   "boundary": "Agent GUI input -> burst bookkeeping (restore-point snapshot, /workspace manifest, baseline pids, stray kill, gui_changes record). The dicts _gui_burst, _gui_input_at and _gui_snap_at are shared by tool-pool threads and human request threads with no lock. _snapshot registers the burst (agentbox/service.py:206-213, 258-268) before _run_tool stamps _gui_input_at (service.py:105-108, under gui_lock). close_idle_gui_bursts (250-256) treats a missing or stale stamp as idle, so a concurrent poll could close a just-opened burst. decide() (384-422) takes neither _snap_locks nor _busy, so approved calls run a parallel path to call_tool.",
+   "subsystem": "agentbox/service.py#_snapshot + _open_gui_burst + _close_gui_burst + close_idle_gui_bursts + _run_tool + decide + takeover/end_desktop",
+   "attack_class": "Race and check-then-act on security-control state: burst open versus idle-close ordering, double close or open, approved-path parity with call_tool, control-plane restart dropping bursts. Mitigation is only partial (the accepted N-1 GUI bypass)."
+  },
+  "surface": "Concurrent entry points that read and write the in-memory GUI-burst state: POST tools click/type/key through call_tool; decide() for approved calls via POST /approvals/{aid} and POST /ui/approvals/{aid}/{decision}; close_idle_gui_bursts via expire_stale on every UI poll (/ui/notify, /ui/approvals, GET /approvals, GET /audit, /ui/audit) and via call_tool; takeover and handback; end_desktop on restore and delete",
+  "boundary": "Agent GUI input -> burst bookkeeping (restore-point snapshot, /workspace manifest, baseline pids, stray kill, gui_changes record). The dicts _gui_burst, _gui_input_at and _gui_snap_at are shared by tool-pool threads and human request threads with no lock. _snapshot registers the burst (agentbox/service.py:206-213, 258-268) before _run_tool stamps _gui_input_at (service.py:105-108, under gui_lock). close_idle_gui_bursts (250-256) treats a missing or stale stamp as idle, so a concurrent poll could close a just-opened burst. decide() (384-422) takes neither _snap_locks nor _busy, so approved calls run a parallel path to call_tool.",
+  "subsystem": "agentbox/service.py#_snapshot + _open_gui_burst + _close_gui_burst + close_idle_gui_bursts + _run_tool + decide + takeover/end_desktop",
+  "attack_class": "Race and check-then-act on security-control state: burst open versus idle-close ordering, double close or open, approved-path parity with call_tool, control-plane restart dropping bursts. Mitigation is only partial (the accepted N-1 GUI bypass).",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox.py",
+   "agentbox/web.py",
+   "agentbox/api.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Deep-link, callback, and navigation attack classes",
+    "reason": "No deep links or callbacks; the desktop page is a plain web page."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Webview and native-bridge attack classes",
+    "reason": "No native bridge; noVNC runs in an ordinary browser."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 4,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation: proposed by post-wave-3 critic (critic-3); with 74 of 80 agents spent, the remaining budget covers Phase 5 for v17-v19 only. Critic's reason: source-backed coverage gap: the four GUI units found fail-open on open, state loss on restore and pause, a cross-sandbox idle close, gui_lock hold and _NET_WM_PID exemption. None examined interleavings between the threads that mutate burst state, or whether the approved-call path through decide() keeps the same burst invariants. Hunter notes say restore and delete run without gui_lock or _snap_locks (hardening only), and the code comment at service.py:62 says a restart empties the state."
+  ],
+  "x_source": "critic-3 missing_units"
+ },
+ {
   "coverage_id": "GUI-burst%20writes%20outside%20%2Fworkspace%20%28uid%201001%20%2Fhome%2Fdesktop%3A%20.config%2Fautostart%2C%20xfce%20session%2C%20.bashrc%29%20that%20a%20later%20snapshot%20captures%20and%20that%20restore%20or%20restart%20re-executes::agentbox%2Fsandbox.py%23restore%20re-running%20images%2Fdesktop%2Fagentbox-desktop-start%20%28startxfce4%20as%20desktop%29%20%2B%20workspace_manifest%20scope%20%28%2Fworkspace%20only%29%20%2B%20gui_strays%20baseline%20after%20restore::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
   "canonical_refs": {
    "surface": "GUI-burst writes outside /workspace (uid 1001 /home/desktop: .config/autostart, xfce session, .bashrc) that a later snapshot captures and that restore or restart re-executes",
@@ -76,7 +127,7 @@
    "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore"
   ],
   "unresolved": [
-   "validation_not_run: Phase 3 verifier (v18/v19) stopped at the owner usage limit; prompt is committed"
+   "phase5_pending: v19 Phase 3 confirmed; Phase 5 record verifier p5-v19"
   ],
   "x_source": "critic-2 missing_units",
   "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 3. Desktop session start on restore honours ~/.config/autostart written by uid 1001; never in gui_changes; needs live-image validation.",
@@ -86,11 +137,112 @@
    "agentbox/sandbox.py:216 — gui_strays unconditionally exempts baseline pids; a process whose executable/entry was introduced by a prior burst (e.g., an autostart file committed into the snapshot) is indistinguishable from a legitimate boot process after restore, so baseline membership is not a safe trust signal across restore boundaries."
   ],
   "x_decisions": {
-   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "unvalidated"
+   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "phase3 confirmed (low) by v19, awaiting Phase 5"
   },
   "x_phase5": {
-   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "not run"
+   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "pending"
   }
+ },
+ {
+  "coverage_id": "Host-disk%20and%20SQLite%20pressure%20caused%20by%20agent%20actions%20%28audit%20rows%2C%20approval%20rows%2C%20captures%20PNGs%2C%20docker%20commit%20snapshots%2C%20sources%20dirs%29%20and%20by%20human%20read%20paths%20%28GET%20%2Faudit%2C%20%2Fui%2Faudit%2C%20%2Fui%2Fverify%2C%20%2Faudit%2Fverify%2C%20cmd_verify%2C%20GET%20%2Fapprovals%29::Agent-grown%20data%20-%3E%20one%20process-wide%20audit%20lock%20and%20one%20SQLite%20file%20shared%20by%20four%20connections%20%28AuditLog%2C%20ApprovalStore%2C%20SandboxManager%2C%20DesktopControl%29.%20AuditLog.verify%28%29%20and%20list%28%29%20run%20fetchall%20of%20the%20whole%20table%20under%20the%20same%20lock%20that%20every%20append%20needs%20%28agentbox%2Faudit.py%3A196-215%2C%20152-187%29.%20_safe_log%20swallows%20AuditWriteError%20after%20execution%20%28agentbox%2Fservice.py%3A362-369%29%2C%20while%20_close_gui_burst%20has%20already%20popped%20the%20burst%20before%20logging%20gui_changes%20or%20gui_processes_stopped.%20ApprovalStore%20claim%2C%20finish%20and%20create%20raise%20raw%20sqlite3%20errors%20%28approvals.py%3A49-92%29%2C%20not%20AuditWriteError.::agentbox%2Faudit.py%23append%20%2B%20list%20%2B%20verify%3B%20agentbox%2Fservice.py%23_safe_log%20%2B%20_close_gui_burst%20%2B%20decide%20%2B%20expire_stale%3B%20agentbox%2Fapprovals.py%23create%2Fclaim%2Ffinish%3B%20agentbox%2Fapi.py%23list_audit%2Fverify%3B%20agentbox%2Fweb.py%23verify_frag%2Faudit_frag::Failure%20and%20recovery%20under%20resource%20exhaustion%3A%20read-side%20lock%20hold%20time%20and%20memory%20on%20the%20shared%20audit%20lock%3B%20fail-closed%20%28503%29%20versus%20fail-open%20%28silently%20dropped%20post-hoc%20records%2C%20approvals%20stuck%20in%20approved%29%20behaviour%20at%20disk-full%20or%20lock%20contention",
+  "canonical_refs": {
+   "surface": "Host-disk and SQLite pressure caused by agent actions (audit rows, approval rows, captures PNGs, docker commit snapshots, sources dirs) and by human read paths (GET /audit, /ui/audit, /ui/verify, /audit/verify, cmd_verify, GET /approvals)",
+   "boundary": "Agent-grown data -> one process-wide audit lock and one SQLite file shared by four connections (AuditLog, ApprovalStore, SandboxManager, DesktopControl). AuditLog.verify() and list() run fetchall of the whole table under the same lock that every append needs (agentbox/audit.py:196-215, 152-187). _safe_log swallows AuditWriteError after execution (agentbox/service.py:362-369), while _close_gui_burst has already popped the burst before logging gui_changes or gui_processes_stopped. ApprovalStore claim, finish and create raise raw sqlite3 errors (approvals.py:49-92), not AuditWriteError.",
+   "subsystem": "agentbox/audit.py#append + list + verify; agentbox/service.py#_safe_log + _close_gui_burst + decide + expire_stale; agentbox/approvals.py#create/claim/finish; agentbox/api.py#list_audit/verify; agentbox/web.py#verify_frag/audit_frag",
+   "attack_class": "Failure and recovery under resource exhaustion: read-side lock hold time and memory on the shared audit lock; fail-closed (503) versus fail-open (silently dropped post-hoc records, approvals stuck in approved) behaviour at disk-full or lock contention"
+  },
+  "surface": "Host-disk and SQLite pressure caused by agent actions (audit rows, approval rows, captures PNGs, docker commit snapshots, sources dirs) and by human read paths (GET /audit, /ui/audit, /ui/verify, /audit/verify, cmd_verify, GET /approvals)",
+  "boundary": "Agent-grown data -> one process-wide audit lock and one SQLite file shared by four connections (AuditLog, ApprovalStore, SandboxManager, DesktopControl). AuditLog.verify() and list() run fetchall of the whole table under the same lock that every append needs (agentbox/audit.py:196-215, 152-187). _safe_log swallows AuditWriteError after execution (agentbox/service.py:362-369), while _close_gui_burst has already popped the burst before logging gui_changes or gui_processes_stopped. ApprovalStore claim, finish and create raise raw sqlite3 errors (approvals.py:49-92), not AuditWriteError.",
+  "subsystem": "agentbox/audit.py#append + list + verify; agentbox/service.py#_safe_log + _close_gui_burst + decide + expire_stale; agentbox/approvals.py#create/claim/finish; agentbox/api.py#list_audit/verify; agentbox/web.py#verify_frag/audit_frag",
+  "attack_class": "Failure and recovery under resource exhaustion: read-side lock hold time and memory on the shared audit lock; fail-closed (503) versus fail-open (silently dropped post-hoc records, approvals stuck in approved) behaviour at disk-full or lock contention",
+  "starting_paths": [
+   "agentbox/audit.py",
+   "agentbox/service.py",
+   "agentbox/approvals.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/cli.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes",
+    "reason": "Superlinear parsing and decompression are not present; the amplification is row count and size, already owned by the audit-content and capture units."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 4,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation: proposed by post-wave-3 critic (critic-3); with 74 of 80 agents spent, the remaining budget covers Phase 5 for v17-v19 only. Critic's reason: source-backed coverage gap: the audit-content, buffering and capture units own how rows and PNGs get written without caps. Hunter hardening notes record that GET /audit and /ui/verify bound row counts but not row sizes, and that AuditLog.append lets non-sqlite errors escape. No unit asked what the human read paths do while holding the global audit lock over agent-sized data, or which post-execution records and approval states are silently lost or stuck once disk or SQLite writes start failing."
+  ],
+  "x_source": "critic-3 missing_units"
+ },
+ {
+  "coverage_id": "Unauthenticated%20network%20requests%20handled%20before%20any%20principal%20check%3A%20JSON%20and%20multipart%20bodies%20on%20POST%20%2Fsandboxes%2C%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%2C%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%2C%20%2Fapprovals%2F%7Baid%7D%20and%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Ffiles%3B%20the%20POST%20%2Flogin%20form%3B%20GET%20%2Fstatic%2Fnovnc%2F%7Bpath%7D%3B%20GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%3Fticket%3D%3B%20GET%20%2Fhealthz::Network%20attacker%20with%20no%20token%20-%3E%20control-plane%20memory%2C%20the%20%2Ftmp%20multipart%20spool%2C%20the%20Docker%20daemon%20and%20the%20audit%20chain.%20FastAPI%20reads%20and%20parses%20the%20body%20before%20it%20resolves%20the%20principal%20and%20screen_human%20dependencies%20%28agentbox%2Fapi.py%3A206-224%2C%20models%20at%2044-60%29.%20The%20tool-args%20body%20cap%20that%20critic%20checks%20only%20guard%20authenticated%20agent%20args.%20extract_novnc%20runs%20docker%20create%2C%20get_archive%20into%20memory%20and%20extractall%20per%20request%20%28agentbox%2Fsandbox.py%3A774-798%2C%20api.py%3A431-437%29.%20Each%20failed%20POST%20%2Flogin%20appends%20a%20ui_login_failed%20audit%20row%20%28agentbox%2Fweb.py%3A117-123%29.%20deploy%2FCaddyfile%20has%20no%20request_body%20limit.::agentbox%2Fapi.py%23build%20route%20and%20dependency%20ordering%20%28principal%2C%20screen_principal%2C%20put_files%2C%20novnc%29%3B%20agentbox%2Fsandbox.py%23extract_novnc%3B%20agentbox%2Fweb.py%23login%3B%20deploy%2FCaddyfile::Pre-authentication%20work%20imbalance%20%28unbounded%20body%20buffering%20and%20temp-file%20spooling%20before%20auth%2C%20unauthenticated%20Docker-daemon%20work%2C%20unauthenticated%20audit-row%20growth%29",
+  "canonical_refs": {
+   "surface": "Unauthenticated network requests handled before any principal check: JSON and multipart bodies on POST /sandboxes, /sandboxes/{sid}/tools/{tool}, /sandboxes/{sid}/restore, /approvals/{aid} and POST /sandboxes/{sid}/files; the POST /login form; GET /static/novnc/{path}; GET /sandboxes/{sid}/desktop?ticket=; GET /healthz",
+   "boundary": "Network attacker with no token -> control-plane memory, the /tmp multipart spool, the Docker daemon and the audit chain. FastAPI reads and parses the body before it resolves the principal and screen_human dependencies (agentbox/api.py:206-224, models at 44-60). The tool-args body cap that critic checks only guard authenticated agent args. extract_novnc runs docker create, get_archive into memory and extractall per request (agentbox/sandbox.py:774-798, api.py:431-437). Each failed POST /login appends a ui_login_failed audit row (agentbox/web.py:117-123). deploy/Caddyfile has no request_body limit.",
+   "subsystem": "agentbox/api.py#build route and dependency ordering (principal, screen_principal, put_files, novnc); agentbox/sandbox.py#extract_novnc; agentbox/web.py#login; deploy/Caddyfile",
+   "attack_class": "Pre-authentication work imbalance (unbounded body buffering and temp-file spooling before auth, unauthenticated Docker-daemon work, unauthenticated audit-row growth)"
+  },
+  "surface": "Unauthenticated network requests handled before any principal check: JSON and multipart bodies on POST /sandboxes, /sandboxes/{sid}/tools/{tool}, /sandboxes/{sid}/restore, /approvals/{aid} and POST /sandboxes/{sid}/files; the POST /login form; GET /static/novnc/{path}; GET /sandboxes/{sid}/desktop?ticket=; GET /healthz",
+  "boundary": "Network attacker with no token -> control-plane memory, the /tmp multipart spool, the Docker daemon and the audit chain. FastAPI reads and parses the body before it resolves the principal and screen_human dependencies (agentbox/api.py:206-224, models at 44-60). The tool-args body cap that critic checks only guard authenticated agent args. extract_novnc runs docker create, get_archive into memory and extractall per request (agentbox/sandbox.py:774-798, api.py:431-437). Each failed POST /login appends a ui_login_failed audit row (agentbox/web.py:117-123). deploy/Caddyfile has no request_body limit.",
+  "subsystem": "agentbox/api.py#build route and dependency ordering (principal, screen_principal, put_files, novnc); agentbox/sandbox.py#extract_novnc; agentbox/web.py#login; deploy/Caddyfile",
+  "attack_class": "Pre-authentication work imbalance (unbounded body buffering and temp-file spooling before auth, unauthenticated Docker-daemon work, unauthenticated audit-row growth)",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/sandbox.py",
+   "agentbox/web.py",
+   "agentbox/audit.py",
+   "deploy/Caddyfile",
+   "deploy/Dockerfile"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+    "reason": "No OAuth, SAML or OIDC flow exists; auth is one shared token, tickets and cookie sessions."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+    "reason": "No accounts or MFA; login is a single shared secret."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 4,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "budget_cannot_reserve_critics_and_validation: proposed by post-wave-3 critic (critic-3); with 74 of 80 agents spent, the remaining budget covers Phase 5 for v17-v19 only. Critic's reason: source-backed coverage gap: the only units touching these routes cover authenticated access control, CSRF, size caps on authenticated agent args and the post-auth execution pool. The wildcard unit marked /static/novnc and unauthenticated audit rows as hardening only. No unit asked what an unauthenticated peer can make the control plane buffer, spool, create in Docker or append to the audit log before the 401. The companion class 'Pre-authentication work imbalance' is selected by no unit."
+  ],
+  "x_source": "critic-3 missing_units"
  },
  {
   "coverage_id": "agent%20tool%20calls%20that%20require%20approval%20%28POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%20-%3E%20REQUIRE_APPROVAL%29%20on%20desktop%20templates::agentbox%2Fservice.py%23_call_tool%20approval%20creation%3A%20no%20per-sandbox%20pending-approval%20cap%2C%20plus%20a%20per-approval%20PNG%20written%20to%20settings.home%2Fcaptures%20that%20is%20never%20removed%20on%20decision%2C%20expiry%20or%20sandbox%20delete::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
@@ -173,7 +325,7 @@
    "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed"
   ],
   "unresolved": [
-   "validation_not_run: Phase 3 verifier (v18/v19) stopped at the owner usage limit; prompt is committed"
+   "phase5_pending: v18 Phase 3 confirmed; Phase 5 record verifier p5-v18"
   ],
   "x_source": "critic-2 missing_units",
   "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 2. Every gated call creates an approval, preview and captures/{aid}.png with no pending cap; no code removes captures; host disk grows without a quota and the queue renders every card.",
@@ -182,10 +334,10 @@
    "sandbox.py screenshot() reads the whole scrot PNG with no size cap (unlike exec output _Head/64KB), so each retained capture can be large on a busy desktop; capping/downscaling the stored capture would reduce per-item cost."
   ],
   "x_decisions": {
-   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "unvalidated"
+   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "phase3 confirmed (low) by v18, awaiting Phase 5"
   },
   "x_phase5": {
-   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "not run"
+   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "pending"
   }
  },
  {
@@ -2366,7 +2518,7 @@
    "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row"
   ],
   "unresolved": [
-   "phase5_not_run: v17 Phase 3 confirmed (low); Phase 5 record verifier not run before the owner usage limit"
+   "phase5_pending: v17 Phase 3 confirmed; Phase 5 record verifier p5-v17"
   ],
   "x_source": "critic-2 missing_units",
   "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 1. The approval-binding unit did not read sandbox.py preview or templates: impact list built by newline-splitting container output (agent-chosen names with newlines add/displace rows), only rm/curl recognised, 'could not compute' note only when both lists are empty, 200-row truncation; captures of an agent-controlled screen presented as system-taken.",
@@ -2376,10 +2528,10 @@
    "agentbox/service.py:decide and _snapshot: approval execution takes an unconditional pre-execution snapshot for every tool including exec, so the UI/CLI claim '승인하면 실행 직전에 스냅샷을 만든다' is honored and a manual restore point exists even for the deceptive-preview case (noted to bound impact)."
   ],
   "x_decisions": {
-   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "phase3 confirmed (low), awaiting Phase 5"
+   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "phase3 confirmed (low) by v17, awaiting Phase 5"
   },
   "x_phase5": {
-   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "not run: owner usage limit; Phase 3 candidate not yet in findings.json"
+   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "pending"
   }
  },
  {

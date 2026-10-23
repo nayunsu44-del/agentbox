@@ -917,6 +917,160 @@
   "reason": "Mechanism confirmed, material/shared impact refuted during validation. The trace and evidence are source-accurate: sandbox.py:531 wraps the command in timeout -k 5 <t> bash -c; GNU timeout signals the group only at its deadline; read-only-exec (default_policy.yaml:24-25) allowlists tail and policy.simple_programs splits on & so 'tail -f /dev/null & ...' runs approval-free (confirmed in policy.py and by h-policy). I reproduced the core mechanism locally in sbx5 (agents/v16/artifacts/v16_mechanism.out): when bash exits before the deadline, timeout returns bash's status and the backgrounded child survives unreaped, so nothing bounds processes an allowlisted exec leaves behind. The candidate was needs_validation solely on its blocker: whether the pinned state reaches beyond the agent's own sandbox and which human recovery actions work. Parent-live l11_pinned_recovery (owner-observed local evidence I re-read and judged sound; it creates a pinned sandbox plus a second 'other' sandbox on both cli and desktop templates and runs every recovery action) resolves that blocker against the vulnerability: a concurrent other-sandbox exec succeeds (no cross-sandbox or control-plane blast radius), human snapshot/pause/resume all succeed, and human restore instantly returns pids to baseline, after which the agent execs normally; human delete also succeeds. The only degradation is in-container tool execs on the same sandbox (read_file fails 'Cannot fork' in ~0.1s, immediately releasing its tool_pool thread, so no shared resource is retained). This is self-limiting availability of the requester's own sandbox with complete operator recovery and no shared blast radius, which this domain's discipline classifies as hardening, not a service vulnerability ('Self-limiting work in the requester's own process is not a service vulnerability'; 'do not validate with availability impact'). The GUI-burst fail-open that this same pids pressure can cause is a distinct shared-safety-function claim owned by v09 (service.py:_open_gui_burst), which the prompt directs me not to credit to this candidate. No source or local observation supports a shared, cross-principal, or persistent-beyond-operator-control impact, so the candidate is refuted."
  },
  {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore",
+  "title": "GUI-burst write to /home/desktop/.config/autostart is invisible to gui_changes, persists into later snapshots, and re-executes as uid 1001 after a human restore",
+  "description": "The agent's GUI tools (key/type, no approval gate by design) drive an xfce4-terminal that runs as uid 1001 `desktop`. From that terminal the agent can write ~/.config/autostart/*.desktop. The burst change tracking (`workspace_manifest`, `gui_changes`) only scans /workspace, and stray-kill only stops processes, so an inert file under /home/desktop is neither recorded nor removed. The burst-open snapshot predates the write and stays clean. A later `docker commit` captures the file: the next burst's `next_burst` snapshot, an AP-2 pre-snapshot, an interval snapshot, or a manual snapshot. When a human restores to such a snapshot, `restore()` recreates the container from the committed image and re-runs `agentbox-desktop-start`, which execs `startxfce4` as uid 1001. XFCE runs the autostart entry's Exec= line at session start. The command runs as uid 1001 with a live X session and /workspace write access (group agent), outside any GUI burst. No `gui_changes` or `gui_processes_stopped` event records it, and `gui_strays` would exempt it anyway because it is in the next burst's baseline. The decisive end-to-end reproduction is the parent's live run against the real desktop image (`agents/parent-live/artifacts/l12_autostart.py` and `.out`). I could not run Docker, so I did not redo it; I re-read the script and it exercises the claimed path. The hunter's three blockers are resolved by that run. The hunter's 'restart' variant is not supported by the source: the only recreate path is the human-only `POST /sandboxes/{sid}/restore`, and pause/unpause keeps processes. The finding therefore covers restore only.",
+  "root_cause": "GUI-burst containment is scoped to /workspace and to running processes. `workspace_manifest` runs `find /workspace -xdev`. `_close_gui_burst` diffs only that manifest and `gui_strays` only kills processes. The burst principal (uid 1001) also owns /home/desktop, and the XFCE session re-reads ~/.config/autostart on every container start. Nothing captures, flags, or sanitizes /home/desktop between the burst, the `docker commit`, and the restore re-exec. Restore reintroduces the executable state without re-authorization or logging.",
+  "intended_behavior": "Changes an agent makes through the GUI are meant to be visible to the human (`gui_changes`) or contained by stray-kill, so a restore point is trustworthy. Restoring a snapshot should not silently re-run agent-planted code outside a burst.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/service.py",
+    "line": 106,
+    "scope": "SandboxService tool dispatch for GUI_TOOLS (key/type, GUI_INPUT)",
+    "description": "The agent token reaches GUI input with no approval. It opens an xfce4-terminal as uid 1001 and writes ~/.config/autostart/t.desktop. The live run used key ctrl+alt+t, type, and key Return, and all three returned 200."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 206,
+    "scope": "_open_gui_burst",
+    "description": "The burst records only `workspace_manifest` plus the baseline pids. The burst-open snapshot is taken before the write, so it does not contain the payload."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 499,
+    "scope": "SandboxManager.workspace_manifest",
+    "description": "The manifest `find` is limited to /workspace (-xdev), so a file under /home/desktop never enters the diff."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 240,
+    "scope": "_close_gui_burst",
+    "description": "`diff_manifest` runs over the /workspace-only manifest and `_stop_gui_strays` only kills processes. No gui_changes or gui_processes_stopped event is written for the autostart file. The live run printed 'gui_changes mention /home/desktop: False'."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 478,
+    "scope": "SandboxManager.snapshot",
+    "description": "`c.commit(...)` captures the whole container filesystem, including /home/desktop/.config/autostart. The live run took a manual snapshot after the burst closed."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 517,
+    "scope": "SandboxManager.restore -> _run_container(tpl, snapshot image)",
+    "description": "Restore recreates the container from the committed image and re-runs the template command `/usr/local/bin/agentbox-desktop-start` (config.py:74). That script execs `dbus-launch ... startxfce4` as uid 1001 (agentbox-desktop-start:30). XFCE autostart then runs the planted Exec= line. Live result: PROOF_autostart.txt appeared in /workspace with content 1001."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 499,
+    "description": "`find {WORKSPACE} -xdev ! -type d` is the only change manifest. Nothing under /home is scanned."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 240,
+    "description": "The `gui_changes` diff is computed only over that manifest. There is no hook for /home/desktop."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 216,
+    "description": "`gui_strays` skips pids already in the baseline and only ever returns pids, so it cannot remove a file. A payload launched at container boot is in the next burst's baseline. The hunter's harness agents/h-autostart/artifacts/h.out shows `[]` for the baseline case and `[200]` for the in-burst case."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 478,
+    "description": "The commit captures the full filesystem, so the payload persists into every later snapshot."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 517,
+    "description": "Restore reruns the template command on the committed image."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 74,
+    "description": "The desktop template command is the XFCE start script."
+   },
+   {
+    "file": "images/desktop/agentbox-desktop-start",
+    "line": 30,
+    "description": "The script runs `startxfce4` as uid 1001 with HOME=/home/desktop on every container start."
+   },
+   {
+    "file": "images/desktop/Dockerfile",
+    "line": 27,
+    "description": "uid 1001 `desktop` owns /home/desktop (mode 700, line 28). Only this principal can write there; the uid 1000 agent cannot, so the GUI path is required."
+   },
+   {
+    "file": "agents/parent-live/artifacts/l12_autostart.out",
+    "line": 1,
+    "description": "Parent-live output against the real image. Agent GUI tools created t.desktop (observed by root). No gui_changes or gui_processes_stopped event named /home/desktop. After snapshot and human restore, PROOF_autostart.txt appeared with content 1001."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "An agent token with GUI tools on a desktop-template sandbox, assumed prompt-injected."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "A human must restore to a snapshot taken after the write. The burst-open snapshot of the writing burst is clean. Later snapshots (next_burst, AP-2, interval, manual) carry the file, and no audit event warns that they do."
+   },
+   {
+    "kind": "environmental_dependency",
+    "description": "The desktop image's XFCE session honours ~/.config/autostart, which the live run confirmed. The container has network_mode none and the sandbox boundary is not crossed."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent holding only its own agt_ token and the GUI tools on a desktop sandbox.",
+   "payloads": [
+    "key ctrl+alt+t",
+    "type: mkdir -p ~/.config/autostart && printf '[Desktop Entry]\\nType=Application\\nName=t\\nExec=sh -c \"id -u > /workspace/PROOF_autostart.txt\"\\n' > ~/.config/autostart/t.desktop; exit",
+    "key Return"
+   ],
+   "instructions": [
+    "Create a disposable desktop sandbox with dummy tokens and a scratch AGENTBOX_HOME.",
+    "As the agent, call the key, type, and key tools with the payloads above.",
+    "Close the burst (idle) and confirm the audit log has no gui_changes or gui_processes_stopped entry naming /home/desktop.",
+    "Take a snapshot after the burst, then run the human POST /sandboxes/{sid}/restore for that snapshot.",
+    "Wait for the display and check that /workspace/PROOF_autostart.txt exists. Stop there.",
+    "This is reproduced by agents/parent-live/artifacts/l12_autostart.py and .out, the parent's run on the real image. Docker was not available to v19."
+   ],
+   "observed_result": "The parent-live run printed: agent key/type/key all 200; root observer saw t.desktop; PROOF before restore False; gui_changes mention /home/desktop False; human snapshot snap_9051d98e; restore running; PROOF after restore (autostart re-executed) True; PROOF content (uid) 1001; no gui_changes or gui_processes_stopped events in the audit trail."
+  },
+  "remediation": {
+   "strategy": "Treat /home/desktop as part of the GUI-burst change surface and neutralize it at restore. At burst close, also manifest-diff the persistent session config (/home/desktop/.config/autostart, ~/.config/xfce4, shell rc files, /etc/xdg/autostart) and log changes. At restore and start, the start script should wipe or reset ~/.config/autostart and similar session-startup paths (or use an XDG_CONFIG_DIRS/autostart-free profile) before launching startxfce4. Alternatively mount /home/desktop as tmpfs, or recreate it from the pristine image skeleton on each start, so agent-written session state cannot survive a snapshot.",
+   "code_changes": [
+    {
+     "file_name": "images/desktop/agentbox-desktop-start",
+     "fixed_code": "# before launching startxfce4 (as root, before as_desktop ... startxfce4):\nrm -rf \"$D/.config/autostart\" \"$D/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml\" \"$D/.bashrc\" \"$D/.profile\" \"$D/.bash_profile\" \"$D/.xprofile\" \"$D/.xsessionrc\"\n# plus log a gui_changes-style diff of these paths at burst close in agentbox/sandbox.py"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Needs a prompt-injected agent with GUI tools on a desktop sandbox, and a human restore to a snapshot taken after the write. The restore is human-only and the burst-open snapshot of the writing burst is clean. The control plane has no restart path other than restore."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "Re-executes agent-chosen commands as uid 1001 inside a network-none, cap-dropped container. Those commands could already run during the GUI burst, since GUI input is ungated by design. The gain is unlogged, post-restore execution that defeats gui_changes, stray-kill, and the trust placed in restore points. It crosses neither the container boundary nor the approval authority."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Every trace line was re-read in the audited source. The hunter's local harness shows the baseline exemption. The parent-live run on the real image shows the full chain: agent GUI write, no audit record, snapshot, human restore, uid 1001 execution. The decisive reproduction is the parent's, not v19's, because v19 cannot run Docker. The 'restart' variant from the hunter is not supported by the source and is dropped."
+  }
+ },
+ {
   "verdict": "needs_validation",
   "fingerprint": "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process",
   "title": "gui_strays exempts burst-launched uid-1001 processes from the stray kill based on window ownership, including the client-declared _NET_WM_PID",
@@ -978,6 +1132,303 @@
   "validation_plan": {
    "local": "In a disposable, network-less agentbox-desktop:0.1 sandbox: open a GUI burst with a GUI tool call. Using GUI input only, (a) open a file manager or editor window during the burst and from it run a script that appends a timestamp to a dummy file /workspace/_v15_probe every ~2s; and (b) separately, with a hand-written X client, set _NET_WM_PID of a window to the pid of a headless background writer started from a burst-start-session launcher. Just before close, record `ps -eo pid=,ppid=,sid=,uid=,args=` and `for w in $(xdotool search --onlyvisible --name .); do xdotool getwindowpid $w; done` to capture the real session ids and window-pid set, and feed them through the real gui_strays to predict survivors. Let the burst close on idle; then read the gui_processes_stopped audit entry and check whether /workspace/_v15_probe's mtime keeps advancing after close. Non-destructive: touches only the dummy probe file; kill the probe and discard the sandbox afterward.",
    "deployment": "Owner reproduces the same probe on the live deployed image and config to confirm the image's session-id and _NET_WM_PID semantics and that a spared process (or its child) modifies /workspace after burst close; collect the gui_processes_stopped and gui_changes audit entries and the manifest diff as evidence. Fix check: exempt only burst-start (baseline) processes and control-plane docker-exec-launched components, deriving ownership from a control-plane-verifiable link (for example the exec/ancestry already tracked) rather than window presence or the client-declared _NET_WM_PID. Non-destructive: dummy file only."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row",
+  "title": "Approval impact table leaves out unrecognized destructive segments and drops its documented 'could not compute' warning whenever an rm/curl segment is present",
+  "description": "SandboxManager.preview builds the 'system-computed impact' list (시스템이 계산한 영향) on the exec approval card. It models only two verbs, rm and curl. README.md:380 states the compensating control: for any other command it shows '자동 계산 못 함' (could not compute) and the raw command. The code adds that note only when the whole command produced no affected rows and no notes (sandbox.py:872). A compound command from the agent such as 'rm /workspace/harmless.txt; find /workspace/keep -delete' or 'rm /workspace/a.txt; mv /workspace/important.db /tmp/gone' therefore produces one row, 'delete harmless.txt', and notes=[]. The find -delete or mv segment gets no row and no warning. The default policy sends the whole command to require_approval under rule rm-curl-needs-approval, whose reason text mentions only rm/curl. Both renderers (templates/_approvals.html:12-16 and cli.py:204-212) show the partial list as '(1건)' with no warning, and decide() then runs the complete stored command (service.py:415). Run alone, the same mv or find -delete would have shown the could-not-compute warning. The agent cannot delete workspace files without approval (delete_file and non-allowlisted exec need approval). So a prompt-injected agent can get a deletion or rename it could not do on its own executed under the human's approval, while the system-computed impact summary marks the action as only the benign deletion. The raw command text is still shown verbatim above the table, so the approver can see the extra segment if they read it. The defect is that the documented 'could not compute' safety net silently fails for compound commands. Overwrite-only payloads (dd of=, '> file') add nothing beyond the agent's own authority, because write_file overwrites are allowed without approval in the default policy.",
+  "root_cause": "SandboxManager.preview (agentbox/sandbox.py:814-874) adds affected rows only in the name == 'rm' (line 824) and name == 'curl' (line 846) branches. It has no else branch for other segments. Its only fallback note is gated on `if not affected and not notes` (line 872), so it covers the whole command, not each segment. One rm or curl row makes `affected` non-empty, and that suppresses the warning for every other unmodeled segment. The substitution heuristic at line 818 checks only '$', backtick, '<(' and 'eval '. This contradicts the documented behavior in README.md:380, which says commands other than rm/curl show '자동 계산 못 함' together with the raw command.",
+  "intended_behavior": "When any segment of the stored exec command is not one the preview can model, the approval card must say that the computed impact is incomplete and that the raw command must be read, as README.md:380 promises. This must hold whether or not other segments produced rows. A partial impact list must never be shown as the complete system-computed impact with no warning.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 205,
+    "scope": "create_app.call_tool (POST /sandboxes/{sid}/tools/{tool})",
+    "description": "An agent token holder (lowest-trust network principal, own sandbox only, line 207) submits an exec tool call with a fully attacker-chosen command string."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 315,
+    "scope": "AgentService._call_tool",
+    "description": "Policy returns REQUIRE_APPROVAL (rule rm-curl-needs-approval for any command containing rm/curl), so _preview builds the impact stored with the approval and shown to the human."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 158,
+    "scope": "AgentService._preview",
+    "description": "For tool == 'exec', delegates to sandboxes.preview(sid, command) with the agent's raw command."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 820,
+    "scope": "SandboxManager.preview",
+    "description": "Iterates _split_segments(command). Only the rm (824) and curl (846) branches append rows. mv, find -delete, dd, redirection targets and every other segment are skipped with no row and no note."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 872,
+    "scope": "SandboxManager.preview",
+    "description": "The could-not-compute note is added only when `not affected and not notes`. The rm/curl row makes affected non-empty, so the warning for the unmodeled segment is suppressed."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/templates/_approvals.html",
+    "line": 13,
+    "scope": "_approvals.html pending card",
+    "description": "Renders '시스템이 계산한 영향 (1건)' with only the rm row. The notes loop at line 16 shows no warning. cli.py:204-212 (_show_approval) prints the same partial list with no notes."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/service.py",
+    "line": 415,
+    "scope": "AgentService.decide",
+    "description": "After the human approves, the complete stored args, including the unlisted mv / find -delete segment, run via _run_tool under the human's approval (after the AP-2 snapshot at line 406)."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 824,
+    "description": "`if name == \"rm\":` and `elif name == \"curl\":` (line 846) are the only branches that add impact rows. There is no else branch for other verbs."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 872,
+    "description": "`if not affected and not notes:` gates the only '시스템이 영향 파일을 계산하지 못함. 명령 원문을 확인할 것.' note on the whole command."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 818,
+    "description": "The substitution warning checks only '$', '`', '<(' and 'eval '. Unrecognized verbs and redirection are not flagged."
+   },
+   {
+    "file": "README.md",
+    "line": 380,
+    "description": "Documents the compensating control: preview only knows rm and curl, and other commands show '자동 계산 못 함' plus the raw command. That promise does not hold for compound commands that include rm/curl."
+   },
+   {
+    "file": "agentbox/default_policy.yaml",
+    "line": 12,
+    "description": "rm-curl-needs-approval routes any command containing rm/curl to require_approval (verified locally for all compound payloads). write_file has no rule and is allowed under default: allow (line 10). delete_file (line 18) and non-allowlisted exec (line 30) require approval, so deletion and rename are not within the agent's direct authority."
+   },
+   {
+    "file": "agentbox/templates/_approvals.html",
+    "line": 13,
+    "description": "Labels preview.affected as '시스템이 계산한 영향 (N건)'. Line 16 iterates preview.notes as the only warning channel. Line 8 shows the raw command in a <pre>."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 205,
+    "description": "The terminal approver prints the same '시스템이 계산한 영향' list (204-208) and notes (211-212), so it inherits the same omission."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 415,
+    "description": "decide() runs the full stored args after the pre-execution snapshot (line 406)."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Attacker holds the agent token for its own sandbox (assumed prompt-injected per the threat model)."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "A human approver approves based on the system-computed impact table and its warnings, without spotting the extra segment in the raw command shown above the table."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "Default policy is in force, which routes the compound command to require_approval rather than deny."
+   },
+   {
+    "kind": "data_state",
+    "description": "The compound command contains at least one rm or curl segment, so affected is non-empty. An rm operand that does not exist still yields a 'does not exist' row."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent sends one exec whose first segment is a benign rm (or curl) and whose later segment deletes or renames a file the agent cannot delete without approval. The approval card's system-computed impact then lists only the benign deletion and shows no could-not-compute warning.",
+   "payloads": [
+    "rm /workspace/harmless.txt; find /workspace/keep -delete",
+    "rm /workspace/a.txt; mv /workspace/secret.key /workspace/public.txt",
+    "curl http://example.invalid/x; mv /workspace/important.db /tmp/gone",
+    "rm /workspace/harmless.txt; dd if=/dev/zero of=/workspace/important.db bs=1M count=10"
+   ],
+   "instructions": [
+    "Inside the sbx5 sandbox (audited source read-only at /target, no network, no Docker), import agentbox.sandbox and call SandboxManager.preview as an unbound function on a dummy object. The dummy provides _container, plus _expand/_walk resolving against a fixed in-memory set of /workspace paths. Only these Docker-backed helpers are stubbed. The segment loop and the line 872 gate run unmodified.",
+    "Call preview for each compound payload and for the lone mv / find -delete / dd baselines, and record affected and notes.",
+    "Run agentbox.policy.Policy.load(default_policy.yaml).decide on the same commands, and on write_file and delete_file, to confirm routing and the agent's direct authority."
+   ],
+   "observed_result": "Every compound payload returned only the rm/curl row (for example affected=[{path: /workspace/harmless.txt, effect: 삭제}] or the curl 외부 접속 row) and notes=[]. The find -delete, mv and dd segments got no row and no warning. The lone baselines 'mv /workspace/important.db /tmp/gone', 'find /workspace/keep -delete' and 'dd ... of=/workspace/important.db' each returned affected=[] and notes=['시스템이 영향 파일을 계산하지 못함. 명령 원문을 확인할 것.']. Policy routed all compound commands to require_approval (rm-curl-needs-approval, matched [rm]), lone mv to exec-needs-approval and delete_file to delete-file-needs-approval. write_file overwrite was allow. Captured in agents/v17/artifacts/v17.out and agents/v17/artifacts/v17-policy.out. The approval UI was not rendered live and nothing was executed."
+  },
+  "remediation": {
+   "strategy": "Make the preview fail closed per segment. For every _split_segments segment the preview does not model, including bare redirection-target segments, add a note naming that segment and telling the approver to read the raw command. Keep the global fallback for an empty result. Optionally flag '>'/'>>' redirection next to the substitution heuristic, and label the table as partial whenever any segment was unmodeled.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/sandbox.py",
+     "fixed_code": "        for seg in _split_segments(command):\n            if not seg:\n                continue\n            name = seg[0].rsplit(\"/\", 1)[-1]\n            if name == \"rm\":\n                ...  # existing rm handling\n            elif name == \"curl\":\n                ...  # existing curl handling\n            else:\n                notes.append(f\"'{' '.join(seg)[:80]}' 부분의 영향은 자동 계산하지 못함. 명령 원문을 확인할 것.\")\n        if len(affected) > limit:\n            notes.append(f\"영향 항목 {len(affected)}개 중 앞의 {limit}개만 표시.\")\n            affected = affected[:limit]\n        if not affected and not notes:\n            notes.append(\"시스템이 영향 파일을 계산하지 못함. 명령 원문을 확인할 것.\")\n        return {\"command\": command, \"cwd\": WORKSPACE, \"affected\": affected, \"notes\": notes}"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "Building the compound command is trivial and fully under agent control, and the default policy routes it to approval. Success still depends on the approver trusting the impact table and warnings rather than reading the raw command. The raw command is shown verbatim directly above the table (web <pre>, CLI per-line with line count)."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "The gain beyond the agent's own authority is a deletion or rename of /workspace files (mv, find -delete, etc.) executed under the human's approval without being shown in the system-computed impact. Overwrites (dd, redirection) are already allowed to the agent via write_file, so they add nothing. Effects stay inside the network=none sandbox's /workspace, and decide() takes an unconditional AP-2 snapshot before execution (service.py:406), so files can be restored."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Source shows the per-command gate. A bounded sandboxed harness ran the real preview() and policy code, stubbing only the Docker glob/walk helpers, and reproduced the suppressed warning against lone-command baselines. Live rendering in the card was not exercised, but both templates display preview.affected/notes verbatim per source."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed",
+  "title": "Agent-triggered approval requests on desktop sandboxes write a screenshot PNG to the host that is never reclaimed, with no pending-approval cap",
+  "description": "On a desktop-template sandbox, each agent tool call that policy maps to REQUIRE_APPROVAL (for example delete_file, or any exec outside the read-only allowlist) does two things. It inserts a new pending approval row, and it takes a full-screen screenshot and writes it to settings.home/captures/{approval_id}.png. Nothing counts or caps pending approvals. Nothing deletes a capture when the approval is denied, executed, failed or expired, or when the sandbox is deleted. The agent token is the lowest-trust principal, and one cheap gated call yields one retained host-side PNG. Host disk under settings.home therefore grows without bound, and the files outlive both the approvals and the sandbox. The growth is bounded only by the rate of serial docker-exec screenshots. tool_concurrency only limits concurrently running calls, and a gated call returns 202 immediately. The snapshot quota is checked only for ALLOW decisions, so it does not apply here. The container disk limit (storage_opt) is optional and off by default, and it would not cover this host-side directory in any case. The audit-row and approval-row growth is the separate v08 issue. This candidate is the capture-file retention and the missing pending cap, and it is a distinct root cause.",
+  "root_cause": "AgentBox._call_tool writes captures/{aid}.png (service.py:325) for every REQUIRE_APPROVAL on a desktop template. No lifecycle path removes the file: expire_stale (371-382) and decide (384-422) only update approval status, SandboxManager.delete (sandbox.py:443-455) removes only the container and snapshot images, and the source contains no unlink or rmtree of captures. ApprovalStore.create (approvals.py:49-59) and _call_tool apply no per-sandbox or aggregate cap on pending approvals or on capture bytes.",
+  "intended_behavior": "Agent-driven approval work should be bounded. A per-sandbox cap on pending approvals should reject further gated calls with 429. The request-time capture PNG should be deleted when the approval reaches a terminal state (denied, executed, failed, expired) and when the sandbox is deleted. Optionally, total capture bytes should be capped with pruning of the oldest files.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/service.py",
+    "line": 292,
+    "scope": "AgentBox._call_tool(sid, tool, args, actor='agent')",
+    "description": "Agent tool call (POST /sandboxes/{sid}/tools/{tool}, via call_tool). The tool name and args are chosen by the agent token holder."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 313,
+    "scope": "_call_tool REQUIRE_APPROVAL branch",
+    "description": "default_policy.yaml returns REQUIRE_APPROVAL for delete_file and for any exec outside the read-only allowlist. Both are cheap for the agent."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 318,
+    "scope": "cap = self._capture(sid)",
+    "description": "When captures is configured (api.py:75) and template_of(sid).desktop is true, SandboxManager.screenshot (sandbox.py:714) returns the full PNG bytes, with no size cap."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/approvals.py",
+    "line": 49,
+    "scope": "ApprovalStore.create",
+    "description": "Inserts a pending row with no per-sandbox or aggregate count check. _call_tool at service.py:321 calls it unconditionally."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/service.py",
+    "line": 325,
+    "scope": "(self.captures / f\"{apr['id']}.png\").write_bytes(cap[0])",
+    "description": "Persists one PNG per approval under settings.home/captures. Nothing in service.py, approvals.py, sandbox.py or api.py removes it."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 325,
+    "description": "The only writer of captures/*.png. It runs once per REQUIRE_APPROVAL on a desktop template."
+   },
+   {
+    "file": "agentbox/approvals.py",
+    "line": 49,
+    "description": "create() has no per-sandbox or aggregate pending-approval cap."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 371,
+    "description": "expire_stale only claims and finishes approvals as EXPIRED. It never deletes the capture file."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 384,
+    "description": "decide (deny, execute and failure branches) calls approvals.finish and never deletes the capture PNG."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 443,
+    "description": "SandboxManager.delete removes the container and snapshot images only and never touches settings.home/captures."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 714,
+    "description": "screenshot reads the whole desktop PNG from docker exec output with no size cap, so each retained capture can be large."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 274,
+    "description": "The only call-level bound is tool_concurrency (default 4). It caps in-flight calls, not total approvals or retained files, and gated calls return 202 at once."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 42,
+    "description": "disk_limit defaults to empty, so container storage_opt is unset by default. It would not cover the host-side captures directory anyway."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authorization_role",
+    "description": "The attacker holds an agent token (agt_) for one sandbox. This is the lowest-trust, prompt-injection-assumed principal."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "The sandbox uses a desktop template and the screenshot succeeds. The captures directory is configured by default as settings.home/captures (api.py:75)."
+   },
+   {
+    "kind": "data_state",
+    "description": "Growth needs a sustained series of gated calls, one PNG each. The PNGs persist across approval decisions, expiry and sandbox deletion until an operator removes them."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent confined to its own desktop sandbox wants to exhaust shared control-plane host disk without any human approval.",
+   "payloads": [
+    "POST /sandboxes/{sid}/tools/delete_file  {\"path\": \"/workspace/f0\"}",
+    "POST /sandboxes/{sid}/tools/exec  {\"command\": \"python -c 1\"}"
+   ],
+   "instructions": [
+    "Repeatedly issue a gated tool call that default_policy.yaml maps to REQUIRE_APPROVAL. Each call returns 202 pending.",
+    "Each call creates a pending approval with no cap and writes settings.home/captures/{approval_id}.png.",
+    "Let the approvals be denied or expire, or delete the sandbox, and observe that captures/*.png remain.",
+    "Local reproduction, run inside the sbx5 wrapper: the real AgentBox._call_tool, decide and expire_stale with a real ApprovalStore, the real default policy, a stub desktop screenshot and a stub audit log."
+   ],
+   "observed_result": "v18 re-ran an independent copy of the harness in the sbx5 sandbox. It created 30 pending approvals with no cap, and 30 PNG files totalling 123120 bytes were written. After one deny and 29 expiries, all 30 PNGs were still on disk. A screenshot that is 4 KB in the stub would be tens to hundreds of KB on a real desktop. This harness does not show growth after sandbox deletion; that comes from reading SandboxManager.delete, which has no capture cleanup."
+  },
+  "remediation": {
+   "strategy": "Bound and reclaim approval artifacts. (1) Enforce a per-sandbox pending-approval cap before creating a new approval and return 429 past the limit. (2) Delete captures/{aid}.png whenever an approval reaches a terminal state (expire_stale, decide deny, executed and failed branches), and delete all of a sandbox's captures when it is deleted. (3) Optionally cap total capture bytes and prune the oldest files.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "# in _call_tool, before approvals.create:\ncap_n = self.sandboxes.settings.pending_approval_cap\nif cap_n > 0 and len(self.approvals.list(status=A.PENDING, sandbox_id=sid)) >= cap_n:\n    raise ServiceError(429, 'too many pending approvals for this sandbox')\n\ndef _drop_capture(self, aid: str) -> None:\n    try:\n        p = self.capture_path(aid)\n        if p:\n            p.unlink()\n    except OSError:\n        pass\n# call _drop_capture(aid) from expire_stale and the terminal branches of decide;\n# on sandbox delete, call it for every approval of that sandbox."
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "The path needs only an agent token and cheap gated calls on a desktop sandbox. Reaching a large host-disk effect takes sustained volume at about one docker-exec screenshot per call, so it is slow and noticeable."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "This is persistent, unreclaimed growth of host disk under settings.home that survives sandbox deletion, and an operator can recover by deleting the files. The rest of the impact is hardening: audit and approval rows (v08) and uncapped container writes grow the host disk by comparable routes, so the extra harm from this root cause is the retention and the larger per-call size."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "The write site, the missing cleanup and the missing cap are all in source. The independent sbx5 run reproduced 30 uncapped approvals and 30 PNGs retained after deny and expiry. The only stubbed part is the screenshot, and PNG size on a real desktop was not measured."
   }
  },
  {
