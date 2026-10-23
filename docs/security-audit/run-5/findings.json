@@ -513,6 +513,85 @@
   }
  },
  {
+  "verdict": "rejected",
+  "fingerprint": "agentbox/sandbox.py:SandboxManager.snapshot:delete-race-orphaned-snapshot-image",
+  "title": "Agent pre-write snapshot still committing when the human deletes the sandbox does not leave an orphaned snapshot image or snapshot row on real Docker 29.9.1",
+  "description": "The candidate claimed that a DELETE during an agent's pre-destructive docker commit would let the commit finish and leave a snapshot row, an untracked image and a late 'snapshot' audit event for a deleted sandbox. The source race is real: delete_sandbox takes only _lifecycle, and call_tool, decide and import_file take only _snap_locks. SandboxManager.snapshot also checks status once and inserts the row without re-checking. The one fact the hunter could not establish was how a real dockerd handles a container remove during an in-flight commit. The parent-live run on a real Docker engine 29.9.1 answered it: across five delete delays (0.5, 1.5, 5.0, 7.0 and 8.5 s into a commit of about 600 MiB that ran about 9.5-10.5 s) the commit always failed with HTTP 404 'failed to apply diff: NotFound: snapshot <container id>'. SandboxManager.snapshot therefore raised before its INSERT, and _snapshot raised before its audit append. In every run DELETE returned OK in 1.1-1.7 s and the sandbox status was 'deleted'. No snapshot row existed, no image carried the agentbox.sandbox label, no agentbox-snap:<sid>-* tag was present (also after a second DELETE), and the audit log held no 'snapshot' event after 'sandbox_delete', only a system 'tool_error'. The agent got a 503 'snapshot or record failed, not executed' and the tool did not run. The hunter's fake-Docker schedule assumed the commit completes after the remove, and the real daemon contradicts that. A residual orphan would need the remove to land after the commit's layer apply finished but before the INSERT, or in the last roughly 1-2 s of the commit that the five delays did not probe. That is a sub-second window against a remove that itself takes about 1 s. Even then the impact is one leftover image on the host, with the sandbox already deleted by the human and no confidentiality, integrity or approval-gate effect. This is at most a hardening note: re-check status after the commit and remove the image if the sandbox is deleted, or take _lifecycle (or a per-sandbox snapshot lock) in delete_sandbox.",
+  "claimed_root_cause": "Snapshot creation is check-then-act on the sandbox status (sandbox.py:351 _container check, :355 commit, :359-362 unconditional INSERT) and is not serialised with delete_sandbox (service.py:538-543, _lifecycle only). SandboxManager.delete (sandbox.py:320-332) removes only the snapshot images that exist when list_snapshots runs, so a commit completing later would be orphaned. Real Docker 29.9.1 refutes the premise: the in-flight commit of a force-removed container fails with 404 and never completes.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 273,
+    "scope": "POST /sandboxes/{sid}/tools/{tool} (agent token)",
+    "description": "Agent calls write_file on an existing path (or another SNAPSHOT_TOOLS tool); runs on tool_pool via box.call_tool (route at api.py:273-278)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 296,
+    "scope": "AgentBox.call_tool",
+    "description": "Takes the per-sandbox _snap_locks lock (not _lifecycle) and enters _call_tool."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 367,
+    "scope": "AgentBox._call_tool",
+    "description": "Allow path with a snapshot needed calls _snapshot before the tool (decide at service.py:467 and import_file at :555 reach the same call). A failure here becomes ServiceError 503 at :370 and the tool is not run."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 351,
+    "scope": "SandboxManager.snapshot",
+    "description": "_container checks status != deleted once and returns the container handle."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 355,
+    "scope": "SandboxManager.snapshot",
+    "description": "Multi-second docker commit with pause=True. If DELETE runs here (delete at sandbox.py:323 removes the container with force, :326 sets deleted, :328-332 removes listed images), real dockerd fails this commit with 404 'failed to apply diff: NotFound: snapshot' and the call raises."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 359,
+    "scope": "SandboxManager.snapshot",
+    "description": "Claimed sink: the snapshot INSERT after the commit with no status re-check. Not reached when the container was removed mid-commit on Docker 29.9.1, so no row, image or later 'snapshot' audit record (service.py:269) is created."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agents/parent-live/artifacts/delete_commit.json",
+    "line": 1,
+    "description": "Real Docker 29.9.1, delays 0.5 s and 1.5 s: commit failed with 404 'failed to apply diff: NotFound: snapshot'; status deleted; snapshot_rows_after, images_after and images_by_name all empty; audit ends with human sandbox_delete then system tool_error."
+   },
+   {
+    "file": "agents/parent-live/artifacts/delete_commit_late.json",
+    "line": 1,
+    "description": "Real Docker 29.9.1, delays 5.0, 7.0 and 8.5 s (commit took 9.5-10.4 s): the same 404 failure and no orphan row or image in all three runs, including a delete landing within about 1.5 s of the commit's end."
+   },
+   {
+    "file": "agents/parent-live/parent_live_delete_commit.py",
+    "line": 1,
+    "description": "Harness uses the real engine and in-process audited code, writes 600 MiB into the writable layer so the commit takes seconds, and checks the snapshots table, label-filtered images, agentbox-snap:<sid>-* tags and the audit trail, then deletes a second time to catch orphans (images_after_second_delete is empty)."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 359,
+    "description": "The INSERT is unguarded in source (hunter's source observation is accurate), but it is only reached if c.commit (sandbox.py:355) returns successfully."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 367,
+    "description": "The snapshot exception is converted to ServiceError 503 at service.py:370, and the audit append at service.py:269 is skipped because the exception propagates first."
+   }
+  ],
+  "reason": "The decisive missing fact was real dockerd behaviour for a container force-removed during an in-flight commit. Five real-engine runs show the commit fails with 404 and the snapshot INSERT and 'snapshot' audit record never happen, so there is no orphaned row or image and no snapshot audit event after sandbox_delete. The remaining window (remove landing after the commit's apply but before the Python INSERT, or in the last 1-2 s of the commit) is sub-second, unobserved and of negligible impact, so it is recorded as hardening, not a candidate. The hunter's fake-Docker harness modelled a commit that completes after the remove, which the real daemon contradicts."
+ },
+ {
   "verdict": "confirmed",
   "fingerprint": "agentbox/service.py:_snapshot:gui-burst-opened-under-takeover-lease",
   "title": "GUI burst opened during a human takeover lets the control plane kill the human's processes and charge human edits to the agent",

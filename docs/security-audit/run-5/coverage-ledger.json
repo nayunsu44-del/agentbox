@@ -654,6 +654,9 @@
    "agentbox/sandbox_desktop.py",
    "agentbox/service.py",
    "agentbox/web.py",
+   "agents/parent-live/artifacts/delete_commit.json",
+   "agents/parent-live/artifacts/delete_commit_late.json",
+   "agents/parent-live/parent_live_delete_commit.py",
    "tests/test_m2_unit.py"
   ],
   "local_checks": [
@@ -715,6 +718,22 @@
     "method": "source",
     "result": "restore checks deleted explicitly (sandbox.py:389) and re-checks with a conditional UPDATE (:401-406). snapshot, pause, resume, workspace_manifest go through _container (sandbox.py:225-228, deleted -> SandboxError); exec/list_dir/read/write/delete/upload/is_dir/outbox and desktop tools go through _require_running/_desktop -> _container (sandbox.py:343-347, sandbox_desktop.py:64-67). delete has no guard, which keeps it idempotent. The guards are check-then-act: a status check passed before a concurrent delete does not stop the in-flight docker call, so the commit race in check 1 is the remaining gap.",
     "artifact": null
+   },
+   {
+    "agent_id": "v-lifecycle",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/sandbox.py",
+     "agentbox/service.py",
+     "agents/parent-live/artifacts/delete_commit.json",
+     "agents/parent-live/artifacts/delete_commit_late.json",
+     "agents/parent-live/parent_live_delete_commit.py"
+    ],
+    "note": "phase3 decision rejected",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision rejected"
    }
   ],
   "result_fingerprints": [
@@ -733,7 +752,9 @@
    "pause_sandbox (service.py:506-511) does not serialise with an agent docker commit (pause=True). Depending on dockerd, the human pause may fail with an unmapped docker APIError (HTTP 500), or the commit's deferred unpause may resume a container that the DB records as paused. Suggest taking _snap_locks in pause/resume, or verifying the container state after pause.",
    "_life_locks (service.py:90, created at :502 before any existence check), _snap_locks (:296) and _busy (:290) keep one entry per sid string forever. Keys come only from human-authenticated lifecycle routes or from callers authenticated to the sid, so growth is human-driven only. Suggest pruning entries on delete and validating that the sid exists before setdefault.",
    "SandboxManager.exec/upload/_write_chunks pass docker NotFound/APIError (for example, an exec on a container that restore or delete just removed) through as non-SandboxError exceptions. The caller gets HTTP 500 and no tool_error audit row. Suggest mapping docker.errors.APIError to SandboxError in the tool methods."
-  ]
+  ],
+  "x_decision": "rejected",
+  "x_decided_by": "v-lifecycle"
  },
  {
   "coverage_id": "POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2Fexec%20%28and%20any%20tool%20whose%20argument%20text%20reaches%20Policy.decide%20and%20preview_command%29%20with%20a%20long%20or%20adversarially%20shaped%20command%2C%20run%20on%20the%20tool_pool%20thread%20before%20any%20approval%20exists%2C%20plus%20the%20approval-card%20render%20of%20the%20same%20text::Agent%20to%20control-plane%20availability%3A%20pure-Python%20policy%20and%20preview%20parsing%20%28Policy.decide%2C%20_split_segments%2C%20shlex%20passes%2C%20_raw_hits%2C%20preview%20glob%2Fwalk%29%20of%20an%20agent%20command%20up%20to%20the%208%20MiB%20body%20cap%2C%20with%20no%20per-command%20length%20cap%2C%20holds%20the%20GIL%20shared%20with%20the%20event%20loop%20and%20human%20threads%20%28hunter%20measurement%3A%204.96%20s%20for%20a%20128%20KiB%20command%2C%204%20concurrent%20per%20sandbox%29.%20Invariant%3A%20no%20agent-supplied%20argument%20makes%20evaluation%20cost%20more%20than%20a%20small%20bounded%20amount%20of%20CPU%2C%20memory%20or%20container%20exec%20time%20before%20rejection%20or%20queueing%2C%20and%20the%20human%20API%20stays%20responsive.::agentbox%2Fpolicy.py%23decide%2F_words%2Fcommand_names%2F_raw_hits%2Fsimple_programs%2Fhas_bash_comment%20%2B%20agentbox%2Fpreview.py%23preview_command%2F_split_segments%20%2B%20agentbox%2Fsandbox.py%23_expand%2F_walk%20%28container-side%20glob%20and%20find%2C%20no%20timeout%29%20%2B%20agentbox%2Fservice.py%23call_tool%2F_call_tool%2F_logged_args%20%2B%20agentbox%2Fapi.py%23tool%20route::Resource%20exhaustion%3A%20algorithmic%20complexity%20and%20worker%20starvation",
