@@ -141,7 +141,7 @@ R.append("|---|---|---|---|---|")
 for r in conf:
     R.append(f"| {cid[r['fingerprint']]} | {SK[r['severity']['overall_severity']]} | {ko(r, 'title', r['title'])} | {c(main_path(r))} | {ko(r, 'fix')} |")
 R.append("")
-R.append(f"상세 근거, 재현, 원문은 {c('FINDINGS-DETAIL.md')}에 있다. 수정 확인: 새 회귀 테스트 {c('tests/test_m5_unit.py')}(9개)와 {c('tests/test_retention.py')} 2개가 수정 전 코드에서 실패하고 수정 뒤 통과한다. @@FULLTEST@@")
+R.append(f"상세 근거, 재현, 원문은 {c('FINDINGS-DETAIL.md')}에 있다. 수정 확인: 새 회귀 테스트 {c('tests/test_m5_unit.py')}(9개)와 {c('tests/test_retention.py')} 2개가 수정 전 코드에서 실패하고 수정 뒤 통과한다. 실제 Docker와 데스크톱 이미지를 쓰는 전체 테스트 268개가 로컬에서 통과했다(건너뛴 것 없음). 기존 F3 수용 테스트 하나는 새 인자 상한(413)에 맞게 고쳤다. 리뷰 중에 목록 값으로 상한을 피하는 틈을 찾아 같이 막았다.")
 R.append("")
 R.append("## 4. 검증 필요")
 R.append("")
