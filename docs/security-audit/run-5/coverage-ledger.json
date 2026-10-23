@@ -190,16 +190,76 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "blocked",
   "agent_id": "h-xres",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/gui_bursts.py",
+   "agentbox/gui_state.py",
+   "agentbox/sandbox_desktop.py",
+   "images/desktop/Dockerfile",
+   "images/desktop/agentbox-desktop-start"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-xres",
+    "reviewed_paths": [
+     "agentbox/sandbox_desktop.py",
+     "agentbox/gui_state.py"
+    ],
+    "invariant": "Prior run-4 record agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process: window pids used to spare uid-1001 processes must not come from client-declared _NET_WM_PID.",
+    "method": "source",
+    "result": "Root cause no longer present in source. desktop_processes (sandbox_desktop.py:77-90) no longer calls xdotool getwindowpid; it passes visible window ids to _WINDOW_OWNERS (sandbox_desktop.py:42-59), which asks the X server via XResQueryClientIds with mask 2 (XRES_CLIENT_ID_PID_MASK) and prints XResGetClientPid. That pid is server-side connection identity, not a property a client writes on its window, so a client cannot name another process's pid. gui_strays/_new_processes (gui_state.py:53-79) still require the candidate to be in a burst-start session (base_sids) and to own a window itself or have a new (non-baseline) windowed ancestor. The prior record's exact claim is settled as fixed by source; live confirmation is listed as unresolved.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-xres",
+    "reviewed_paths": [
+     "agentbox/sandbox_desktop.py",
+     "images/desktop/agentbox-desktop-start",
+     "images/desktop/Dockerfile"
+    ],
+    "invariant": "The owner-query helper runs with an environment and interpreter the agent cannot influence.",
+    "method": "source",
+    "result": "The helper is exec'd by the control plane as user desktop with environment exactly DESKTOP_ENV (DISPLAY, XAUTHORITY, HOME; sandbox_desktop.py:35, 71-72), so no inherited LD_PRELOAD/PYTHONPATH from the agent. /usr/bin/python3 is invoked by absolute path with -I (ignores PYTHON* env, user site, script dir). Libraries are loaded by soname (libX11.so.6, libXRes.so.1) through the system loader; with no LD_LIBRARY_PATH in the env, resolution uses ld.so.cache/system paths that uid 1000/1001 cannot write (image installs them as root). The desktop home is reset from a root-owned copy on every start (agentbox-desktop-start:13-16). No agent-controllable lookup found in source.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-xres",
+    "reviewed_paths": [
+     "agentbox/sandbox_desktop.py",
+     "agentbox/gui_bursts.py"
+    ],
+    "invariant": "Any failure of the owner query fails toward stopping more processes; ps failure fails closed.",
+    "method": "source",
+    "result": "ps nonzero exit raises SandboxError (sandbox_desktop.py:81-83): open() then records gui_burst_open_failed and returns False (gui_bursts.py:79-82); _stop_strays returns the error and close_failed is logged (gui_bursts.py:92-97, 142-143). The owner pipeline's exit status is that of xargs; a nonzero exit or a timeout (_x raises on 124/137, sandbox_desktop.py:73-74) yields an empty window set or an error, both of which reduce kept processes rather than increase them. Only decimal tokens are accepted (sandbox_desktop.py:89). Xvfb is started with -nolisten tcp (agentbox-desktop-start:30), so window owners connect over the local unix socket in the container pid namespace.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-xres",
+    "reviewed_paths": [
+     "agentbox/gui_bursts.py",
+     "agentbox/gui_state.py"
+    ],
+    "invariant": "Kept pids are not absorbed into the next baseline and are bound to the container they were observed in.",
+    "method": "source",
+    "result": "_stop_strays stores _kept[sid] = (burst container_id, kept pids) or clears it (gui_bursts.py:99-103); open() subtracts kept pids from the new baseline only when the stored container id equals the current one (gui_bursts.py:83-84), so a kept process is re-judged at every burst close. _finish refuses to compare when the container changed (gui_bursts.py:132-136). No path found that promotes a process started during a burst into baseline other than surviving a burst while not windowed, which the stray kill prevents.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
-  "unresolved": [],
+  "unresolved": [
+   "Runtime confirmation in the real agentbox-desktop:0.1 image that the _WINDOW_OWNERS script loads libX11.so.6/libXRes.so.1 from root-owned system paths, that Xvfb supports X-Resource 1.2 client-id queries, and that the returned pids match container-namespace ps pids for Xfce windows (parent-live: inside a disposable desktop sandbox run the same sh -c pipeline as user desktop with DESKTOP_ENV and compare its output to ps -eo pid,args for xfwm4/xfce4-panel/thunar).",
+   "Runtime confirmation that a uid-1001 process started during a burst and lacking a mapped window is listed in gui_processes_stopped at burst close (parent-live burst open/close with a background sleep launched from a GUI-launched script)."
+  ],
   "x_hunter": "h-xres",
   "x_prior_unit": null,
   "x_prior_fingerprints": [
    "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process"
+  ],
+  "x_hardening": [
+   "By design, any process started during a burst that is in a burst-start session and itself maps a visible X window (or descends from a new windowed ancestor) is kept, not stopped; the guarantee is therefore 'GUI apps survive but are logged as gui_processes_kept and re-judged each burst', not 'everything started during a burst stops'. Consider surfacing gui_processes_kept prominently in the approvals/audit UI and optionally stopping kept processes on human request or after N consecutive kept bursts.",
+   "The ancestor rule in _new_processes (gui_state.py:76-77) spares any descendant of a new windowed process; consider limiting the spare to the window owner itself plus descendants in the same process group, to narrow what a single long-lived window can shelter.",
+   "Consider making desktop_processes treat a nonzero owner-query exit as an explicit logged event (e.g. gui_window_owners_failed) so a human can see when the kept/stray split was computed without window data."
   ]
  },
  {
