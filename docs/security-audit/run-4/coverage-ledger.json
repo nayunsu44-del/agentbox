@@ -1,0 +1,2106 @@
+[
+ {
+  "coverage_id": "GUI-burst%20writes%20outside%20%2Fworkspace%20by%20uid%201001%20%28%2Fhome%2Fdesktop%2C%20%2Ftmp%2C%20%2Fdev%2Fshm%2C%20%2Frun%2Fuser%2C%20XDG%20dirs%29%20that%20persist%20through%20snapshot%2C%20restore%20or%20restart::images%2Fdesktop%2Fagentbox-desktop-start%23%2Fhome%2Fdesktop%20reset%20at%20start%20%2B%20agentbox%2Fgui_state.py%23workspace%20manifest%20scope::images%2Fdesktop%20%2B%20agentbox%2Fsandbox.py%23restore%2Fstart%20%2B%20agentbox%2Fgui_bursts.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+  "canonical_refs": {
+   "surface": "GUI-burst writes outside /workspace by uid 1001 (/home/desktop, /tmp, /dev/shm, /run/user, XDG dirs) that persist through snapshot, restore or restart",
+   "boundary": "images/desktop/agentbox-desktop-start#/home/desktop reset at start + agentbox/gui_state.py#workspace manifest scope",
+   "subsystem": "images/desktop + agentbox/sandbox.py#restore/start + agentbox/gui_bursts.py",
+   "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+  },
+  "surface": "GUI-burst writes outside /workspace by uid 1001 (/home/desktop, /tmp, /dev/shm, /run/user, XDG dirs) that persist through snapshot, restore or restart",
+  "boundary": "images/desktop/agentbox-desktop-start#/home/desktop reset at start + agentbox/gui_state.py#workspace manifest scope",
+  "subsystem": "images/desktop + agentbox/sandbox.py#restore/start + agentbox/gui_bursts.py",
+  "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "starting_paths": [
+   "images/desktop/agentbox-desktop-start",
+   "images/desktop/Dockerfile",
+   "agentbox/sandbox.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/gui_state.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+    "reason": "Owned by the container hardening unit."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+    "reason": "Owned by the gui_lock lifecycle unit."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "GUI-burst%20writes%20outside%20%2Fworkspace%20%28uid%201001%20%2Fhome%2Fdesktop%3A%20.config%2Fautostart%2C%20xfce%20session%2C%20.bashrc%29%20that%20a%20later%20snapshot%20captures%20and%20that%20restore%20or%20restart%20re-executes::agentbox%2Fsandbox.py%23restore%20re-running%20images%2Fdesktop%2Fagentbox-desktop-start%20%28startxfce4%20as%20desktop%29%20%2B%20workspace_manifest%20scope%20%28%2Fworkspace%20only%29%20%2B%20gui_strays%20baseline%20after%20restore::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+  "x_prior_fingerprints": [
+   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore"
+  ],
+  "x_hunter": "h-container"
+ },
+ {
+  "coverage_id": "Host-disk%20and%20SQLite%20pressure%20caused%20by%20agent%20actions%20%28audit%20rows%2C%20approval%20rows%2C%20captures%20PNGs%2C%20docker%20commit%20snapshots%2C%20sources%20dirs%29%20and%20by%20human%20read%20paths%20%28GET%20%2Faudit%2C%20%2Fui%2Faudit%2C%20%2Fui%2Fverify%2C%20%2Faudit%2Fverify%2C%20cmd_verify%2C%20GET%20%2Fapprovals%29::Agent-grown%20data%20-%3E%20one%20process-wide%20audit%20lock%20and%20one%20SQLite%20file%20shared%20by%20four%20connections%20%28AuditLog%2C%20ApprovalStore%2C%20SandboxManager%2C%20DesktopControl%29.%20AuditLog.verify%28%29%20and%20list%28%29%20run%20fetchall%20of%20the%20whole%20table%20under%20the%20same%20lock%20that%20every%20append%20needs%20%28agentbox%2Faudit.py%3A196-215%2C%20152-187%29.%20_safe_log%20swallows%20AuditWriteError%20after%20execution%20%28agentbox%2Fservice.py%3A362-369%29%2C%20while%20_close_gui_burst%20has%20already%20popped%20the%20burst%20before%20logging%20gui_changes%20or%20gui_processes_stopped.%20ApprovalStore%20claim%2C%20finish%20and%20create%20raise%20raw%20sqlite3%20errors%20%28approvals.py%3A49-92%29%2C%20not%20AuditWriteError.::agentbox%2Faudit.py%23append%20%2B%20list%20%2B%20verify%3B%20agentbox%2Fservice.py%23_safe_log%20%2B%20_close_gui_burst%20%2B%20decide%20%2B%20expire_stale%3B%20agentbox%2Fapprovals.py%23create%2Fclaim%2Ffinish%3B%20agentbox%2Fapi.py%23list_audit%2Fverify%3B%20agentbox%2Fweb.py%23verify_frag%2Faudit_frag::Failure%20and%20recovery%20under%20resource%20exhaustion%3A%20read-side%20lock%20hold%20time%20and%20memory%20on%20the%20shared%20audit%20lock%3B%20fail-closed%20%28503%29%20versus%20fail-open%20%28silently%20dropped%20post-hoc%20records%2C%20approvals%20stuck%20in%20approved%29%20behaviour%20at%20disk-full%20or%20lock%20contention",
+  "canonical_refs": {
+   "surface": "Host-disk and SQLite pressure caused by agent actions (audit rows, approval rows, captures PNGs, docker commit snapshots, sources dirs) and by human read paths (GET /audit, /ui/audit, /ui/verify, /audit/verify, cmd_verify, GET /approvals)",
+   "boundary": "Agent-grown data -> one process-wide audit lock and one SQLite file shared by four connections (AuditLog, ApprovalStore, SandboxManager, DesktopControl). AuditLog.verify() and list() run fetchall of the whole table under the same lock that every append needs (agentbox/audit.py:196-215, 152-187). _safe_log swallows AuditWriteError after execution (agentbox/service.py:362-369), while _close_gui_burst has already popped the burst before logging gui_changes or gui_processes_stopped. ApprovalStore claim, finish and create raise raw sqlite3 errors (approvals.py:49-92), not AuditWriteError.",
+   "subsystem": "agentbox/audit.py#append + list + verify; agentbox/service.py#_safe_log + _close_gui_burst + decide + expire_stale; agentbox/approvals.py#create/claim/finish; agentbox/api.py#list_audit/verify; agentbox/web.py#verify_frag/audit_frag",
+   "attack_class": "Failure and recovery under resource exhaustion: read-side lock hold time and memory on the shared audit lock; fail-closed (503) versus fail-open (silently dropped post-hoc records, approvals stuck in approved) behaviour at disk-full or lock contention"
+  },
+  "surface": "Host-disk and SQLite pressure caused by agent actions (audit rows, approval rows, captures PNGs, docker commit snapshots, sources dirs) and by human read paths (GET /audit, /ui/audit, /ui/verify, /audit/verify, cmd_verify, GET /approvals)",
+  "boundary": "Agent-grown data -> one process-wide audit lock and one SQLite file shared by four connections (AuditLog, ApprovalStore, SandboxManager, DesktopControl). AuditLog.verify() and list() run fetchall of the whole table under the same lock that every append needs (agentbox/audit.py:196-215, 152-187). _safe_log swallows AuditWriteError after execution (agentbox/service.py:362-369), while _close_gui_burst has already popped the burst before logging gui_changes or gui_processes_stopped. ApprovalStore claim, finish and create raise raw sqlite3 errors (approvals.py:49-92), not AuditWriteError.",
+  "subsystem": "agentbox/audit.py#append + list + verify; agentbox/service.py#_safe_log + _close_gui_burst + decide + expire_stale; agentbox/approvals.py#create/claim/finish; agentbox/api.py#list_audit/verify; agentbox/web.py#verify_frag/audit_frag",
+  "attack_class": "Failure and recovery under resource exhaustion: read-side lock hold time and memory on the shared audit lock; fail-closed (503) versus fail-open (silently dropped post-hoc records, approvals stuck in approved) behaviour at disk-full or lock contention",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/approvals.py",
+   "agentbox/audit.py",
+   "agentbox/cli.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/service.py",
+   "agentbox/web.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Computational amplification attack classes",
+    "reason": "Superlinear parsing and decompression are not present; the amplification is row count and size, already owned by the audit-content and capture units."
+   }
+  ],
+  "prior_status": "prior_deferred",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "Host-disk%20and%20SQLite%20pressure%20caused%20by%20agent%20actions%20%28audit%20rows%2C%20approval%20rows%2C%20captures%20PNGs%2C%20docker%20commit%20snapshots%2C%20sources%20dirs%29%20and%20by%20human%20read%20paths%20%28GET%20%2Faudit%2C%20%2Fui%2Faudit%2C%20%2Fui%2Fverify%2C%20%2Faudit%2Fverify%2C%20cmd_verify%2C%20GET%20%2Fapprovals%29::Agent-grown%20data%20-%3E%20one%20process-wide%20audit%20lock%20and%20one%20SQLite%20file%20shared%20by%20four%20connections%20%28AuditLog%2C%20ApprovalStore%2C%20SandboxManager%2C%20DesktopControl%29.%20AuditLog.verify%28%29%20and%20list%28%29%20run%20fetchall%20of%20the%20whole%20table%20under%20the%20same%20lock%20that%20every%20append%20needs%20%28agentbox%2Faudit.py%3A196-215%2C%20152-187%29.%20_safe_log%20swallows%20AuditWriteError%20after%20execution%20%28agentbox%2Fservice.py%3A362-369%29%2C%20while%20_close_gui_burst%20has%20already%20popped%20the%20burst%20before%20logging%20gui_changes%20or%20gui_processes_stopped.%20ApprovalStore%20claim%2C%20finish%20and%20create%20raise%20raw%20sqlite3%20errors%20%28approvals.py%3A49-92%29%2C%20not%20AuditWriteError.::agentbox%2Faudit.py%23append%20%2B%20list%20%2B%20verify%3B%20agentbox%2Fservice.py%23_safe_log%20%2B%20_close_gui_burst%20%2B%20decide%20%2B%20expire_stale%3B%20agentbox%2Fapprovals.py%23create%2Fclaim%2Ffinish%3B%20agentbox%2Fapi.py%23list_audit%2Fverify%3B%20agentbox%2Fweb.py%23verify_frag%2Faudit_frag::Failure%20and%20recovery%20under%20resource%20exhaustion%3A%20read-side%20lock%20hold%20time%20and%20memory%20on%20the%20shared%20audit%20lock%3B%20fail-closed%20%28503%29%20versus%20fail-open%20%28silently%20dropped%20post-hoc%20records%2C%20approvals%20stuck%20in%20approved%29%20behaviour%20at%20disk-full%20or%20lock%20contention",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-audit"
+ },
+ {
+  "coverage_id": "Unauthenticated%20network%20requests%20handled%20before%20any%20principal%20check%3A%20JSON%20and%20multipart%20bodies%20on%20POST%20%2Fsandboxes%2C%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%2C%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%2C%20%2Fapprovals%2F%7Baid%7D%20and%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Ffiles%3B%20the%20POST%20%2Flogin%20form%3B%20GET%20%2Fstatic%2Fnovnc%2F%7Bpath%7D%3B%20GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%3Fticket%3D%3B%20GET%20%2Fhealthz::Network%20attacker%20with%20no%20token%20-%3E%20control-plane%20memory%2C%20the%20%2Ftmp%20multipart%20spool%2C%20the%20Docker%20daemon%20and%20the%20audit%20chain.%20FastAPI%20reads%20and%20parses%20the%20body%20before%20it%20resolves%20the%20principal%20and%20screen_human%20dependencies%20%28agentbox%2Fapi.py%3A206-224%2C%20models%20at%2044-60%29.%20The%20tool-args%20body%20cap%20that%20critic%20checks%20only%20guard%20authenticated%20agent%20args.%20extract_novnc%20runs%20docker%20create%2C%20get_archive%20into%20memory%20and%20extractall%20per%20request%20%28agentbox%2Fsandbox.py%3A774-798%2C%20api.py%3A431-437%29.%20Each%20failed%20POST%20%2Flogin%20appends%20a%20ui_login_failed%20audit%20row%20%28agentbox%2Fweb.py%3A117-123%29.%20deploy%2FCaddyfile%20has%20no%20request_body%20limit.::agentbox%2Fapi.py%23build%20route%20and%20dependency%20ordering%20%28principal%2C%20screen_principal%2C%20put_files%2C%20novnc%29%3B%20agentbox%2Fsandbox.py%23extract_novnc%3B%20agentbox%2Fweb.py%23login%3B%20deploy%2FCaddyfile::Pre-authentication%20work%20imbalance%20%28unbounded%20body%20buffering%20and%20temp-file%20spooling%20before%20auth%2C%20unauthenticated%20Docker-daemon%20work%2C%20unauthenticated%20audit-row%20growth%29",
+  "canonical_refs": {
+   "surface": "Unauthenticated network requests handled before any principal check: JSON and multipart bodies on POST /sandboxes, /sandboxes/{sid}/tools/{tool}, /sandboxes/{sid}/restore, /approvals/{aid} and POST /sandboxes/{sid}/files; the POST /login form; GET /static/novnc/{path}; GET /sandboxes/{sid}/desktop?ticket=; GET /healthz",
+   "boundary": "Network attacker with no token -> control-plane memory, the /tmp multipart spool, the Docker daemon and the audit chain. FastAPI reads and parses the body before it resolves the principal and screen_human dependencies (agentbox/api.py:206-224, models at 44-60). The tool-args body cap that critic checks only guard authenticated agent args. extract_novnc runs docker create, get_archive into memory and extractall per request (agentbox/sandbox.py:774-798, api.py:431-437). Each failed POST /login appends a ui_login_failed audit row (agentbox/web.py:117-123). deploy/Caddyfile has no request_body limit.",
+   "subsystem": "agentbox/api.py#build route and dependency ordering (principal, screen_principal, put_files, novnc); agentbox/sandbox.py#extract_novnc; agentbox/web.py#login; deploy/Caddyfile",
+   "attack_class": "Pre-authentication work imbalance (unbounded body buffering and temp-file spooling before auth, unauthenticated Docker-daemon work, unauthenticated audit-row growth)"
+  },
+  "surface": "Unauthenticated network requests handled before any principal check: JSON and multipart bodies on POST /sandboxes, /sandboxes/{sid}/tools/{tool}, /sandboxes/{sid}/restore, /approvals/{aid} and POST /sandboxes/{sid}/files; the POST /login form; GET /static/novnc/{path}; GET /sandboxes/{sid}/desktop?ticket=; GET /healthz",
+  "boundary": "Network attacker with no token -> control-plane memory, the /tmp multipart spool, the Docker daemon and the audit chain. FastAPI reads and parses the body before it resolves the principal and screen_human dependencies (agentbox/api.py:206-224, models at 44-60). The tool-args body cap that critic checks only guard authenticated agent args. extract_novnc runs docker create, get_archive into memory and extractall per request (agentbox/sandbox.py:774-798, api.py:431-437). Each failed POST /login appends a ui_login_failed audit row (agentbox/web.py:117-123). deploy/Caddyfile has no request_body limit.",
+  "subsystem": "agentbox/api.py#build route and dependency ordering (principal, screen_principal, put_files, novnc); agentbox/sandbox.py#extract_novnc; agentbox/web.py#login; deploy/Caddyfile",
+  "attack_class": "Pre-authentication work imbalance (unbounded body buffering and temp-file spooling before auth, unauthenticated Docker-daemon work, unauthenticated audit-row growth)",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/audit.py",
+   "agentbox/desktop_ws.py",
+   "agentbox/sandbox.py",
+   "agentbox/web.py",
+   "deploy/Caddyfile",
+   "deploy/Dockerfile"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Federated-identity attack classes",
+    "reason": "No OAuth, SAML or OIDC flow exists; auth is one shared token, tickets and cookie sessions."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#MFA, passkey, and account-transition attack classes",
+    "reason": "No accounts or MFA; login is a single shared secret."
+   }
+  ],
+  "prior_status": "prior_deferred",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "Unauthenticated%20network%20requests%20handled%20before%20any%20principal%20check%3A%20JSON%20and%20multipart%20bodies%20on%20POST%20%2Fsandboxes%2C%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%2C%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%2C%20%2Fapprovals%2F%7Baid%7D%20and%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Ffiles%3B%20the%20POST%20%2Flogin%20form%3B%20GET%20%2Fstatic%2Fnovnc%2F%7Bpath%7D%3B%20GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%3Fticket%3D%3B%20GET%20%2Fhealthz::Network%20attacker%20with%20no%20token%20-%3E%20control-plane%20memory%2C%20the%20%2Ftmp%20multipart%20spool%2C%20the%20Docker%20daemon%20and%20the%20audit%20chain.%20FastAPI%20reads%20and%20parses%20the%20body%20before%20it%20resolves%20the%20principal%20and%20screen_human%20dependencies%20%28agentbox%2Fapi.py%3A206-224%2C%20models%20at%2044-60%29.%20The%20tool-args%20body%20cap%20that%20critic%20checks%20only%20guard%20authenticated%20agent%20args.%20extract_novnc%20runs%20docker%20create%2C%20get_archive%20into%20memory%20and%20extractall%20per%20request%20%28agentbox%2Fsandbox.py%3A774-798%2C%20api.py%3A431-437%29.%20Each%20failed%20POST%20%2Flogin%20appends%20a%20ui_login_failed%20audit%20row%20%28agentbox%2Fweb.py%3A117-123%29.%20deploy%2FCaddyfile%20has%20no%20request_body%20limit.::agentbox%2Fapi.py%23build%20route%20and%20dependency%20ordering%20%28principal%2C%20screen_principal%2C%20put_files%2C%20novnc%29%3B%20agentbox%2Fsandbox.py%23extract_novnc%3B%20agentbox%2Fweb.py%23login%3B%20deploy%2FCaddyfile::Pre-authentication%20work%20imbalance%20%28unbounded%20body%20buffering%20and%20temp-file%20spooling%20before%20auth%2C%20unauthenticated%20Docker-daemon%20work%2C%20unauthenticated%20audit-row%20growth%29",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-preauth"
+ },
+ {
+  "coverage_id": "agent-controlled%20audit%20content%20%28tool%20args%2C%20file%20names%2C%20process%20args%29%20and%20timeline%20readers%20%28GET%20%2Faudit%2C%20%2Fui%2Faudit%2C%20agentbox%20audit%29::agentbox%2Faudit.py%23hash%20chain%20%2B%20append-only%20triggers%20%2B%20list%20ordering%2Flimit::agentbox%2Faudit.py%20%2B%20agentbox%2Fweb.py%23audit%20%2B%20agentbox%2Fcli.py%23cmd_audit::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "agent-controlled audit content (tool args, file names, process args) and timeline readers (GET /audit, /ui/audit, agentbox audit)",
+   "boundary": "agentbox/audit.py#hash chain + append-only triggers + list ordering/limit",
+   "subsystem": "agentbox/audit.py + agentbox/web.py#audit + agentbox/cli.py#cmd_audit",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "agent-controlled audit content (tool args, file names, process args) and timeline readers (GET /audit, /ui/audit, agentbox audit)",
+  "boundary": "agentbox/audit.py#hash chain + append-only triggers + list ordering/limit",
+  "subsystem": "agentbox/audit.py + agentbox/web.py#audit + agentbox/cli.py#cmd_audit",
+  "attack_class": "ATTACK-CLASSES.md#Business logic",
+  "starting_paths": [
+   "agentbox/audit.py",
+   "agentbox/web.py",
+   "agentbox/cli.py",
+   "agentbox/api.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agent-controlled%20audit%20content%20%28tool%20args%2C%20file%20names%2C%20process%20args%29::agentbox%2Faudit.py%23hash%20chain%20%2B%20append-only%20triggers%20%2B%20event%20provenance::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Business%20logic",
+  "x_prior_fingerprints": [
+   "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines"
+  ],
+  "x_hunter": "h-audit"
+ },
+ {
+  "coverage_id": "agentbox%2Fagent.py%23LLM%20loop%20%2B%20agentbox%2Fmcp_server.py%20tools::agentbox%2Fagent.py%23prompt-injection%20to%20tool%20action%20and%20operator%20terminal%20output%20%28approval%20is%20the%20only%20control%29::agentbox%2Fagent.py%20%2B%20agentbox%2Fmcp_server.py%20%2B%20agentbox%2Fcli.py%23cmd_agent::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
+  "canonical_refs": {
+   "surface": "agentbox/agent.py#LLM loop + agentbox/mcp_server.py tools",
+   "boundary": "agentbox/agent.py#prompt-injection to tool action and operator terminal output (approval is the only control)",
+   "subsystem": "agentbox/agent.py + agentbox/mcp_server.py + agentbox/cli.py#cmd_agent",
+   "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content"
+  },
+  "surface": "agentbox/agent.py#LLM loop + agentbox/mcp_server.py tools",
+  "boundary": "agentbox/agent.py#prompt-injection to tool action and operator terminal output (approval is the only control)",
+  "subsystem": "agentbox/agent.py + agentbox/mcp_server.py + agentbox/cli.py#cmd_agent",
+  "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+  "starting_paths": [
+   "agentbox/agent.py",
+   "agentbox/mcp_server.py",
+   "agentbox/cli.py",
+   "agentbox/display.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+   "AI-AND-LLM.md#MCP server and tool identity confusion",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fagent.py%23LLM%20loop%20%2B%20agentbox%2Fmcp_server.py%20tools::agentbox%2Fagent.py%23prompt-injection%20to%20tool%20action%20%28approval%20is%20only%20control%29::agentbox%2Fagent.py::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
+  "x_prior_fingerprints": [
+   "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe"
+  ],
+  "x_hunter": "h-wild"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%20%2B%20takeover%2Fhandback%20%2B%20state%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fdesktop.py%23ticket%20redeem%20%2B%20session%20scope%20%2B%20session%20revocation%20on%20human-token%20rotation%20%2B%20lease::agentbox%2Fdesktop.py%20%2B%20agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#GET /sandboxes/{sid}/desktop + takeover/handback + state + /login + /logout",
+   "boundary": "agentbox/desktop.py#ticket redeem + session scope + session revocation on human-token rotation + lease",
+   "subsystem": "agentbox/desktop.py + agentbox/api.py + agentbox/web.py",
+   "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation"
+  },
+  "surface": "agentbox/api.py#GET /sandboxes/{sid}/desktop + takeover/handback + state + /login + /logout",
+  "boundary": "agentbox/desktop.py#ticket redeem + session scope + session revocation on human-token rotation + lease",
+  "subsystem": "agentbox/desktop.py + agentbox/api.py + agentbox/web.py",
+  "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+  "starting_paths": [
+   "agentbox/desktop.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/config.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#Session fixation and invalidation",
+   "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Account switch, logout, and device restore leakage",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%20%2B%20takeover%2Fhandback%20%2B%20state::agentbox%2Fdesktop.py%23ticket%20redeem%20%2B%20session%20scope%20%2B%20lease::agentbox%2Fdesktop.py::WEB-PROTOCOL-AND-AUTH.md%23Session%20fixation%20and%20invalidation",
+  "x_prior_fingerprints": [
+   "agentbox/desktop.py:ui_sessions:human-token-rotation-does-not-revoke-browser-sessions"
+  ],
+  "x_hunter": "h-session"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fapprovals%2F%7Baid%7D%20%2B%20agentbox%2Fweb.py%23POST%20%2Fui%2Fapprovals%2F%7Baid%7D%2F%7Bdecision%7D%20%2B%20agentbox%2Fcli.py%23cmd_approve::agentbox%2Fservice.py%23decide%20executes%20the%20agent%27s%20original%20args%20after%20human%20approval::agentbox%2Fservice.py%20%2B%20agentbox%2Fapprovals.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /approvals/{aid} + agentbox/web.py#POST /ui/approvals/{aid}/{decision} + agentbox/cli.py#cmd_approve",
+   "boundary": "agentbox/service.py#decide executes the agent's original args after human approval",
+   "subsystem": "agentbox/service.py + agentbox/approvals.py",
+   "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding"
+  },
+  "surface": "agentbox/api.py#POST /approvals/{aid} + agentbox/web.py#POST /ui/approvals/{aid}/{decision} + agentbox/cli.py#cmd_approve",
+  "boundary": "agentbox/service.py#decide executes the agent's original args after human approval",
+  "subsystem": "agentbox/service.py + agentbox/approvals.py",
+  "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/approvals.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/cli.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Action-confirmation and approval binding",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23POST%20%2Fapprovals%2F%7Baid%7D%20%2B%20agentbox%2Fcli.py%23cmd_approve::agentbox%2Fservice.py%23decide%20executes%20the%20agent%27s%20original%20args%20after%20human%20approval::agentbox%2Fservice.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-policy"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%20source_dir%20%2B%20agentbox%2Fweb.py%23POST%20%2Fui%2Fsandboxes::agentbox%2Fsandbox.py%23create%20source_dir%20overlap%20check%20%28filesystem%20identity%29%20%2B%20NonRecursive%20bind::agentbox%2Fsandbox.py%23create::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes source_dir + agentbox/web.py#POST /ui/sandboxes",
+   "boundary": "agentbox/sandbox.py#create source_dir overlap check (filesystem identity) + NonRecursive bind",
+   "subsystem": "agentbox/sandbox.py#create",
+   "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes source_dir + agentbox/web.py#POST /ui/sandboxes",
+  "boundary": "agentbox/sandbox.py#create source_dir overlap check (filesystem identity) + NonRecursive bind",
+  "subsystem": "agentbox/sandbox.py#create",
+  "attack_class": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/config.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Feature abuse and data leakage",
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Secret exposure across workload boundaries",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%20source_dir%20%2B%20agentbox%2Fweb.py%23POST%20%2Fui%2Fsandboxes::agentbox%2Fsandbox.py%23create%20source_dir%20overlap%20check::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Feature%20abuse%20and%20data%20leakage",
+  "x_prior_fingerprints": [
+   "agentbox/sandbox.py:create:source_dir-overlap-guard-case-insensitive-bypass"
+  ],
+  "x_hunter": "h-files"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Ftakeover%20%2B%20handback%20%2B%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%20%2B%20DELETE%20%2Fsandboxes%2F%7Bsid%7D%20%28end_desktop%29::agentbox%2Fservice.py%23desktop.gui_lock%20held%20across%20timed%20_x%20GUI%20execs%20%2B%20takeover%2Fhandback%2030%20s%20bound%20%2B%20takeover-pending%20gate::agentbox%2Fservice.py%20%2B%20agentbox%2Fsandbox_desktop.py%20%2B%20agentbox%2Fdesktop.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/desktop/takeover + handback + POST /sandboxes/{sid}/restore + DELETE /sandboxes/{sid} (end_desktop)",
+   "boundary": "agentbox/service.py#desktop.gui_lock held across timed _x GUI execs + takeover/handback 30 s bound + takeover-pending gate",
+   "subsystem": "agentbox/service.py + agentbox/sandbox_desktop.py + agentbox/desktop.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/desktop/takeover + handback + POST /sandboxes/{sid}/restore + DELETE /sandboxes/{sid} (end_desktop)",
+  "boundary": "agentbox/service.py#desktop.gui_lock held across timed _x GUI execs + takeover/handback 30 s bound + takeover-pending gate",
+  "subsystem": "agentbox/service.py + agentbox/sandbox_desktop.py + agentbox/desktop.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/sandbox_desktop.py",
+   "agentbox/desktop.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/api.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker/RPC; HTTP/WS covered by web and client-side companions."
+   }
+  ],
+  "prior_status": "prior_needs_validation",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Ftakeover%20%2B%20handback%20%2B%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%20%2B%20DELETE%20%2Fsandboxes%2F%7Bsid%7D%20%28end_desktop%29::agentbox%2Fservice.py%23desktop.gui_lock%20held%20across%20untimed%20_x%20GUI%20execs%20%2B%20desktop%20lifecycle%20serialization%20%28takeover%2Fhandback%2Fend_desktop%2Frestore%29::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+  "x_prior_fingerprints": [
+   "agentbox/service.py:_run_tool:gui_lock-held-across-untimed-x-exec-blocks-takeover"
+  ],
+  "x_hunter": "h-gui-race"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Fpause%7Cresume%7Csnapshots%7Crestore%20%2B%20DELETE%20%2Fsandboxes%2F%7Bsid%7D%20%2B%20agentbox%2Fweb.py%23POST%20%2Fui%2Fsandboxes%2F%7Bsid%7D%2Fsnapshot%7Crestore%7Cdelete::agentbox%2Fservice.py%23AgentBox.pause_sandbox%2Fresume_sandbox%2Fsnapshot_sandbox%2Frestore_sandbox%2Fdelete_sandbox%20ordering%20%28audit%2C%20end_desktop%2C%20bursts%2C%20captures%2C%20timers%29%20%2B%20api%2Fweb%20guard::agentbox%2Fservice.py%23lifecycle%20methods%20%28refactor%20PR%201%29::DATA-ISOLATION-AND-LIFECYCLE.md%23Stale%20authorization%20and%20derived%20copy%20use",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/pause|resume|snapshots|restore + DELETE /sandboxes/{sid} + agentbox/web.py#POST /ui/sandboxes/{sid}/snapshot|restore|delete",
+   "boundary": "agentbox/service.py#AgentBox.pause_sandbox/resume_sandbox/snapshot_sandbox/restore_sandbox/delete_sandbox ordering (audit, end_desktop, bursts, captures, timers) + api/web guard",
+   "subsystem": "agentbox/service.py#lifecycle methods (refactor PR 1)",
+   "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/pause|resume|snapshots|restore + DELETE /sandboxes/{sid} + agentbox/web.py#POST /ui/sandboxes/{sid}/snapshot|restore|delete",
+  "boundary": "agentbox/service.py#AgentBox.pause_sandbox/resume_sandbox/snapshot_sandbox/restore_sandbox/delete_sandbox ordering (audit, end_desktop, bursts, captures, timers) + api/web guard",
+  "subsystem": "agentbox/service.py#lifecycle methods (refactor PR 1)",
+  "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Missing tenant or owner enforcement",
+    "reason": "route-level principal checks are unit agentbox/api.py#all JSON and browser routes (Access control)"
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Export and backup scope expansion",
+    "reason": "snapshots are docker images on the same host; no export path in source"
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-lifecycle"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%2Cscreenshot%7D::agentbox%2Fgui_bursts.py%23GUI%20burst%20snapshot%20%2B%20fail-closed%20baseline%20%2B%20gui_changes%20%2B%20stray%20kill%20%28N-1%20partial%20mitigation%29::agentbox%2Fgui_bursts.py%20%2B%20agentbox%2Fservice.py%23_run_tool::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{click,type,key,screenshot}",
+   "boundary": "agentbox/gui_bursts.py#GUI burst snapshot + fail-closed baseline + gui_changes + stray kill (N-1 partial mitigation)",
+   "subsystem": "agentbox/gui_bursts.py + agentbox/service.py#_run_tool",
+   "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{click,type,key,screenshot}",
+  "boundary": "agentbox/gui_bursts.py#GUI burst snapshot + fail-closed baseline + gui_changes + stray kill (N-1 partial mitigation)",
+  "subsystem": "agentbox/gui_bursts.py + agentbox/service.py#_run_tool",
+  "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "starting_paths": [
+   "agentbox/gui_bursts.py",
+   "agentbox/service.py",
+   "agentbox/sandbox.py",
+   "agentbox/sandbox_desktop.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Excessive agency and confused-deputy authority",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_needs_validation",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%2Cscreenshot%7D::agentbox%2Fservice.py%23GUI%20burst%20snapshot%20%2B%20gui_changes%20%2B%20stray%20kill%20%28N-1%20partial%20mitigation%29::agentbox%2Fservice.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+  "x_prior_fingerprints": [
+   "agentbox/service.py:_open_gui_burst:silent-fail-open-without-audit"
+  ],
+  "x_hunter": "h-gui-burst"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%20%2B%20every%20expire_stale%20caller::agentbox%2Fapi.py%23tool_pool%20%2B%20agentbox%2Fservice.py%23call_tool%20tool_concurrency%20%2B%20agentbox%2Fgui_bursts.py%23burst%20close%20pool::agentbox%2Fservice.py%20%2B%20agentbox%2Fgui_bursts.py%20%2B%20agentbox%2Fapi.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{tool} + every expire_stale caller",
+   "boundary": "agentbox/api.py#tool_pool + agentbox/service.py#call_tool tool_concurrency + agentbox/gui_bursts.py#burst close pool",
+   "subsystem": "agentbox/service.py + agentbox/gui_bursts.py + agentbox/api.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{tool} + every expire_stale caller",
+  "boundary": "agentbox/api.py#tool_pool + agentbox/service.py#call_tool tool_concurrency + agentbox/gui_bursts.py#burst close pool",
+  "subsystem": "agentbox/service.py + agentbox/gui_bursts.py + agentbox/api.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/api.py",
+   "agentbox/web.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Detached work after cancellation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D::agentbox%2Fapi.py%23tool_pool%20%2B%20agentbox%2Fservice.py%23call_tool%20tool_concurrency::agentbox%2Fapi.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+  "x_prior_fingerprints": [
+   "agentbox/service.py:close_idle_gui_bursts:cross-sandbox-untimed-exec-outside-tool-concurrency"
+  ],
+  "x_hunter": "h-pool"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%20-%3E%20REQUIRE_APPROVAL%20on%20desktop%20templates::agentbox%2Fservice.py%23_call_tool%20approval%20creation%3A%20per-sandbox%20pending%20cap%20%2B%20capture%20PNG%20lifecycle%20%28drop_captures%20on%20decide%2Fexpire%2Fdelete%29::agentbox%2Fservice.py%20%2B%20agentbox%2Fapprovals.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{tool} -> REQUIRE_APPROVAL on desktop templates",
+   "boundary": "agentbox/service.py#_call_tool approval creation: per-sandbox pending cap + capture PNG lifecycle (drop_captures on decide/expire/delete)",
+   "subsystem": "agentbox/service.py + agentbox/approvals.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{tool} -> REQUIRE_APPROVAL on desktop templates",
+  "boundary": "agentbox/service.py#_call_tool approval creation: per-sandbox pending cap + capture PNG lifecycle (drop_captures on decide/expire/delete)",
+  "subsystem": "agentbox/service.py + agentbox/approvals.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/approvals.py",
+   "agentbox/api.py",
+   "agentbox/web.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun",
+   "AI-AND-LLM.md#Unbounded delegated action loops",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+    "reason": "Owned by the tool_pool unit."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+    "reason": "Audit-row growth already a candidate."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agent%20tool%20calls%20that%20require%20approval%20%28POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%20-%3E%20REQUIRE_APPROVAL%29%20on%20desktop%20templates::agentbox%2Fservice.py%23_call_tool%20approval%20creation%3A%20no%20per-sandbox%20pending-approval%20cap%2C%20plus%20a%20per-approval%20PNG%20written%20to%20settings.home%2Fcaptures%20that%20is%20never%20removed%20on%20decision%2C%20expiry%20or%20sandbox%20delete::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
+  "x_prior_fingerprints": [
+   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed"
+  ],
+  "x_hunter": "h-queue"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bwrite_file%2Cdelete_file%2CGUI%7D%20%2B%20snapshot%20routes::agentbox%2Fservice.py%23snapshot%20quota%20%2B%20_snap_locks%20%2B%20GUI%20burst%20snapshots::agentbox%2Fservice.py%20%2B%20agentbox%2Fsandbox.py%23snapshot::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{write_file,delete_file,GUI} + snapshot routes",
+   "boundary": "agentbox/service.py#snapshot quota + _snap_locks + GUI burst snapshots",
+   "subsystem": "agentbox/service.py + agentbox/sandbox.py#snapshot",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/{write_file,delete_file,GUI} + snapshot routes",
+  "boundary": "agentbox/service.py#snapshot quota + _snap_locks + GUI burst snapshots",
+  "subsystem": "agentbox/service.py + agentbox/sandbox.py#snapshot",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/sandbox.py",
+   "agentbox/gui_bursts.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bwrite_file%2Cdelete_file%2CGUI%7D::agentbox%2Fservice.py%23snapshot%20quota%20%2B%20_snap_locks%20%2B%20GUI%20burst%20snapshots::agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-pool"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2Fexec::agentbox%2Fpolicy.py%23Policy.decide%20read-only-exec%20allowlist::agentbox%2Fpolicy.py%20%2B%20agentbox%2Fsandbox.py%23exec::ATTACK-CLASSES.md%23Injection",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/exec",
+   "boundary": "agentbox/policy.py#Policy.decide read-only-exec allowlist",
+   "subsystem": "agentbox/policy.py + agentbox/sandbox.py#exec",
+   "attack_class": "ATTACK-CLASSES.md#Injection"
+  },
+  "surface": "agentbox/api.py#POST /sandboxes/{sid}/tools/exec",
+  "boundary": "agentbox/policy.py#Policy.decide read-only-exec allowlist",
+  "subsystem": "agentbox/policy.py + agentbox/sandbox.py#exec",
+  "attack_class": "ATTACK-CLASSES.md#Injection",
+  "starting_paths": [
+   "agentbox/policy.py",
+   "agentbox/sandbox.py",
+   "agentbox/default_policy.yaml"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Tool-argument injection into a downstream sink",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2Fexec::agentbox%2Fpolicy.py%23Policy.decide%20read-only-exec%20allowlist::agentbox%2Fpolicy.py::ATTACK-CLASSES.md%23Injection",
+  "x_prior_fingerprints": [
+   "agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion"
+  ],
+  "x_hunter": "h-policy"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws%20-%3E%20agentbox%2Fdesktop_ws.py%23relay::agentbox%2Fapi.py%23cookie%20session%20%2B%20same_origin%20%2B%20lease%20on%20WebSocket%20%2B%20agentbox%2Fdesktop_ws.py%23session%20re-check::agentbox%2Fdesktop_ws.py%20%2B%20agentbox%2Fapi.py::CLIENT-SIDE.md%23Cross-site%20WebSocket%20request%20use",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#WebSocket /sandboxes/{sid}/desktop/ws -> agentbox/desktop_ws.py#relay",
+   "boundary": "agentbox/api.py#cookie session + same_origin + lease on WebSocket + agentbox/desktop_ws.py#session re-check",
+   "subsystem": "agentbox/desktop_ws.py + agentbox/api.py",
+   "attack_class": "CLIENT-SIDE.md#Cross-site WebSocket request use"
+  },
+  "surface": "agentbox/api.py#WebSocket /sandboxes/{sid}/desktop/ws -> agentbox/desktop_ws.py#relay",
+  "boundary": "agentbox/api.py#cookie session + same_origin + lease on WebSocket + agentbox/desktop_ws.py#session re-check",
+  "subsystem": "agentbox/desktop_ws.py + agentbox/api.py",
+  "attack_class": "CLIENT-SIDE.md#Cross-site WebSocket request use",
+  "starting_paths": [
+   "agentbox/desktop_ws.py",
+   "agentbox/api.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox_desktop.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "CLIENT-SIDE.md#Core discipline",
+   "CLIENT-SIDE.md#Cross-site WebSocket request use",
+   "CLIENT-SIDE.md#Universal moves",
+   "CLIENT-SIDE.md#Validation rules",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#IPC peer-authentication gaps",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws::agentbox%2Fapi.py%23cookie%20session%20%2B%20same_origin%20%2B%20lease%20on%20WebSocket::agentbox%2Fapi.py::CLIENT-SIDE.md%23Cross-site%20WebSocket%20request%20use",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-session"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23all%20JSON%20and%20browser%20routes::agentbox%2Fapi.py%23principal%20%2B%20human_only%20%2B%20screen_human%20%2B%20desktop_human::agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py::ATTACK-CLASSES.md%23Access%20control",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#all JSON and browser routes",
+   "boundary": "agentbox/api.py#principal + human_only + screen_human + desktop_human",
+   "subsystem": "agentbox/api.py + agentbox/web.py",
+   "attack_class": "ATTACK-CLASSES.md#Access control"
+  },
+  "surface": "agentbox/api.py#all JSON and browser routes",
+  "boundary": "agentbox/api.py#principal + human_only + screen_human + desktop_human",
+  "subsystem": "agentbox/api.py + agentbox/web.py",
+  "attack_class": "ATTACK-CLASSES.md#Access control",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/desktop.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#API-key scope and resource binding",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23all%20JSON%20and%20browser%20routes::agentbox%2Fapi.py%23principal%20%2B%20human_only%20%2B%20screen_human%20%2B%20desktop_human::agentbox%2Fapi.py::ATTACK-CLASSES.md%23Access%20control",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-preauth"
+ },
+ {
+  "coverage_id": "agentbox%2Fapi.py%23tools%20read_file%2Fwrite_file%2Fdelete_file%2Flist_dir%20%2B%20POST%20files%20%2B%20GET%20outbox::agentbox%2Fsandbox.py%23safe_path%20%2B%20_workspace_path%20%2B%20clean_name%20%2B%20FIFO%20guard::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#tools read_file/write_file/delete_file/list_dir + POST files + GET outbox",
+   "boundary": "agentbox/sandbox.py#safe_path + _workspace_path + clean_name + FIFO guard",
+   "subsystem": "agentbox/sandbox.py",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "agentbox/api.py#tools read_file/write_file/delete_file/list_dir + POST files + GET outbox",
+  "boundary": "agentbox/sandbox.py#safe_path + _workspace_path + clean_name + FIFO guard",
+  "subsystem": "agentbox/sandbox.py",
+  "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/sandbox_common.py",
+   "agentbox/api.py",
+   "agentbox/web.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fapi.py%23tools%20read_file%2Fwrite_file%2Fdelete_file%2Flist_dir%20%2B%20POST%20files%20%2B%20GET%20outbox::agentbox%2Fsandbox.py%23safe_path%20%2B%20_workspace_path%20%2B%20clean_name%20%2B%20FIFO%20guard::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-files"
+ },
+ {
+  "coverage_id": "agentbox%2Fcli.py%23cmd_serve%20%2B%20agentbox%2Fapi.py%23create_app%20factory%20%2B%20deploy%2F%2A::agentbox%2Fcli.py%23bind_problem%20%2B%20runtime_problem%20%2B%20sandbox.py%20runtime%20selection::agentbox%2Fcli.py%20%2B%20deploy::CLOUD-AND-DEPLOYMENT.md%23Security-control%20precedence%20drift",
+  "canonical_refs": {
+   "surface": "agentbox/cli.py#cmd_serve + agentbox/api.py#create_app factory + deploy/*",
+   "boundary": "agentbox/cli.py#bind_problem + runtime_problem + sandbox.py runtime selection",
+   "subsystem": "agentbox/cli.py + deploy",
+   "attack_class": "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift"
+  },
+  "surface": "agentbox/cli.py#cmd_serve + agentbox/api.py#create_app factory + deploy/*",
+  "boundary": "agentbox/cli.py#bind_problem + runtime_problem + sandbox.py runtime selection",
+  "subsystem": "agentbox/cli.py + deploy",
+  "attack_class": "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift",
+  "starting_paths": [
+   "agentbox/cli.py",
+   "agentbox/api.py",
+   "agentbox/config.py",
+   "deploy"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Security-control precedence drift",
+   "CLOUD-AND-DEPLOYMENT.md#Trusted-proxy and mesh identity bypass",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fcli.py%23cmd_serve%20%2B%20agentbox%2Fapi.py%23create_app%20factory%20%2B%20deploy%2F%2A::agentbox%2Fcli.py%23bind_problem%20%2B%20runtime_problem%20%2B%20sandbox.py%20runtime%20selection::agentbox%2Fcli.py::CLOUD-AND-DEPLOYMENT.md%23Security-control%20precedence%20drift",
+  "x_prior_fingerprints": [
+   "agentbox/cli.py:runtime_problem:runc-alias-io.containerd.runc.v2-bypasses-exposed-runc-guard"
+  ],
+  "x_hunter": "h-lifecycle"
+ },
+ {
+  "coverage_id": "agentbox%2Fgui_bursts.py%23GuiBursts%20state%20shared%20by%20tool-pool%20threads%20%28call_tool%2C%20decide%29%20and%20human%20threads%20%28expire_stale%20polls%2C%20takeover%2C%20handback%2C%20end_desktop%2C%20lifecycle%20methods%29::agentbox%2Fgui_bursts.py%23GuiBursts%20open%2Fclose%2Fclose_idle%2Fend%2Freset_timers%20ordering%20%2B%20per-sandbox%20burst%20locks%20%2B%20_busy_lock::agentbox%2Fgui_bursts.py%20%2B%20agentbox%2Fservice.py%23_snapshot%2F_run_tool%2Ftakeover%2F_handback_locked%2Fend_desktop%2Fdecide::Race%20and%20check-then-act%20on%20security-control%20state%3A%20burst%20open%20versus%20idle-close%20ordering%2C%20double%20close%20or%20open%2C%20approved-path%20parity%20with%20call_tool%2C%20control-plane%20restart%20dropping%20bursts.%20Mitigation%20is%20only%20partial%20%28the%20accepted%20N-1%20GUI%20bypass%29.",
+  "canonical_refs": {
+   "surface": "agentbox/gui_bursts.py#GuiBursts state shared by tool-pool threads (call_tool, decide) and human threads (expire_stale polls, takeover, handback, end_desktop, lifecycle methods)",
+   "boundary": "agentbox/gui_bursts.py#GuiBursts open/close/close_idle/end/reset_timers ordering + per-sandbox burst locks + _busy_lock",
+   "subsystem": "agentbox/gui_bursts.py + agentbox/service.py#_snapshot/_run_tool/takeover/_handback_locked/end_desktop/decide",
+   "attack_class": "Race and check-then-act on security-control state: burst open versus idle-close ordering, double close or open, approved-path parity with call_tool, control-plane restart dropping bursts. Mitigation is only partial (the accepted N-1 GUI bypass)."
+  },
+  "surface": "agentbox/gui_bursts.py#GuiBursts state shared by tool-pool threads (call_tool, decide) and human threads (expire_stale polls, takeover, handback, end_desktop, lifecycle methods)",
+  "boundary": "agentbox/gui_bursts.py#GuiBursts open/close/close_idle/end/reset_timers ordering + per-sandbox burst locks + _busy_lock",
+  "subsystem": "agentbox/gui_bursts.py + agentbox/service.py#_snapshot/_run_tool/takeover/_handback_locked/end_desktop/decide",
+  "attack_class": "Race and check-then-act on security-control state: burst open versus idle-close ordering, double close or open, approved-path parity with call_tool, control-plane restart dropping bursts. Mitigation is only partial (the accepted N-1 GUI bypass).",
+  "starting_paths": [
+   "agentbox/gui_bursts.py",
+   "agentbox/service.py",
+   "agentbox/desktop.py",
+   "agentbox/api.py",
+   "agentbox/web.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unsafe recovery and capacity rollback",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Deep-link, callback, and navigation attack classes",
+    "reason": "No deep links or callbacks; the desktop page is a plain web page."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Webview and native-bridge attack classes",
+    "reason": "No native bridge; noVNC runs in an ordinary browser."
+   }
+  ],
+  "prior_status": "prior_deferred",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "Concurrent%20entry%20points%20that%20read%20and%20write%20the%20in-memory%20GUI-burst%20state%3A%20POST%20tools%20click%2Ftype%2Fkey%20through%20call_tool%3B%20decide%28%29%20for%20approved%20calls%20via%20POST%20%2Fapprovals%2F%7Baid%7D%20and%20POST%20%2Fui%2Fapprovals%2F%7Baid%7D%2F%7Bdecision%7D%3B%20close_idle_gui_bursts%20via%20expire_stale%20on%20every%20UI%20poll%20%28%2Fui%2Fnotify%2C%20%2Fui%2Fapprovals%2C%20GET%20%2Fapprovals%2C%20GET%20%2Faudit%2C%20%2Fui%2Faudit%29%20and%20via%20call_tool%3B%20takeover%20and%20handback%3B%20end_desktop%20on%20restore%20and%20delete::Agent%20GUI%20input%20-%3E%20burst%20bookkeeping%20%28restore-point%20snapshot%2C%20%2Fworkspace%20manifest%2C%20baseline%20pids%2C%20stray%20kill%2C%20gui_changes%20record%29.%20The%20dicts%20_gui_burst%2C%20_gui_input_at%20and%20_gui_snap_at%20are%20shared%20by%20tool-pool%20threads%20and%20human%20request%20threads%20with%20no%20lock.%20_snapshot%20registers%20the%20burst%20%28agentbox%2Fservice.py%3A206-213%2C%20258-268%29%20before%20_run_tool%20stamps%20_gui_input_at%20%28service.py%3A105-108%2C%20under%20gui_lock%29.%20close_idle_gui_bursts%20%28250-256%29%20treats%20a%20missing%20or%20stale%20stamp%20as%20idle%2C%20so%20a%20concurrent%20poll%20could%20close%20a%20just-opened%20burst.%20decide%28%29%20%28384-422%29%20takes%20neither%20_snap_locks%20nor%20_busy%2C%20so%20approved%20calls%20run%20a%20parallel%20path%20to%20call_tool.::agentbox%2Fservice.py%23_snapshot%20%2B%20_open_gui_burst%20%2B%20_close_gui_burst%20%2B%20close_idle_gui_bursts%20%2B%20_run_tool%20%2B%20decide%20%2B%20takeover%2Fend_desktop::Race%20and%20check-then-act%20on%20security-control%20state%3A%20burst%20open%20versus%20idle-close%20ordering%2C%20double%20close%20or%20open%2C%20approved-path%20parity%20with%20call_tool%2C%20control-plane%20restart%20dropping%20bursts.%20Mitigation%20is%20only%20partial%20%28the%20accepted%20N-1%20GUI%20bypass%29.",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-gui-race"
+ },
+ {
+  "coverage_id": "agentbox%2Fweb.py%23%2Fui%20pages%20%2B%20agentbox%2Fdesktop.py%23page%20rendered%20in%20a%20frame::agentbox%2Fapi.py%23X-Frame-Options%20%2B%20CSP%20frame-ancestors%20%27self%27%20on%20cookie-authenticated%20pages%20%2B%20SameSite%3DStrict%20%2B%20same_origin::agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py%20%2B%20agentbox%2Fdesktop.py::CLIENT-SIDE.md%23Clickjacking",
+  "canonical_refs": {
+   "surface": "agentbox/web.py#/ui pages + agentbox/desktop.py#page rendered in a frame",
+   "boundary": "agentbox/api.py#X-Frame-Options + CSP frame-ancestors 'self' on cookie-authenticated pages + SameSite=Strict + same_origin",
+   "subsystem": "agentbox/api.py + agentbox/web.py + agentbox/desktop.py",
+   "attack_class": "CLIENT-SIDE.md#Clickjacking"
+  },
+  "surface": "agentbox/web.py#/ui pages + agentbox/desktop.py#page rendered in a frame",
+  "boundary": "agentbox/api.py#X-Frame-Options + CSP frame-ancestors 'self' on cookie-authenticated pages + SameSite=Strict + same_origin",
+  "subsystem": "agentbox/api.py + agentbox/web.py + agentbox/desktop.py",
+  "attack_class": "CLIENT-SIDE.md#Clickjacking",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/desktop.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "CLIENT-SIDE.md#Core discipline",
+   "CLIENT-SIDE.md#Clickjacking",
+   "CLIENT-SIDE.md#Client-side navigation confusion",
+   "CLIENT-SIDE.md#Universal moves",
+   "CLIENT-SIDE.md#Validation rules",
+   "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker/RPC."
+   }
+  ],
+  "prior_status": "prior_needs_validation",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fweb.py%23%2Fui%20%28approval%20approve%2Fdeny%20buttons%2C%20restore%2Fdelete%2Fsnapshot%20forms%29%20%2B%20agentbox%2Fdesktop.py%23page%20%28takeover%2Fhandback%20controls%29%20rendered%20in%20a%20frame::absence%20of%20frame-ancestors%2FX-Frame-Options%20on%20cookie-authenticated%20pages%20%2B%20SameSite%3DStrict%20%2B%20same_origin::agentbox%2Fweb.py::CLIENT-SIDE.md%23Clickjacking",
+  "x_prior_fingerprints": [
+   "agentbox/web.py:register:cookie-ui-frameable-no-frame-ancestors-single-click-approve"
+  ],
+  "x_hunter": "h-webui"
+ },
+ {
+  "coverage_id": "agentbox%2Fweb.py%23%2Fui%2F%2A%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fapi.py%23same_origin%20%2B%20SameSite%3DStrict%20HttpOnly%20cookie::agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
+  "canonical_refs": {
+   "surface": "agentbox/web.py#/ui/* + /login + /logout",
+   "boundary": "agentbox/api.py#same_origin + SameSite=Strict HttpOnly cookie",
+   "subsystem": "agentbox/api.py + agentbox/web.py",
+   "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF"
+  },
+  "surface": "agentbox/web.py#/ui/* + /login + /logout",
+  "boundary": "agentbox/api.py#same_origin + SameSite=Strict HttpOnly cookie",
+  "subsystem": "agentbox/api.py + agentbox/web.py",
+  "attack_class": "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/desktop.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+   "WEB-PROTOCOL-AND-AUTH.md#Ordinary CSRF",
+   "WEB-PROTOCOL-AND-AUTH.md#Host and forwarded-header trust",
+   "WEB-PROTOCOL-AND-AUTH.md#Universal moves",
+   "WEB-PROTOCOL-AND-AUTH.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_needs_validation",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "agentbox%2Fweb.py%23%2Fui%2F%2A%20%2B%20%2Flogin%20%2B%20%2Flogout::agentbox%2Fapi.py%23same_origin%20%2B%20SameSite%3DStrict%20HttpOnly%20cookie::agentbox%2Fweb.py::WEB-PROTOCOL-AND-AUTH.md%23Ordinary%20CSRF",
+  "x_prior_fingerprints": [
+   "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare"
+  ],
+  "x_hunter": "h-webui"
+ },
+ {
+  "coverage_id": "approval%20card%20impact%20table%20and%20request-time%20screen%20capture%20for%20gated%20exec%2FGUI%20calls::agentbox%2Fpreview.py%23preview%20%2B%20split_segments%20%2B%20expand%2Fwalk%20callbacks%3A%20system-computed%20%27affected%27%20list::agentbox%2Fpreview.py%20%2B%20agentbox%2Fsandbox.py%23preview%20%2B%20agentbox%2Fservice.py%23_preview%2F_capture::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
+  "canonical_refs": {
+   "surface": "approval card impact table and request-time screen capture for gated exec/GUI calls",
+   "boundary": "agentbox/preview.py#preview + split_segments + expand/walk callbacks: system-computed 'affected' list",
+   "subsystem": "agentbox/preview.py + agentbox/sandbox.py#preview + agentbox/service.py#_preview/_capture",
+   "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding"
+  },
+  "surface": "approval card impact table and request-time screen capture for gated exec/GUI calls",
+  "boundary": "agentbox/preview.py#preview + split_segments + expand/walk callbacks: system-computed 'affected' list",
+  "subsystem": "agentbox/preview.py + agentbox/sandbox.py#preview + agentbox/service.py#_preview/_capture",
+  "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding",
+  "starting_paths": [
+   "agentbox/preview.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/templates"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Action-confirmation and approval binding",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Pending-action and user-presence confusion",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "AI-AND-LLM.md#Insecure output rendering",
+    "reason": "Escaping/bidi of the command text is owned by the container-strings rendering unit."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Preview exec timeouts recorded as hardening."
+   },
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "approval%20card%20impact%20table%20and%20request-time%20screen%20capture%20for%20gated%20exec%2FGUI%20calls%20%28agentbox%2Fsandbox.py%23preview%2C%20agentbox%2Fservice.py%23_preview%2F_capture%2C%20agentbox%2Ftemplates%2F_approvals.html%2C%20agentbox%2Fcli.py%23_show_approval%29::agentbox%2Fsandbox.py%23preview%20%2B%20_split_segments%20%2B%20_expand%20%2B%20_walk%3A%20the%20system-computed%20%27affected%27%20list%20and%20%27system-captured%27%20screenshot%20shown%20to%20the%20human%20must%20reflect%20what%20the%20stored%20args%20will%20actually%20do::agentbox%2Fsandbox.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
+  "x_prior_fingerprints": [
+   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row"
+  ],
+  "x_hunter": "h-policy"
+ },
+ {
+  "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs%20%28sandbox.py%2C%20sandbox_desktop.py%29::agentbox%2Fsandbox.py%20%2B%20agentbox%2Fsandbox_desktop.py%20%2B%20images%2Fdesktop::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",
+  "canonical_refs": {
+   "surface": "code running inside the sandbox container (uid 1000 agent, uid 1001 desktop)",
+   "boundary": "agentbox/sandbox.py#container hardening flags + root-run docker execs (sandbox.py, sandbox_desktop.py)",
+   "subsystem": "agentbox/sandbox.py + agentbox/sandbox_desktop.py + images/desktop",
+   "attack_class": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure"
+  },
+  "surface": "code running inside the sandbox container (uid 1000 agent, uid 1001 desktop)",
+  "boundary": "agentbox/sandbox.py#container hardening flags + root-run docker execs (sandbox.py, sandbox_desktop.py)",
+  "subsystem": "agentbox/sandbox.py + agentbox/sandbox_desktop.py + images/desktop",
+  "attack_class": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/sandbox_desktop.py",
+   "images/desktop"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+   "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+   "CLOUD-AND-DEPLOYMENT.md#Universal moves",
+   "CLOUD-AND-DEPLOYMENT.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs::agentbox%2Fsandbox.py::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-container"
+ },
+ {
+  "coverage_id": "container%20output%20and%20agent%20request%20bodies%20%28tool%20args%2C%20uploads%29::agentbox%2Fsandbox.py%23_Head%20exec%20cap%20%2B%20read%2Foutbox%2Fmanifest%2Fscreenshot%20caps%20%2B%20agentbox%2Fservice.py%23_logged_args%20cap::agentbox%2Fsandbox.py%20%2B%20agentbox%2Fsandbox_common.py%20%2B%20agentbox%2Fservice.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Unbounded%20buffering%20and%20cardinality",
+  "canonical_refs": {
+   "surface": "container output and agent request bodies (tool args, uploads)",
+   "boundary": "agentbox/sandbox.py#_Head exec cap + read/outbox/manifest/screenshot caps + agentbox/service.py#_logged_args cap",
+   "subsystem": "agentbox/sandbox.py + agentbox/sandbox_common.py + agentbox/service.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality"
+  },
+  "surface": "container output and agent request bodies (tool args, uploads)",
+  "boundary": "agentbox/sandbox.py#_Head exec cap + read/outbox/manifest/screenshot caps + agentbox/service.py#_logged_args cap",
+  "subsystem": "agentbox/sandbox.py + agentbox/sandbox_common.py + agentbox/service.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+  "starting_paths": [
+   "agentbox/sandbox.py",
+   "agentbox/sandbox_common.py",
+   "agentbox/sandbox_desktop.py",
+   "agentbox/service.py",
+   "agentbox/gui_state.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#File descriptor, handle, and temporary-resource leaks",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "container%20output%20and%20agent%20request%20bodies::agentbox%2Fsandbox.py%23_Head%20exec%20cap%20%2B%20read%2Foutbox%2Fmanifest%2Fscreenshot%20caps::agentbox%2Fsandbox.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Unbounded%20buffering%20and%20cardinality",
+  "x_prior_fingerprints": [
+   "agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap"
+  ],
+  "x_hunter": "h-queue"
+ },
+ {
+  "coverage_id": "container%20output%3A%20ps%2C%20xdotool%20getwindowpid%2C%20find%20-printf%20manifest::agentbox%2Fgui_state.py%23_parse_ps%20%2B%20gui_strays%20%2B%20_parse_manifest%20%2B%20diff_manifest::agentbox%2Fgui_state.py%20%2B%20agentbox%2Fsandbox_desktop.py%23desktop_processes%2Fkill_processes::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "container output: ps, xdotool getwindowpid, find -printf manifest",
+   "boundary": "agentbox/gui_state.py#_parse_ps + gui_strays + _parse_manifest + diff_manifest",
+   "subsystem": "agentbox/gui_state.py + agentbox/sandbox_desktop.py#desktop_processes/kill_processes",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "container output: ps, xdotool getwindowpid, find -printf manifest",
+  "boundary": "agentbox/gui_state.py#_parse_ps + gui_strays + _parse_manifest + diff_manifest",
+  "subsystem": "agentbox/gui_state.py + agentbox/sandbox_desktop.py#desktop_processes/kill_processes",
+  "attack_class": "ATTACK-CLASSES.md#Business logic",
+  "starting_paths": [
+   "agentbox/gui_state.py",
+   "agentbox/sandbox_desktop.py",
+   "agentbox/sandbox.py",
+   "agentbox/gui_bursts.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_needs_validation",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "container%20output%3A%20ps%2C%20xdotool%20getwindowpid%2C%20find%20-printf%20manifest::agentbox%2Fsandbox.py%23_parse_ps%20%2B%20gui_strays%20%2B%20_parse_manifest%20%2B%20diff_manifest::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Business%20logic",
+  "x_prior_fingerprints": [
+   "agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process"
+  ],
+  "x_hunter": "h-gui-burst"
+ },
+ {
+  "coverage_id": "container-controlled%20strings%20rendered%20to%20humans%20%28outbox%20names%2C%20gui_changes%20paths%2C%20ps%20args%2C%20exec%20output%2C%20errors%2C%20approval%20cards%29::agentbox%2Fdisplay.py%23escape_controls%20%2B%20agentbox%2Fweb.py%23describe%2F_shown%2Ffinalize%20%2B%20Jinja%20autoescape%20%2B%20agentbox%2Fcli.py%23_safe::agentbox%2Fdisplay.py%20%2B%20agentbox%2Fweb.py%20%2B%20agentbox%2Fcli.py%20%2B%20agentbox%2Ftemplates::AI-AND-LLM.md%23Insecure%20output%20rendering",
+  "canonical_refs": {
+   "surface": "container-controlled strings rendered to humans (outbox names, gui_changes paths, ps args, exec output, errors, approval cards)",
+   "boundary": "agentbox/display.py#escape_controls + agentbox/web.py#describe/_shown/finalize + Jinja autoescape + agentbox/cli.py#_safe",
+   "subsystem": "agentbox/display.py + agentbox/web.py + agentbox/cli.py + agentbox/templates",
+   "attack_class": "AI-AND-LLM.md#Insecure output rendering"
+  },
+  "surface": "container-controlled strings rendered to humans (outbox names, gui_changes paths, ps args, exec output, errors, approval cards)",
+  "boundary": "agentbox/display.py#escape_controls + agentbox/web.py#describe/_shown/finalize + Jinja autoescape + agentbox/cli.py#_safe",
+  "subsystem": "agentbox/display.py + agentbox/web.py + agentbox/cli.py + agentbox/templates",
+  "attack_class": "AI-AND-LLM.md#Insecure output rendering",
+  "starting_paths": [
+   "agentbox/display.py",
+   "agentbox/web.py",
+   "agentbox/cli.py",
+   "agentbox/templates"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Insecure output rendering",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules",
+   "CLIENT-SIDE.md#Core discipline",
+   "CLIENT-SIDE.md#DOM-based XSS",
+   "CLIENT-SIDE.md#Universal moves",
+   "CLIENT-SIDE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "container-controlled%20strings%20rendered%20to%20humans%20%28outbox%20names%2C%20gui_changes%20paths%2C%20ps%20args%2C%20exec%20output%2C%20errors%29::agentbox%2Fweb.py%23describe%20%2B%20Jinja%20autoescape%20%2B%20agentbox%2Fcli.py%23_safe::agentbox%2Fweb.py::AI-AND-LLM.md%23Insecure%20output%20rendering",
+  "x_prior_fingerprints": [
+   "agentbox/cli.py:cmd_agent:log-prints-container-output-without-safe",
+   "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized"
+  ],
+  "x_hunter": "h-webui"
+ },
+ {
+  "coverage_id": "every%20audit%20append%20%28tool%20args%2C%20results%2C%20errors%2C%20GUI%20records%29::agentbox%2Faudit.py%23mask_text%20%2B%20_mask::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+  "canonical_refs": {
+   "surface": "every audit append (tool args, results, errors, GUI records)",
+   "boundary": "agentbox/audit.py#mask_text + _mask",
+   "subsystem": "agentbox/audit.py",
+   "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets"
+  },
+  "surface": "every audit append (tool args, results, errors, GUI records)",
+  "boundary": "agentbox/audit.py#mask_text + _mask",
+  "subsystem": "agentbox/audit.py",
+  "attack_class": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "starting_paths": [
+   "agentbox/audit.py",
+   "agentbox/service.py",
+   "agentbox/gui_bursts.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Cryptography and secrets",
+  "selected_companion_blocks": [
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Universal moves",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "every%20audit%20append%20%28tool%20args%2C%20results%2C%20errors%2C%20GUI%20records%29::agentbox%2Faudit.py%23mask_text%20%2B%20_mask::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-audit"
+ },
+ {
+  "coverage_id": "whole-repo%23basic%20exposures::whole-repo%23obvious%20controls%20%28secrets%2C%20debug%2C%20cookies%2C%20CORS%2C%20redirects%2C%20errors%29::whole-repo::ATTACK-CLASSES.md%23Obvious%20things",
+  "canonical_refs": {
+   "surface": "whole-repo#basic exposures",
+   "boundary": "whole-repo#obvious controls (secrets, debug, cookies, CORS, redirects, errors)",
+   "subsystem": "whole-repo",
+   "attack_class": "ATTACK-CLASSES.md#Obvious things"
+  },
+  "surface": "whole-repo#basic exposures",
+  "boundary": "whole-repo#obvious controls (secrets, debug, cookies, CORS, redirects, errors)",
+  "subsystem": "whole-repo",
+  "attack_class": "ATTACK-CLASSES.md#Obvious things",
+  "starting_paths": [
+   "agentbox",
+   "deploy",
+   "images"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_covered_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "whole-repo%23basic%20exposures::whole-repo%23obvious%20controls%20%28secrets%2C%20debug%2C%20cookies%2C%20CORS%2C%20redirects%2C%20errors%29::whole-repo::ATTACK-CLASSES.md%23Obvious%20things",
+  "x_prior_fingerprints": [],
+  "x_hunter": "h-preauth"
+ },
+ {
+  "coverage_id": "whole-repo%23undocumented%2Fedge%20surfaces::whole-repo%23feature%20interactions%20not%20covered%20by%20other%20units::whole-repo::ATTACK-CLASSES.md%23Wildcard",
+  "canonical_refs": {
+   "surface": "whole-repo#undocumented/edge surfaces",
+   "boundary": "whole-repo#feature interactions not covered by other units",
+   "subsystem": "whole-repo",
+   "attack_class": "ATTACK-CLASSES.md#Wildcard"
+  },
+  "surface": "whole-repo#undocumented/edge surfaces",
+  "boundary": "whole-repo#feature interactions not covered by other units",
+  "subsystem": "whole-repo",
+  "attack_class": "ATTACK-CLASSES.md#Wildcard",
+  "starting_paths": [
+   "agentbox",
+   "images",
+   "deploy"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Wildcard",
+  "selected_companion_blocks": [],
+  "excluded_blocks": [
+   {
+    "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+    "reason": "No native code in scope; all control-plane code is Python."
+   },
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+    "reason": "No release, signing or update path; CI only runs tests (separate wildcard/obvious coverage)."
+   },
+   {
+    "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+    "reason": "No broker or RPC framework; HTTP/WS/MCP stdio are covered by web, client-side and AI companions."
+   },
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "AI-AND-LLM.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLIENT-SIDE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+    "reason": "Not on this unit's boundary; covered by the units that select it."
+   }
+  ],
+  "prior_status": "prior_confirmed_changed_source",
+  "attempts": [],
+  "wave": 1,
+  "status": "planned",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_prior_unit": "whole-repo%23undocumented%2Fedge%20surfaces::whole-repo%23feature%20interactions%20not%20covered%20by%20other%20units::whole-repo::ATTACK-CLASSES.md%23Wildcard",
+  "x_prior_fingerprints": [
+   "agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause",
+   "agentbox/audit.py:list:oldest-first-limit-truncates-ui-and-cli-timelines"
+  ],
+  "x_hunter": "h-wild"
+ }
+]

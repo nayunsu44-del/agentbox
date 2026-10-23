@@ -1,0 +1,49 @@
+{
+ "run_id": "agentbox-run-4",
+ "repo": "nayunsu44-del/agentbox",
+ "target": "/home/user/agentbox",
+ "source_ref": {
+  "commit": "9805d910",
+  "branch": "main",
+  "dirty": false,
+  "note": "Audited source is a detached git worktree of main at 9805d91 (after refactor PRs #11-#14) in the parent's scratchpad; agents read it and sbx mounts it read-only at /target. Only docs/security-audit/run-4/ (this run's output) is added on the working branch."
+ },
+ "profile": "standard",
+ "scope_paths": [
+  "."
+ ],
+ "budget": 50,
+ "budget_note": "Owner-set cap of 50 agent invocations (standard profile). Plan: 4 reconnaissance, one hunter wave, one post-wave critic, one distinct final-clean critic, and the rest reserved for Phase 3 and Phase 5 verifiers. Model split as in run-3: Opus for recon, hunters, Phase 3 and critics; Sonnet for Phase 5 record verifiers; Opus for material-replacement re-verifiers.",
+ "execution_policy": "sandboxed-source-and-local-only",
+ "execution_note": "Agent-run target code runs only through tools/sbx: docker run --network none --read-only, host /usr and the audited worktree read-only, writes only to agents/<id>/scratch, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB, 1 CPU, 64 pids, 32 MiB file size, 120 s, explicit env allowlist. Checks that need the real Docker-backed control plane are run by the parent with dummy principals in a scratch AGENTBOX_HOME on loopback inside this disposable cloud container (labelled parent-live). Promotion uses tools/promote.py.",
+ "companions_selected": [],
+ "prior_runs": [
+  {
+   "path": "docs/security-audit/run-1",
+   "source_ref": "7fc501f",
+   "files": [
+    "coverage-ledger.json",
+    "findings.json"
+   ]
+  },
+  {
+   "path": "docs/security-audit/run-2",
+   "source_ref": "7fc501f (validation run)",
+   "files": [
+    "findings.json"
+   ]
+  },
+  {
+   "path": "docs/security-audit/run-3",
+   "source_ref": "0e4b958 / 8e4db9e",
+   "files": [
+    "coverage-ledger.json",
+    "findings.json"
+   ],
+   "note": "run-3 ended incomplete (budget_exhausted); critic-3 proposed 3 units recorded deferred. Every confirmed run-3 record was fixed afterwards and the refactor (PRs #11-#14) moved the code, so all relevant source changed."
+  }
+ ],
+ "shared_file_owner": "parent",
+ "run_status": "in_progress",
+ "agents_spent": {}
+}
