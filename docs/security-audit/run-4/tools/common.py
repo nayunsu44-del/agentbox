@@ -4,11 +4,11 @@ import os
 import re
 import subprocess
 
-RUN = "/home/user/agentbox/docs/security-audit/run-4"
-SP = os.environ.get("AUDIT_SCRATCHPAD", "/tmp/claude-0/-home-user-agentbox/bc796aa2-37b4-5f3d-a870-3de255943f83/scratchpad")
+RUN = "<WINDOWS_HOST_ROOT>/projects/agentbox/docs/security-audit/run-4"
+SP = os.environ.get("AUDIT_SCRATCHPAD", "<WINDOWS_HOST_ROOT>/temp/agentbox-run4")
 SK = f"{SP}/skill/skills/security-audit"
 SRC = f"{SP}/src-audited"
-SBX = f"{RUN}/tools/sbx"
+SBX = f"{RUN}/tools/sbx.py"  # Windows host: bash sbx cannot run; sbx.py keeps the same container boundary
 
 
 def block(ref):
@@ -63,21 +63,43 @@ def save_ledger(L):
 
 
 def make_scratch(aid):
+    """Per-agent scratch. Windows host: a plain directory instead of a 256 MiB loop mount.
+
+    Dropping the loop mount loses the hard byte cap; the retained limits are promote.py's
+    per-file (256 KiB) and per-agent (1 MiB) artifact caps plus cap_scratch(), which the
+    parent calls after each agent and refuses anything above SCRATCH_CAP.
+    """
     assert re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", aid)
     scratch = f"{RUN}/agents/{aid}/scratch"
     os.makedirs(scratch, exist_ok=True)
     os.makedirs(f"{RUN}/agents/{aid}/artifacts", exist_ok=True)
-    if not os.path.ismount(scratch):  # 256 MiB cap on everything the agent and sandboxed code write
-        img = f"{SP}/scratch-img/{aid}.img"
-        os.makedirs(os.path.dirname(img), exist_ok=True)
-        subprocess.run(["truncate", "-s", "256M", img], check=True)
-        subprocess.run(["mkfs.ext4", "-q", "-F", img], check=True)
-        subprocess.run(["mount", "-o", "loop,nosuid,nodev", img, scratch], check=True)
-        lf = f"{scratch}/lost+found"
-        if os.path.isdir(lf):
-            os.rmdir(lf)
-    os.chown(scratch, 65534, 65534)
     return scratch
+
+
+SCRATCH_CAP = 256 * 1024 * 1024
+
+
+def scratch_size(path):
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for f in files:
+            p = os.path.join(root, f)
+            try:
+                total += os.lstat(p).st_size
+            except OSError:
+                pass
+    return total
+
+
+def cap_scratch(aid):
+    """Report (do not silently delete) an over-cap scratch; the parent decides."""
+    scratch = f"{RUN}/agents/{aid}/scratch"
+    if not os.path.isdir(scratch):
+        return 0
+    size = scratch_size(scratch)
+    if size > SCRATCH_CAP:
+        print(f"OVER-CAP {aid}: {size} > {SCRATCH_CAP}")
+    return size
 
 
 def final_message(path):
