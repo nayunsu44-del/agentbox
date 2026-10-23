@@ -41,7 +41,7 @@ cid = {r["fingerprint"]: f"F{i}" for i, r in enumerate(conf, 1)}
 cid.update({r["fingerprint"]: f"N{i}" for i, r in enumerate(nv, 1)})
 st = collections.Counter(u["status"] for u in L)
 sev = collections.Counter(r["severity"]["overall_severity"] for r in conf)
-deferred = [u for u in L if u["status"] == "deferred"]
+deferred = sorted((u for u in L if u["status"] == "deferred"), key=lambda u: (u["wave"], u["coverage_id"]))
 
 
 def main_path(r):
@@ -110,7 +110,7 @@ R.append(f"감사 기준은 {c('main')} 커밋 {c('9805d91')}(리팩토링 PR #1
 R.append("")
 R.append("## 1. 요약")
 R.append("")
-R.append("- 이 run은 **부분 감사**다. 사후 비평이 제안한 경계 %d개를 예산 때문에 헌팅하지 못했다(아래 6절)." % len(deferred))
+R.append("- 이 run은 **부분 감사**다. 비평이 제안한 경계 %d개를 예산 때문에 헌팅하지 못했다(아래 6절)." % len(deferred))
 R.append("- 확정 **%d건**: %s." % (len(conf), ", ".join(f"{SK[k]} {v}건" for k, v in sorted(sev.items(), key=lambda x: ORDER[x[0]]))))
 R.append("- 검증 필요 **%d건**, 기각 **%d건**. 레코드는 모두 %d건이다." % (len(nv), len(rej), len(recs)))
 R.append("- 장부 %d단위: %s." % (len(L), ", ".join(f"{k} {v}" for k, v in sorted(st.items()))))
@@ -167,7 +167,7 @@ R.append("")
 R.append("## 6. 커버리지와 한계")
 R.append("")
 R.append(f"- 장부 {len(L)}단위 가운데 헌터가 맡은 30단위는 모두 닫혔다(covered {st.get('covered', 0)}, candidate {st.get('candidate', 0)}).")
-R.append(f"- 사후 비평 {c('critic-1')}이 미할당 경계 2개를 제안했다. 예산을 검증에 남겨야 해서 헌터를 붙이지 못했고, 장부에 {c('deferred')}로 넣었다. 다음 run의 1순위다.")
+R.append(f"- 비평이 미할당 경계 {len(deferred)}개를 제안했다. 사후 비평 {c('critic-1')}이 2개, 최종 비평 {c('critic-2')}가 1개다. 예산 때문에 헌터를 붙이지 못했고, 장부에 {c('deferred')}로 넣었다. 다음 run의 1순위다.")
 from report_notes import DEFERRED_KO  # noqa: E402
 for u in deferred:
     R.append("  - " + DEFERRED_KO.get(u["attack_class"], f"{u['surface']} — {u['boundary']}"))

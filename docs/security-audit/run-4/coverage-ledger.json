@@ -1,5 +1,58 @@
 [
  {
+  "surface": "A GUI burst opened while a human takeover lease is held: (a) POST /approvals/{aid} and POST /ui/approvals/{aid}/approve for an approved click/type/key, which is reachable once the snapshot quota turns GUI input into REQUIRE_APPROVAL or a policy gates GUI tools, and (b) POST /sandboxes/{sid}/tools/{click,type,key} whose pre-input docker commit races POST /sandboxes/{sid}/desktop/takeover. The burst is then closed by close_idle, which any agent tool call triggers, or by the next burst after handback.",
+  "boundary": "Agent GUI-burst enforcement (stray kill and gui_changes attribution) versus the human desktop session during a takeover: takeover closes the burst under gui_lock before installing the lease (service.py:514), but _snapshot (service.py:250-265) closes and opens a burst without gui_lock or a lease check, reached unconditionally from decide (service.py:412) and from call_tool after a needs_snapshot lease check that precedes a multi-second commit; the opened burst then survives the lease and close_idle can kill processes the human started and log the human's edits as agent gui_changes.",
+  "subsystem": "agentbox/service.py#decide/_snapshot/call_tool/takeover/_handback_locked + agentbox/gui_bursts.py#needs_snapshot/open/close_idle/_stop_strays + agentbox/gui_state.py#gui_strays",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/gui_state.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox_desktop.py",
+   "agentbox/api.py",
+   "agentbox/web.py"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Stale authorization and derived copy use",
+    "reason": "The lifecycle unit owns restore/delete ordering. This unit is limited to bursts opened during a live lease."
+   },
+   {
+    "block": "CLOUD-AND-DEPLOYMENT.md#Host or control-plane capability exposure",
+    "reason": "The container hardening unit owns this. Here kill -KILL runs as uid 1001 inside the sandbox."
+   }
+  ],
+  "attack_class": "Race and check-then-act on security-control state: GUI burst opened by decide/_snapshot or call_tool while a human takeover lease is held",
+  "selected_companion_blocks": [
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+   "AI-AND-LLM.md#Action-confirmation and approval binding"
+  ],
+  "coverage_id": "A%20GUI%20burst%20opened%20while%20a%20human%20takeover%20lease%20is%20held%3A%20%28a%29%20POST%20%2Fapprovals%2F%7Baid%7D%20and%20POST%20%2Fui%2Fapprovals%2F%7Baid%7D%2Fapprove%20for%20an%20approved%20click%2Ftype%2Fkey%2C%20which%20is%20reachable%20once%20the%20snapshot%20quota%20turns%20GUI%20input%20into%20REQUIRE_APPROVAL%20or%20a%20policy%20gates%20GUI%20tools%2C%20and%20%28b%29%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%7D%20whose%20pre-input%20docker%20commit%20races%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Ftakeover.%20The%20burst%20is%20then%20closed%20by%20close_idle%2C%20which%20any%20agent%20tool%20call%20triggers%2C%20or%20by%20the%20next%20burst%20after%20handback.::Agent%20GUI-burst%20enforcement%20%28stray%20kill%20and%20gui_changes%20attribution%29%20versus%20the%20human%20desktop%20session%20during%20a%20takeover%3A%20takeover%20closes%20the%20burst%20under%20gui_lock%20before%20installing%20the%20lease%20%28service.py%3A514%29%2C%20but%20_snapshot%20%28service.py%3A250-265%29%20closes%20and%20opens%20a%20burst%20without%20gui_lock%20or%20a%20lease%20check%2C%20reached%20unconditionally%20from%20decide%20%28service.py%3A412%29%20and%20from%20call_tool%20after%20a%20needs_snapshot%20lease%20check%20that%20precedes%20a%20multi-second%20commit%3B%20the%20opened%20burst%20then%20survives%20the%20lease%20and%20close_idle%20can%20kill%20processes%20the%20human%20started%20and%20log%20the%20human%27s%20edits%20as%20agent%20gui_changes.::agentbox%2Fservice.py%23decide%2F_snapshot%2Fcall_tool%2Ftakeover%2F_handback_locked%20%2B%20agentbox%2Fgui_bursts.py%23needs_snapshot%2Fopen%2Fclose_idle%2F_stop_strays%20%2B%20agentbox%2Fgui_state.py%23gui_strays::Race%20and%20check-then-act%20on%20security-control%20state%3A%20GUI%20burst%20opened%20by%20decide%2F_snapshot%20or%20call_tool%20while%20a%20human%20takeover%20lease%20is%20held",
+  "canonical_refs": {
+   "surface": "A GUI burst opened while a human takeover lease is held: (a) POST /approvals/{aid} and POST /ui/approvals/{aid}/approve for an approved click/type/key, which is reachable once the snapshot quota turns GUI input into REQUIRE_APPROVAL or a policy gates GUI tools, and (b) POST /sandboxes/{sid}/tools/{click,type,key} whose pre-input docker commit races POST /sandboxes/{sid}/desktop/takeover. The burst is then closed by close_idle, which any agent tool call triggers, or by the next burst after handback.",
+   "boundary": "Agent GUI-burst enforcement (stray kill and gui_changes attribution) versus the human desktop session during a takeover: takeover closes the burst under gui_lock before installing the lease (service.py:514), but _snapshot (service.py:250-265) closes and opens a burst without gui_lock or a lease check, reached unconditionally from decide (service.py:412) and from call_tool after a needs_snapshot lease check that precedes a multi-second commit; the opened burst then survives the lease and close_idle can kill processes the human started and log the human's edits as agent gui_changes.",
+   "subsystem": "agentbox/service.py#decide/_snapshot/call_tool/takeover/_handback_locked + agentbox/gui_bursts.py#needs_snapshot/open/close_idle/_stop_strays + agentbox/gui_state.py#gui_strays",
+   "attack_class": "Race and check-then-act on security-control state: GUI burst opened by decide/_snapshot or call_tool while a human takeover lease is held"
+  },
+  "ordinary_attack_class_block": null,
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 3,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "Deferred: proposed by the final-clean critic critic-2 (h-gui-race reported this boundary as uncovered, and h-gui-burst recorded the call_tool variant only as a routing note (service.py:250-265 opens a burst without gui_lock while takeover closes at 514). No ledger unit or local check exercises either way a burst can open during a lease. The GuiBursts race unit tested only handback and queued-input schedules, and the takeover unit tested only gui_lock bounds. Source shows the decide path is deterministic, with no race needed, and the call_tool path has a window as wide as a docker commit that the agent can retry. Either path lets agent-driven burst enforcement kill processes the human starts during a takeover and charge the human's edits to the agent burst. This breaks the design invariant stated at service.py:514.) The run's budget cap of 50 was spent by critic-2 itself, so no hunter could be assigned (budget_cannot_reserve_critics_and_validation)."
+  ],
+  "x_hunter": null,
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "Proposed by final-clean critic critic-2 (agents/critic-2/result.json). The critic's attack_class 'RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Race conditions in shared state' does not exist in the skill; the parent recorded it as free text and kept the two companion blocks that exist.",
+  "x_critic_boundary": "Agent GUI-burst enforcement (stray kill plus gui_changes attribution) versus the human desktop session during a takeover. takeover closes the burst under gui_lock before it installs the lease (agentbox/service.py:503-521, close at 514) so that human changes stay out of agent bursts. But _snapshot (service.py:250-265) runs bursts.close('next_burst') and then bursts.open without gui_lock and without a lease check. decide calls it unconditionally (service.py:412), and the call_tool path checks the lease only in needs_snapshot (gui_bursts.py:58), before a multi-second commit. _run_tool then raises HumanControl (service.py:135-161), and the freshly opened burst stays installed through the lease with a baseline taken mid-takeover. close_idle (gui_bursts.py:137-148) treats a missing _gui_input_at as 0.0 and runs from every call_tool (service.py:271) and expire_stale. _stop_strays (gui_bursts.py:79-93) with gui_strays (gui_state.py) kills uid-1001 processes in sessions that are not in that baseline, which includes a terminal the human opened after it. _finish logs the human's /workspace edits as agent gui_changes."
+ },
+ {
   "coverage_id": "GUI-burst%20writes%20outside%20%2Fworkspace%20by%20uid%201001%20%28%2Fhome%2Fdesktop%2C%20%2Ftmp%2C%20%2Fdev%2Fshm%2C%20%2Frun%2Fuser%2C%20XDG%20dirs%29%20that%20persist%20through%20snapshot%2C%20restore%20or%20restart::images%2Fdesktop%2Fagentbox-desktop-start%23%2Fhome%2Fdesktop%20reset%20at%20start%20%2B%20agentbox%2Fgui_state.py%23workspace%20manifest%20scope::images%2Fdesktop%20%2B%20agentbox%2Fsandbox.py%23restore%2Fstart%20%2B%20agentbox%2Fgui_bursts.py::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
   "canonical_refs": {
    "surface": "GUI-burst writes outside /workspace by uid 1001 (/home/desktop, /tmp, /dev/shm, /run/user, XDG dirs) that persist through snapshot, restore or restart",

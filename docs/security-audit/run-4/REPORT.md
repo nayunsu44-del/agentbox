@@ -4,10 +4,10 @@
 
 ## 1. 요약
 
-- 이 run은 **부분 감사**다. 사후 비평이 제안한 경계 2개를 예산 때문에 헌팅하지 못했다(아래 6절).
+- 이 run은 **부분 감사**다. 비평이 제안한 경계 3개를 예산 때문에 헌팅하지 못했다(아래 6절).
 - 확정 **8건**: 중간 3건, 낮음 5건.
 - 검증 필요 **5건**, 기각 **0건**. 레코드는 모두 13건이다.
-- 장부 32단위: candidate 10, covered 20, deferred 2.
+- 장부 33단위: candidate 10, covered 20, deferred 3.
 - run-3 확정 11건과 검증 필요 5건은 소스가 바뀌어(수정과 리팩토링) 모두 재검증 단위로 다시 봤다. 같은 지문으로 이어진 것은 아래와 같다. 나머지 run-3 확정 건은 현재 소스에서 같은 근본 원인이 재현되지 않았다.
   - N1: run-3 검증 필요 → run-4 검증 필요 (`agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare`)
   - N4: run-3 검증 필요 → run-4 검증 필요 (`agentbox/sandbox.py:gui_strays:client-declared-net-wm-pid-exempts-baseline-session-process`)
@@ -65,12 +65,13 @@
 
 ## 6. 커버리지와 한계
 
-- 장부 32단위 가운데 헌터가 맡은 30단위는 모두 닫혔다(covered 20, candidate 10).
-- 사후 비평 `critic-1`이 미할당 경계 2개를 제안했다. 예산을 검증에 남겨야 해서 헌터를 붙이지 못했고, 장부에 `deferred`로 넣었다. 다음 run의 1순위다.
+- 장부 33단위 가운데 헌터가 맡은 30단위는 모두 닫혔다(covered 20, candidate 10).
+- 비평이 미할당 경계 3개를 제안했다. 사후 비평 `critic-1`이 2개, 최종 비평 `critic-2`가 1개다. 예산 때문에 헌터를 붙이지 못했고, 장부에 `deferred`로 넣었다. 다음 run의 1순위다.
   - 데스크톱 WebSocket(`/sandboxes/{sid}/desktop/ws`) 업그레이드 경로. async 핸들러가 `ws.accept()` 전에 SQLite(세션·리스)와 Docker SDK를 동기로 불러 이벤트 루프를 막는지(api.py, desktop_ws.py).
   - 승인 테이블. 승인이 필요한 호출마다 원본 인자와 미리보기를 마스킹·상한 없이 저장하고, 샌드박스를 지운 뒤에도 남는지(approvals.py, service.py).
+  - (critic-2 제안) 사람이 화면을 인수한 동안 열리는 에이전트 GUI 구간. 승인된 GUI 입력의 `decide`나, 인수와 겹친 `call_tool` 스냅샷이 `gui_lock`과 리스 확인 없이 구간을 연다(service.py:250-265, 412). 그 구간이 리스 기간 내내 남아, 뒤이은 `close_idle`이 사람이 띄운 프로세스를 죽이고 사람의 편집을 에이전트 `gui_changes`로 기록할 수 있는지(service.py:514의 설계 불변식).
 - critic-1의 원래 출력은 남아 있지 않다. 단위 내용은 1차 보고서의 요약과 소스로 다시 만들었다. WebSocket 핸들러가 `ws.accept()` 전에 동기 SQLite·Docker 호출을 하는 것은 api.py:343-353과 desktop_ws.py:18-23에서 확인했다.
-- 최종 비평(`critic-2`, Opus) 결과: 아직 반영 전.
+- 최종 비평(`critic-2`, Opus, 50번째 호출)은 `stop: false`였다. 새 미할당 경계 1개를 냈다(위 세 번째 항목). 예산이 다 떨어져 이것도 `deferred`로 넣었다. 따라서 이 run은 **깨끗한 커버리지를 주장하지 않는다.** 이 비평이 제안한 공격 유형 블록(`Race conditions in shared state`)은 스킬에 없어서 부모가 자유 서술로 적었다. critic-2는 run-3 단서 3개(구간 열기 실패 무기록, `gui_lock`을 쥔 채 시간 제한 없는 X exec, 프레임 허용 UI)가 현재 소스에서 해소됐다고 판단했다.
 
 ## 7. 편차와 주의
 
@@ -84,7 +85,7 @@
   3. 부모가 실제 Docker에서 재현했다(21번 중 18번 뚫림).
   4. 부모가 확정으로 올린 대체 레코드를 새 검증자 r14(Opus)가 확인했다. 확정, 심각도 낮음이다.
 - **critic-1이 제안한 2단위가 장부에 없었다.** 장부에 `deferred`로 넣었다. critic-1의 원래 출력은 남지 않아 1차 보고서의 요약과 소스로 단위를 다시 만들었다(장부 `x_source`).
-- **최종 비평을 예산이 남았는데 돌리지 않았다.** 검토 때 마지막 호출로 돌렸다(`critic-2`).
+- **최종 비평을 예산이 남았는데 돌리지 않았다.** 검토 때 마지막 호출로 돌렸다(`critic-2`). 새 경계 1개가 나와 `deferred`로 넣었다.
 - **`run_status: "complete_with_deferred_units"`는 스킬에 없는 값이었다.** 보류 단위가 남은 부분 감사이므로 `incomplete`로 고쳤다.
 - **승인 카드 단위에 잘못된 검사가 들어가 있었다.**
   - 원인: `tools/oneoff/_fix.py`가 h-policy의 `raw.txt`를 덮어쓰고, 단위를 순서대로 짝지었다. 그래서 승인 카드 단위에 승인 결정 단위의 검사가 들어갔다. `_fix_card_unit.py`는 그 단위를 손으로 후보로 바꿨다.
