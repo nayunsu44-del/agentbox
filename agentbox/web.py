@@ -264,7 +264,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
     # ---- 감사 로그 타임라인 (UX-6) -----------------------------------------
     @app.get("/ui/audit", include_in_schema=False)
     def audit_frag(request: Request, sandbox_id: str | None = None, p=Depends(browser_human)):
-        box.close_idle_gui_bursts(wait=AUDIT_BURST_WAIT)
+        box.bursts.close_idle(wait=AUDIT_BURST_WAIT)
         rows, total = box.audit.recent(sandbox_id=sandbox_id, limit=400)
         return render(request, "_audit.html", rows=rows, total=total, broken=None)
 

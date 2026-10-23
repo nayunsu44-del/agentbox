@@ -58,6 +58,14 @@ run-3 감사와 수정이 main에 들어갔다(PR #8 `5decb11`, #9 `f497c86`). �
 - 테스트: `box._gui_*`, `box._burst_pool`, `box._closing` 참조를 `box.bursts.*`로 기계적으로 바꾼다. 주로 `tests/test_m2_unit.py`, `tests/test_m2_acceptance.py`에 있다.
 - 결과로 `service.py`는 약 450줄이 된다.
 
+**진행.** 구현하면서 플랜과 달라진 것은 다음과 같다.
+- `GuiBursts`는 `DesktopControl`과 `AgentBox._busy_lock`도 주입받는다.
+  - `needs_snapshot`이 화면 임대 상태(`desktop.lease`·`is_stale`)를 본다.
+  - 닫기 잠금은 같은 잠금 객체를 써야 잠금 순서가 그대로다.
+- `mark_snapshot`과 `forget_input`을 더했다. `_snapshot`과 `_handback_locked`가 시각을 직접 쓰던 곳이다.
+- `AgentBox`의 공개 메서드 `close_idle_gui_bursts`, `end_gui_burst`, `reset_gui_timers`는 `bursts.*`로 옮겨서 없어졌다. 다른 호출하는 곳은 없다.
+- `service.py`는 601줄이다. PR 1의 수명 주기 메서드와 승인·파일 코드가 남아서 예상(약 450줄)보다 길다.
+
 ## PR 3. `sandbox.py` 분리 (공개 메서드는 그대로)
 - **`agentbox/gui_state.py`**: 순수 함수를 옮긴다.
   - 대상: `_parse_manifest`, `diff_manifest`, `_parse_ps`, `gui_strays`, `DESKTOP_UID`.
