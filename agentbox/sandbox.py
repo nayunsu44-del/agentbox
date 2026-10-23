@@ -92,6 +92,11 @@ class SandboxError(RuntimeError):
     pass
 
 
+def _timed(seconds: int, *argv: str, kill_after: int = 2) -> list[str]:
+    """컨테이너 안에서 제한 시간을 거는 argv. 시간이 지나면 TERM, kill_after초 뒤에도 안 끝나면 KILL."""
+    return ["timeout", "-k", str(kill_after), str(seconds), *argv]
+
+
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
 
@@ -532,9 +537,9 @@ class SandboxManager:
         """/workspace의 파일 목록 {경로: (크기, mtime, ctime)}. root로 읽어 에이전트가 권한으로 숨기지 못하게 한다.
         mtime은 파일 주인이 touch로 되돌릴 수 있지만 ctime은 못 되돌린다(시계를 바꿀 권한이 없다)."""
         c = self._container(sid)
-        res = c.exec_run(["timeout", "-k", "2", str(_MANIFEST_TIMEOUT), "sh", "-c",
-                          f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0%C@\\0' "
-                          f"| head -c {_MANIFEST_CAP}"], user="0:0", demux=True)
+        res = c.exec_run(_timed(_MANIFEST_TIMEOUT, "sh", "-c",
+                                f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0%C@\\0' "
+                                f"| head -c {_MANIFEST_CAP}"), user="0:0", demux=True)
         if res.exit_code != 0:  # 시간 초과 등. 잘린 목록으로 비교하면 없는 파일을 지워졌다고 적는다
             raise SandboxError(f"/workspace 파일 목록 실패 (exit {res.exit_code})")
         return _parse_manifest(res.output[0] or b"")
@@ -567,7 +572,7 @@ class SandboxManager:
         # 출력은 스트림으로 받아 앞부분만 남긴다. 한꺼번에 받으면 제한 시간 동안 나온 전부가
         # 컨트롤 플레인 메모리에 쌓인다 (cat /dev/zero 하나로 수백 MB).
         api = self.client.api
-        ex = api.exec_create(c.id, ["timeout", "-k", "5", str(t), "bash", "-c", "umask 002\n" + command],
+        ex = api.exec_create(c.id, _timed(t, "bash", "-c", "umask 002\n" + command, kill_after=5),
                              user=AGENT_UID, workdir=WORKSPACE)
         out, err = _Head(), _Head()
         for o, e in api.exec_start(ex["Id"], stream=True, demux=True):
@@ -597,7 +602,7 @@ class SandboxManager:
         # 일반 파일만 읽는다. FIFO를 읽으면 쓰는 쪽이 생길 때까지 끝나지 않는다 (README 알려진 한계였다).
         script = ('[ -f "$1" ] || { echo "일반 파일이 아님 (폴더·FIFO·소켓 등): $1" >&2; exit 3; }; '
                   f'head -c {limit + 1} -- "$1"')
-        res = c.exec_run(["timeout", "-k", "2", str(_READ_TIMEOUT), "sh", "-c", script, "_", p],
+        res = c.exec_run(_timed(_READ_TIMEOUT, "sh", "-c", script, "_", p),
                          user=AGENT_UID, workdir=WORKSPACE, demux=True)
         out, err = res.output
         if res.exit_code in (124, 137):
@@ -701,7 +706,7 @@ class SandboxManager:
         script = (f'[ ! -L {OUTBOX} ] && [ -f "$1" ] && [ ! -L "$1" ] || {{ echo "결과함에 없는 파일" >&2; exit 3; }}; '
                   f'head -c {limit + 1} -- "$1"')
         # 확인과 읽기 사이에 에이전트가 FIFO로 바꿔치기해도 사람의 요청이 멈추지 않게 시간 제한을 둔다.
-        res = c.exec_run(["timeout", "-k", "2", str(_READ_TIMEOUT), "sh", "-c", script, "_", p],
+        res = c.exec_run(_timed(_READ_TIMEOUT, "sh", "-c", script, "_", p),
                          user=AGENT_UID, demux=True)
         if res.exit_code in (124, 137):
             raise SandboxError(f"읽기 시간 초과 ({_READ_TIMEOUT}초): {name}")
@@ -720,7 +725,7 @@ class SandboxManager:
 
     @staticmethod
     def _x(c, argv: list[str], timeout: int = _X_TIMEOUT):
-        res = c.exec_run(["timeout", "-k", "2", str(timeout), *argv],
+        res = c.exec_run(_timed(timeout, *argv),
                          user=DESKTOP_USER, environment=DESKTOP_ENV, demux=True)
         if res.exit_code in _TIMED_OUT:  # 반쯤 받은 결과(창 목록 등)로 판단하지 않게 실패로 돌린다
             raise SandboxError(f"화면(X 서버)이 {timeout}초 안에 응답하지 않음")
@@ -729,7 +734,7 @@ class SandboxManager:
     def desktop_processes(self, sid: str) -> tuple[list[dict[str, Any]], set[int]]:
         """컨테이너의 프로세스 목록과, 보이는 창을 가진 pid (_NET_WM_PID)."""
         c = self._desktop(sid)
-        res = c.exec_run(["timeout", "-k", "2", str(_X_TIMEOUT), "ps", "-eo", "pid=,ppid=,sid=,uid=,args="])
+        res = c.exec_run(_timed(_X_TIMEOUT, "ps", "-eo", "pid=,ppid=,sid=,uid=,args="))
         if res.exit_code != 0:  # 빈 목록을 기준으로 삼으면 구간이 끝날 때 데스크톱 세션 전체를 낯선 프로세스로 본다
             raise SandboxError(f"프로세스 목록 실패 (exit {res.exit_code})")
         procs = _parse_ps(res.output or b"")
@@ -740,7 +745,7 @@ class SandboxManager:
 
     def kill_processes(self, sid: str, pids: list[int]) -> None:
         if pids:
-            self._desktop(sid).exec_run(["timeout", "-k", "2", str(_X_TIMEOUT), "kill", "-KILL", "--", *map(str, pids)],
+            self._desktop(sid).exec_run(_timed(_X_TIMEOUT, "kill", "-KILL", "--", *map(str, pids)),
                                         user=DESKTOP_USER)
 
     def _wait_display(self, c, timeout: float = 45) -> None:

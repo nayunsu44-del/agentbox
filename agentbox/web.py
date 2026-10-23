@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 from pathlib import Path
 from typing import Any, Callable
 
@@ -22,6 +21,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import approvals as A
 from . import desktop as D
+from .display import escape_controls
 from .sandbox import SandboxError
 from .service import AUDIT_BURST_WAIT, AgentBox, ServiceError
 
@@ -29,14 +29,11 @@ HERE = Path(__file__).parent
 ACTORS = {"agent": "AI", "human": "사람", "system": "시스템"}
 # HTML 이스케이프는 < > & 따옴표만 바꾼다. 양방향(bidi) 재배치 문자가 남으면 브라우저가 글자 순서를 바꿔 보여서,
 # 승인 화면의 명령이 실제와 다르게 읽힌다 (보안 검수 run-3 v13). 터미널의 cli._safe와 같은 문자를 같은 모양으로
-# 바꾸되, 줄바꿈과 탭은 화면에서 그대로 보여도 되니 남긴다.
-_UNSAFE = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
-
-
+# 바꾸되, 줄바꿈과 탭은 화면에서 그대로 보여도 되니 남긴다 (display.escape_controls).
 def _shown(value: Any) -> Any:
     """템플릿의 모든 {{ }} 출력에 거는 마무리. 에이전트·컨테이너가 정한 문자열이 어디에 찍히든 같이 막는다."""
     if isinstance(value, str):
-        return _UNSAFE.sub(lambda m: f"\\x{ord(m[0]):02x}" if ord(m[0]) < 0x100 else f"\\u{ord(m[0]):04x}", value)
+        return escape_controls(value, keep_newlines=True)
     return value
 
 
@@ -148,7 +145,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
             raise HTTPException(403, "다른 출처의 요청")
         s = box.end_ui_session(request.cookies.get(D.COOKIE))
         if s:
-            box._safe_log(None, None, "ui_logout", {"session": s}, actor="human")
+            box.log_best_effort(None, None, "ui_logout", {"session": s}, actor="human")
         r = RedirectResponse("/login", status_code=303)
         r.delete_cookie(D.COOKIE)
         return r
@@ -247,31 +244,21 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
 
     @app.post("/ui/sandboxes/{sid}/snapshots", include_in_schema=False)
     def take_snapshot(request: Request, sid: str, p=Depends(browser_human)):
-        box.log_human("snapshot_request", sid, {"session": p.session})
-        snap = guard(lambda: box.sandboxes.snapshot(sid, reason="manual"))
-        box.log_human("snapshot", sid, {"snapshot_id": snap["id"], "image": snap["image"], "session": p.session})
+        guard(lambda: box.snapshot_sandbox(sid, p.session))
         r = snapshots_frag(request, sid, p)
         r.headers["HX-Trigger"] = "audit-changed"
         return r
 
     @app.post("/ui/sandboxes/{sid}/restore/{snap_id}", include_in_schema=False)
     def restore(request: Request, sid: str, snap_id: str, p=Depends(browser_human)):
-        box.log_human("restore_request", sid, {"snapshot_id": snap_id, "session": p.session})
-        box.end_desktop(sid, "sandbox_restored")
-        rec = guard(lambda: box.sandboxes.restore(sid, snap_id))
-        box.reset_gui_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
-        box.log_human("restored", sid, {"snapshot_id": snap_id, "container_id": rec["container_id"],
-                                        "session": p.session})
+        guard(lambda: box.restore_sandbox(sid, snap_id, p.session))
         r = snapshots_frag(request, sid, p)
         r.headers["HX-Trigger"] = "audit-changed"
         return r
 
     @app.post("/ui/sandboxes/{sid}/delete", include_in_schema=False)
     def delete(request: Request, sid: str, p=Depends(browser_human)):
-        box.log_human("sandbox_delete", sid, {"session": p.session})
-        box.end_desktop(sid, "sandbox_deleted")
-        guard(lambda: box.sandboxes.delete(sid))
-        box.drop_captures(sid)
+        guard(lambda: box.delete_sandbox(sid, p.session))
         return Response("", headers={"HX-Redirect": "/ui"})
 
     # ---- 감사 로그 타임라인 (UX-6) -----------------------------------------
@@ -287,7 +274,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
         here = None
         if v.broken_at is not None and sandbox_id:
             here = box.audit.belongs_to(v.broken_at, sandbox_id)
-        box._safe_log(sandbox_id, None, "audit_verified", {"ok": v.ok, "checked": v.checked,
-                                                           "broken_at": v.broken_at, "session": p.session},
-                      actor="human")
+        box.log_best_effort(sandbox_id, None, "audit_verified", {"ok": v.ok, "checked": v.checked,
+                                                                 "broken_at": v.broken_at, "session": p.session},
+                            actor="human")
         return render(request, "_verify.html", v=v, here=here)

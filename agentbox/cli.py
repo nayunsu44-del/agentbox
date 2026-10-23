@@ -16,7 +16,6 @@ import argparse
 import ipaddress
 import json
 import os
-import re
 import sys
 import time
 from typing import Any
@@ -24,19 +23,16 @@ from typing import Any
 import httpx
 
 from .config import Settings
+from .display import escape_controls
 
 BOLD, DIM, RED, GREEN, YELLOW, CYAN, RESET = "\033[1m", "\033[2m", "\033[31m", "\033[32m", "\033[33m", "\033[36m", "\033[0m"
 if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
     BOLD = DIM = RED = GREEN = YELLOW = CYAN = RESET = ""
 
-# C0·DEL·C1 제어 문자와 양방향(bidi) 재배치 문자. 터미널이 해석하면 커서 이동·줄 지우기·글자 순서
-# 뒤집기로 화면에 보이는 내용을 바꿀 수 있다.
-_UNSAFE = re.compile("[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]")
-
 
 def _safe(s: Any) -> str:
     """에이전트가 정한 문자열을 터미널에 그대로 찍지 않는다. 제어 문자는 \\x1b처럼 보이게 바꾼다."""
-    return _UNSAFE.sub(lambda m: f"\\x{ord(m[0]):02x}" if ord(m[0]) < 0x100 else f"\\u{ord(m[0]):04x}", str(s))
+    return escape_controls(str(s), keep_newlines=False)
 
 
 def _url() -> str:
