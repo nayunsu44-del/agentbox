@@ -126,9 +126,7 @@
   "result_fingerprints": [
    "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore"
   ],
-  "unresolved": [
-   "phase5_pending: v19 Phase 3 confirmed; Phase 5 record verifier p5-v19"
-  ],
+  "unresolved": [],
   "x_source": "critic-2 missing_units",
   "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 3. Desktop session start on restore honours ~/.config/autostart written by uid 1001; never in gui_changes; needs live-image validation.",
   "x_hardening": [
@@ -137,10 +135,10 @@
    "agentbox/sandbox.py:216 — gui_strays unconditionally exempts baseline pids; a process whose executable/entry was introduced by a prior burst (e.g., an autostart file committed into the snapshot) is indistinguishable from a legitimate boot process after restore, so baseline membership is not a safe trust signal across restore boundaries."
   ],
   "x_decisions": {
-   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "phase3 confirmed (low) by v19, awaiting Phase 5"
+   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "confirmed"
   },
   "x_phase5": {
-   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "pending"
+   "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "verified [p5-v19]"
   }
  },
  {
@@ -324,9 +322,7 @@
   "result_fingerprints": [
    "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed"
   ],
-  "unresolved": [
-   "phase5_pending: v18 Phase 3 confirmed; Phase 5 record verifier p5-v18"
-  ],
+  "unresolved": [],
   "x_source": "critic-2 missing_units",
   "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 2. Every gated call creates an approval, preview and captures/{aid}.png with no pending cap; no code removes captures; host disk grows without a quota and the queue renders every card.",
   "x_hardening": [
@@ -334,10 +330,10 @@
    "sandbox.py screenshot() reads the whole scrot PNG with no size cap (unlike exec output _Head/64KB), so each retained capture can be large on a busy desktop; capping/downscaling the stored capture would reduce per-item cost."
   ],
   "x_decisions": {
-   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "phase3 confirmed (low) by v18, awaiting Phase 5"
+   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "confirmed"
   },
   "x_phase5": {
-   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "pending"
+   "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "verified [p5-v18]"
   }
  },
  {
@@ -2517,9 +2513,7 @@
   "result_fingerprints": [
    "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row"
   ],
-  "unresolved": [
-   "phase5_pending: v17 Phase 3 confirmed; Phase 5 record verifier p5-v17"
-  ],
+  "unresolved": [],
   "x_source": "critic-2 missing_units",
   "x_critic_reason": "budget_cannot_reserve_critics_and_validation: proposed by post-wave-2 critic (critic-2); Rank 1. The approval-binding unit did not read sandbox.py preview or templates: impact list built by newline-splitting container output (agent-chosen names with newlines add/displace rows), only rm/curl recognised, 'could not compute' note only when both lists are empty, 200-row truncation; captures of an agent-controlled screen presented as system-taken.",
   "x_hardening": [
@@ -2528,10 +2522,10 @@
    "agentbox/service.py:decide and _snapshot: approval execution takes an unconditional pre-execution snapshot for every tool including exec, so the UI/CLI claim '승인하면 실행 직전에 스냅샷을 만든다' is honored and a manual restore point exists even for the deceptive-preview case (noted to bound impact)."
   ],
   "x_decisions": {
-   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "phase3 confirmed (low) by v17, awaiting Phase 5"
+   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "confirmed"
   },
   "x_phase5": {
-   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "pending"
+   "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "verified [p5-v17]"
   }
  },
  {
