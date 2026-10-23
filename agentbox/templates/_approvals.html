@@ -23,7 +23,7 @@
 {% if done %}
 <details {{ "open" if not pending }}><summary class="mut">최근 결정</summary>
 {% for a in done %}
-<div class="card done"><b>{{ a.id }}</b> · {{ a.tool }} <code>{{ (a.args.command or a.args.path or "") | short(80) }}</code>
+<div class="card done"><b>{{ a.id }}</b> · {{ a.tool }} <code>{{ (a.args.command or a.args.path or a.args.args_head or "") | short(80) }}</code>
   → <span class="badge {{ 'ok' if a.status == 'executed' else 'warn' if a.status in ('denied', 'expired', 'failed') }}">{{ a.status }}</span>
   {% if a.snapshot_id %}<span class="mut">스냅샷 {{ a.snapshot_id }}</span>{% endif %}
   <span class="mut">{{ a.decided_by or "" }} {{ (a.decided_at or "")[11:19] }}</span></div>

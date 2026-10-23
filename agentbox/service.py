@@ -13,6 +13,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import shutil
+import sqlite3
 import threading
 import time
 from contextlib import contextmanager
@@ -23,7 +25,7 @@ from typing import Any
 
 from . import approvals as A
 from .approvals import ApprovalStore
-from .audit import AuditLog, AuditWriteError
+from .audit import AuditLog, AuditWriteError, bound_payload
 from .desktop import DesktopControl, Lease
 from .gui_bursts import GuiBursts
 from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Decision, Policy
@@ -89,6 +91,7 @@ class AgentBox:
         # 인수를 기다리는 중: sid -> (세션, 이때까지 에이전트 GUI 도구를 새로 돌리지 않음)
         self._takeover_wanted: dict[str, tuple[str, float]] = {}
         self._busy_lock = threading.Lock()
+        self._low_disk = False   # 지난번 disk_low() 판단. 바뀔 때만 기록한다
         self.bursts = GuiBursts(sandboxes, self.desktop, self.log_best_effort, self._takeover_pending, self._busy_lock)
 
     def capture_path(self, aid: str) -> Path | None:
@@ -276,6 +279,9 @@ class AgentBox:
     def call_tool(self, sid: str, tool: str, args: dict[str, Any], actor: str = "agent") -> ToolOutcome:
         """샌드박스 하나가 동시에 돌리는 도구 호출 수를 제한한다. 출력 없는 허용 명령(tail -f 등)을
         여러 개 띄워 도구 실행 스레드를 제한 시간 내내 붙잡지 못하게 한다."""
+        if actor == "agent" and self.disk_low():
+            raise ServiceError(507, "컨트롤 플레인 디스크의 남은 공간이 부족해 도구 호출을 받지 않음. "
+                                    "사람이 공간을 확보한 뒤 다시 호출할 것.")
         self.bursts.close_idle()
         limit = self.sandboxes.settings.tool_concurrency
         with self._busy_lock:
@@ -379,6 +385,31 @@ class AgentBox:
         self.log_best_effort(sid, tool, "tool_result", {"request": req_id, **self._summary(tool, result)})
         return ToolOutcome(200, {"status": "executed", "result": result})
 
+    def disk_low(self) -> bool:
+        """DB가 있는 디스크의 남은 공간이 min_free_bytes보다 적은지. 에이전트가 늘리는 기록(도구 호출, 승인 시도)은
+        이때 받지 않아서, 남은 공간을 사람의 삭제·승인·반환이 쓴다 (보안 검수 run-4 N2). 상태가 바뀔 때만 기록한다."""
+        s = self.sandboxes.settings
+        if s.min_free_bytes <= 0:
+            return False
+        try:
+            free = shutil.disk_usage(s.db_path.parent).free
+        except OSError:
+            return False
+        low = free < s.min_free_bytes
+        with self._busy_lock:
+            changed, self._low_disk = low != self._low_disk, low
+        if changed:
+            self.log_best_effort(None, None, "disk_low" if low else "disk_ok",
+                                 {"free_bytes": free, "min_free_bytes": s.min_free_bytes})
+        return low
+
+    def _finish(self, apr: dict[str, Any], status: str, result: dict[str, Any], snapshot_id: str | None = None) -> None:
+        """끝난 승인은 원본 인자를 다시 쓰지 않는다. 감사 로그와 같은 모양(크기·해시·앞부분)으로 줄여서,
+        에이전트가 큰 인자로 키운 승인 행이 그대로 쌓이지 않게 한다 (보안 검수 run-4 N2)."""
+        self.approvals.finish(apr["id"], status, result, snapshot_id=snapshot_id,
+                              args=self._logged_args(apr["tool"], apr["args"]),
+                              preview=bound_payload(apr["preview"]))
+
     def log_best_effort(self, sid: str | None, tool: str | None, event: str, payload: dict[str, Any],
                         actor: str = "system") -> None:
         try:
@@ -395,12 +426,16 @@ class AgentBox:
         for apr in self.approvals.list(status=A.PENDING):
             if datetime.fromisoformat(apr["created_at"]) > limit:
                 continue
-            if self.approvals.claim(apr["id"], A.EXPIRED, "system"):
+            try:
+                if not self.approvals.claim(apr["id"], A.EXPIRED, "system"):
+                    continue
                 self._drop_capture(apr["id"])
-                self.approvals.finish(apr["id"], A.EXPIRED, {
+                self._finish(apr, A.EXPIRED, {
                     "message": f"{self.approval_timeout}초 안에 결정이 없어 거부함. 실행하지 않음."})
-                self.log_best_effort(apr["sandbox_id"], apr["tool"], "approval_expired",
-                                     {"approval_id": apr["id"], "timeout_s": self.approval_timeout})
+            except sqlite3.Error:
+                return   # 디스크가 차 있으면 다음 조회 때 다시 한다. 조회 자체는 막지 않는다
+            self.log_best_effort(apr["sandbox_id"], apr["tool"], "approval_expired",
+                                 {"approval_id": apr["id"], "timeout_s": self.approval_timeout})
 
     def decide(self, aid: str, approve: bool, actor: str = "human", session: str | None = None) -> dict[str, Any]:
         self.expire_stale()
@@ -408,7 +443,11 @@ class AgentBox:
         if not apr:
             raise ServiceError(404, f"승인 요청 없음: {aid}")
         decision = A.APPROVED if approve else A.DENIED
-        if not self.approvals.claim(aid, decision, actor):
+        try:
+            claimed = self.approvals.claim(aid, decision, actor)
+        except sqlite3.Error as e:
+            raise ServiceError(503, f"승인 기록 실패: {e}. 결정하지 않음.") from e
+        if not claimed:
             raise ServiceError(409, f"이미 결정된 요청: {aid} ({apr['status']})")
         self._drop_capture(aid)
         sid, tool, args = apr["sandbox_id"], apr["tool"], apr["args"]
@@ -416,11 +455,11 @@ class AgentBox:
             self.audit.append(actor=actor, event="approval_decision", sandbox_id=sid, tool=tool,
                               payload={"approval_id": aid, "decision": decision, "session": session})
         except AuditWriteError as e:
-            self.approvals.finish(aid, A.FAILED, {"error": str(e)})
+            self._finish(apr, A.FAILED, {"error": str(e)})
             raise ServiceError(503, f"{e}. 기록할 수 없어서 실행하지 않음.") from e
 
         if not approve:
-            self.approvals.finish(aid, A.DENIED, {"message": "사람이 거절함. 실행하지 않음."})
+            self._finish(apr, A.DENIED, {"message": "사람이 거절함. 실행하지 않음."})
             return self.approvals.get(aid)  # type: ignore[return-value]
 
         # AP-2: 실행 직전 스냅샷
@@ -429,17 +468,17 @@ class AgentBox:
             self.audit.append(actor="system", event="tool_execute", sandbox_id=sid, tool=tool,
                               payload={"approval_id": aid, "args": self._logged_args(tool, args)})
         except (SandboxError, AuditWriteError, Exception) as e:
-            self.approvals.finish(aid, A.FAILED, {"error": f"스냅샷 또는 기록 실패, 실행하지 않음: {e}"})
+            self._finish(apr, A.FAILED, {"error": f"스냅샷 또는 기록 실패, 실행하지 않음: {e}"})
             self.log_best_effort(sid, tool, "tool_error", {"approval_id": aid, "error": str(e)})
             raise ServiceError(503, f"스냅샷 또는 기록 실패, 실행하지 않음: {e}") from e
 
         try:
             result = self._run_tool(sid, tool, args)
         except (SandboxError, HumanControl) as e:
-            self.approvals.finish(aid, A.FAILED, {"error": str(e)}, snapshot_id=snap["id"])
+            self._finish(apr, A.FAILED, {"error": str(e)}, snapshot_id=snap["id"])
             self.log_best_effort(sid, tool, "tool_error", {"approval_id": aid, "error": str(e)})
             return self.approvals.get(aid)  # type: ignore[return-value]
-        self.approvals.finish(aid, A.EXECUTED, result, snapshot_id=snap["id"])
+        self._finish(apr, A.EXECUTED, result, snapshot_id=snap["id"])
         self.log_best_effort(sid, tool, "tool_result", {"approval_id": aid, **self._summary(tool, result)})
         return self.approvals.get(aid)  # type: ignore[return-value]
 

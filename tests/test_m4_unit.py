@@ -280,3 +280,86 @@ def test_escape_controls_covers_invisible_and_bidi_marks():
     assert escape_controls("a\tb\nc", keep_newlines=False) == "a\\x09b\\x0ac"
     assert escape_controls("한글 파일.txt é ✓", keep_newlines=False) == "한글 파일.txt é ✓"
     assert _safe("x\u2028y") == "x\\u2028y"
+
+
+class _NoSandboxes:
+    """도구를 실행하지 않는 샌드박스 자리. 승인·감사·디스크 판단만 본다."""
+    def __init__(self, home):
+        self.settings = Settings(home=home)
+
+    def get(self, sid):
+        return {"id": sid, "container_id": "c1", "status": "running"}
+
+
+def _store_box(tmp_path):
+    from agentbox.approvals import ApprovalStore
+    from agentbox.audit import AuditLog
+    from agentbox.service import AgentBox
+    db = tmp_path / "agentbox.db"
+    sb = _NoSandboxes(tmp_path)
+    box = AgentBox(AuditLog(db), Policy({"default": "allow"}), sb, approvals=ApprovalStore(db),
+                   desktop=DesktopControl(), approval_timeout=1)
+    return box, sb
+
+
+def test_low_disk_blocks_agent_calls_only(tmp_path):
+    """보안 검수 run-4 N2: 남은 공간이 기준보다 적으면 에이전트 호출을 받지 않고, 막힌 호출은 기록을 늘리지 않는다."""
+    from agentbox.service import ServiceError
+    box, sb = _store_box(tmp_path)
+    sb.settings.min_free_bytes = 1 << 62                         # 어떤 디스크보다 큼
+    for _ in range(3):
+        with pytest.raises(ServiceError) as e:
+            box.call_tool("sb", "list_dir", {"path": "/workspace"}, actor="agent")
+        assert e.value.status == 507
+    rows = box.audit.list()
+    assert [r["event"] for r in rows] == ["disk_low"]            # 상태가 바뀔 때 한 번만
+    assert box.disk_low()
+    sb.settings.min_free_bytes = 1
+    assert not box.disk_low()
+    assert [r["event"] for r in box.audit.list()] == ["disk_low", "disk_ok"]
+    assert box.audit.verify().ok
+    box.bursts._burst_pool.shutdown()
+
+
+def test_finished_approval_drops_raw_args(tmp_path):
+    """보안 검수 run-4 N2: 끝난 승인 행에는 원본 인자 대신 크기·해시·앞부분만 남는다 (거절·기한 만료)."""
+    import sqlite3
+    box, _ = _store_box(tmp_path)
+    big = "echo " + "a" * 400_000
+    mk = lambda: box.approvals.create(sandbox_id="sb", tool="exec", args={"command": big}, rule_id="r",
+                                      rule_reason="x", preview={"command": big, "affected": [], "notes": []})
+    denied, stale = mk(), mk()
+    small = box.approvals.create(sandbox_id="sb", tool="exec", args={"command": "rm x"}, rule_id="r",
+                                 rule_reason="x", preview={"command": "rm x", "affected": [], "notes": []})
+    assert box.decide(denied["id"], approve=False)["status"] == "denied"
+    box.decide(small["id"], approve=False)
+    time.sleep(1.1)
+    box.expire_stale()
+    for aid, status in ((denied["id"], "denied"), (stale["id"], "expired")):
+        a = box.approvals.get(aid)
+        assert a["status"] == status and a["args"]["args_truncated"] and "command" not in a["args"]
+        assert a["args"]["args_bytes"] > 400_000 and len(a["args"]["args_head"]) == 16 * 1024
+        assert len(a["preview"]["command"]) < 70 * 1024
+    assert box.approvals.get(small["id"])["args"] == {"command": "rm x"}   # 작은 인자는 그대로
+    db = sqlite3.connect(tmp_path / "agentbox.db")
+    assert max(len(a) + len(p) for a, p in db.execute("SELECT args, preview FROM approvals")) < 100 * 1024
+    box.bursts._burst_pool.shutdown()
+
+
+def test_decide_reports_store_write_failure_as_503(tmp_path):
+    """보안 검수 run-4 N2 실측: 디스크가 차면 승인 결정이 처리되지 않은 OperationalError(500)였다."""
+    import sqlite3
+    from agentbox.service import ServiceError
+    box, _ = _store_box(tmp_path)
+    apr = box.approvals.create(sandbox_id="sb", tool="exec", args={"command": "rm x"}, rule_id="r",
+                               rule_reason="x", preview={"command": "rm x", "affected": [], "notes": []})
+    def full(*a, **k):
+        raise sqlite3.OperationalError("database or disk is full")
+    box.approvals.claim = full
+    with pytest.raises(ServiceError) as e:
+        box.decide(apr["id"], approve=True)
+    assert e.value.status == 503
+    time.sleep(1.1)
+    box.expire_stale()                                           # 기한 처리도 조회를 막지 않는다
+    assert box.approvals.get(apr["id"])["status"] == "pending"
+    box.bursts._burst_pool.shutdown()
