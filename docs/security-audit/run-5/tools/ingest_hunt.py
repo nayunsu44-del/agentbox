@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parent-side intake of one hunter's structured result (run-5, Windows host).
+"""Parent-side intake of one hunter's structured result (run-5, Linux host).
 
 usage: ingest_hunt.py <hunter-id> <file-with-the-final-message>
 
@@ -10,7 +10,7 @@ file and the intake reads it from there; nothing else about the contract changed
 1. requires exactly one JSON object in the file
 2. checks that every assigned unit appears exactly once and that each disposition carries
    the evidence the ledger requires (covered/candidate/blocked)
-3. promotes the allowlisted artifacts with tools/promote.py, then writes the unit's live
+3. promotes the allowlisted artifacts with tools/promote_linux.py, then writes the unit's live
    fields (status, reviewed_paths, local_checks, result_fingerprints, unresolved, x_hardening)
 4. stores the raw result as agents/<id>/result.json; candidates stay there for Phase 3
 Discarded results are never repaired.
@@ -70,7 +70,7 @@ def main():
             fail("unit reviewed_paths is not the union of its checks' paths")
     arts = obj.get("artifacts_to_promote", []) or []
     if arts:
-        r = subprocess.run([sys.executable, "-I", f"{RUN}/tools/promote.py", hid, *arts], capture_output=True, text=True, encoding="utf-8")
+        r = subprocess.run([sys.executable, "-I", f"{RUN}/tools/promote_linux.py", hid, *arts], capture_output=True, text=True, encoding="utf-8")
         print((r.stdout + r.stderr).strip())
     promoted = {f"agents/{hid}/artifacts/{a}" for a in arts if os.path.isfile(f"{RUN}/agents/{hid}/artifacts/{a}")}
     for u in units:

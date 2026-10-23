@@ -33,13 +33,13 @@
  "run_status": "in_progress",
  "agents_spent": {
   "recon": 0,
-  "hunters": 0,
+  "hunters": 6,
   "phase3": 0,
   "phase5": 0,
   "retries": 0,
   "critics": 0,
   "reverify": 0
  },
- "agents_spent_total": 0,
+ "agents_spent_total": 6,
  "phase": "phase2_hunting"
 }
