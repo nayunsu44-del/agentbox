@@ -1,0 +1,72 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/api.py:preauth-request-body-read-before-principal",
+ "title": "Unauthenticated JSON bodies are still decoded before principal(); an 8 MiB body that passes the cap becomes about 220 MB of objects",
+ "description": "The F1 fix (PR #16) caps every request body before routing, at 8 MiB (AGENTBOX_MAX_BODY) for JSON routes. FastAPI still reads and json.loads the body before it resolves the principal/human_only dependencies. The 8 MiB cap is the same for unauthenticated clients as for authenticated write_file calls. A body of empty objects decodes at about 26x its size, so one unauthenticated request with no token allocates about 220 MB of transient Python objects and about 0.35 s of event-loop CPU before it gets a 401. The fix bounds the work per request but does not tie it to authentication. How many such requests overlap in memory depends on concurrency and threadpool latency. Nothing in the repository bounds either one: there is no uvicorn limit_concurrency and no compose memory limit, and Caddy allows 256MB per request.",
+ "claimed_root_cause": "Authentication dependencies still run after FastAPI's body-reading and JSON-decoding stage (fastapi routing get_request_handler reads request.body()/request.json() before solve_dependencies). The only pre-auth bound is a byte cap sized for the largest authenticated payload, with no smaller cap for requests that have no credentials and no limit on concurrent pre-auth decodes. Pre-auth memory is therefore bytes x JSON amplification (~26x) x concurrent requests, not the negligible cost of rejecting a missing token.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 274,
+   "scope": "call_tool route POST /sandboxes/{sid}/tools/{tool} (body: ToolCall, Depends(principal)); same for create_sandbox api.py:233, restore, decide",
+   "description": "Unauthenticated client sends a JSON body of up to 8 MiB with no Authorization header."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/api.py",
+   "line": 111,
+   "scope": "_BodyLimit.__call__",
+   "description": "Only check before routing: the body must be at most max_body_bytes (8 MiB, config.py:65). It is not tied to whether the request has credentials."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/api.py",
+   "line": 122,
+   "scope": "_BodyLimit.limited_receive",
+   "description": "Streamed bytes are counted up to the cap and passed to the app."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/api.py",
+   "line": 173,
+   "scope": "principal dependency",
+   "description": "Runs only after FastAPI has buffered the body and json.loads produced the full object graph (about 26x the body size). Then 401."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/api.py",
+   "line": 170,
+   "description": "_BodyLimit installed with json_max=settings.max_body_bytes for every non-upload route regardless of authentication."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 65,
+   "description": "max_body_bytes defaults to 8 MiB (sized so that an escaped 1 MiB write_file fits)."
+  },
+  {
+   "file": "agentbox/api.py",
+   "line": 274,
+   "description": "call_tool declares body: ToolCall plus Depends(principal). FastAPI decodes the body before the dependency runs. Local check: 1.05 MB -> 27.4 MB peak, 2.10 MB -> 54.9 MB peak, both 401 (agents/h-bodylimit/artifacts/h.out T7)."
+  },
+  {
+   "file": "agentbox/cli.py",
+   "line": 127,
+   "description": "uvicorn.run has no limit_concurrency. Concurrent pre-auth decodes are unbounded in source."
+  },
+  {
+   "file": "deploy/Caddyfile",
+   "line": 8,
+   "description": "Proxy request_body max_size defaults to 256MB for all routes and does not enforce the 8 MiB JSON cap or anything smaller."
+  }
+ ],
+ "blockers": [
+  "Whether the transient ~220 MB per 8 MiB request turns into control-plane OOM or a stall for the human UI and agents depends on deployed host/container memory and on how many decoded bodies overlap (threadpool latency, concurrency). Both are outside the repository. A safe sandbox check (512 MiB) could only measure single requests at 1-2 MiB.",
+  "Overlap of several decoded bodies needs a live uvicorn server with concurrent connections. Starting a server and running concurrent load was outside the hunter sandbox rules."
+ ],
+ "validation_plan": {
+  "local": "Run agentbox serve on loopback in a disposable container with a fixed memory limit (e.g. 1 GiB) and a dummy human token. Send one unauthenticated POST /sandboxes/sb_x/tools/exec with Content-Type application/json and an 8 MiB body {\"args\":{\"a\":[{},{},...]}}. Record the 401 and the peak RSS increase of the uvicorn process (expected about 220 MB). Then send 3-4 such requests concurrently while a sync human route holds threadpool slots, and record peak RSS and whether a human GET /healthz or /ui is delayed. Stop at the first OOM-kill or at peak RSS above half the limit. Regression after the fix: the same requests without credentials get 413 or 401 with no measurable RSS growth.",
+  "deployment": "Owner checks the memory limit of the agentbox control-plane container or host and whether the TLS proxy enforces a JSON-route body cap smaller than 8 MiB. The bundled Caddyfile allows 256MB on every route."
+ }
+}
