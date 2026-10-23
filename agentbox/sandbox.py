@@ -562,19 +562,24 @@ class SandboxManager(DesktopTools):
         return data
 
     # ---- 승인 화면용 영향 미리보기 -------------------------------------
+    # 경로는 공백·줄바꿈을 품을 수 있다. 인자를 단어로 쪼개지 않고(IFS=) NUL로 나눠 받아야 한 경로가 한 줄이 된다.
+    # 그러지 않으면 'rm "final report.docx"'의 영향 표가 있는 파일을 '없음'으로 보이거나 엉뚱한 파일을 보인다
+    # (보안 검수 run-4 F4)
     def _expand(self, c, pattern: str) -> list[str]:
         """컨테이너 안에서 glob만 펼친다. 명령 치환은 일어나지 않는다."""
-        script = 'cd /workspace; for p in $1; do if [ -e "$p" ] || [ -L "$p" ]; then printf "%s\\n" "$p"; fi; done'
+        script = ('cd /workspace; IFS=; for p in $1; do if [ -e "$p" ] || [ -L "$p" ]; then printf "%s\\000" "$p"; '
+                  'fi; done')
         res = c.exec_run(["sh", "-c", script, "_", pattern], user=AGENT_UID, demux=True)
         out = (res.output[0] or b"").decode("utf-8", errors="replace")
-        return [line for line in out.splitlines() if line]
+        return [p for p in out.split("\0") if p]
 
     def _walk(self, c, path: str, limit: int) -> list[str]:
-        res = c.exec_run(["sh", "-c", 'cd /workspace; case "$1" in -*) set -- "./$1" "$2";; esac; find "$1" 2>/dev/null | head -n "$2"',
+        res = c.exec_run(["sh", "-c", 'cd /workspace; case "$1" in -*) set -- "./$1" "$2";; esac; '
+                                      'find "$1" -print0 2>/dev/null | head -z -n "$2"',
                           "_", path, str(limit)],
                          user=AGENT_UID, demux=True)
         out = (res.output[0] or b"").decode("utf-8", errors="replace")
-        return [line for line in out.splitlines() if line]
+        return [p for p in out.split("\0") if p]
 
     def preview(self, sid: str, command: str, limit: int = 200) -> dict[str, Any]:
         c = self._container(sid)

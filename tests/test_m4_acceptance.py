@@ -360,3 +360,23 @@ def test_restore_refuses_a_deleted_sandbox(home):
     assert not _live(box, sid)
     with pytest.raises(SandboxError):
         box.sandboxes.restore(sid, snap["id"])
+
+
+def test_preview_paths_with_spaces_and_newlines(home):
+    """보안 검수 run-4 F4: 영향 표가 공백·줄바꿈이 든 경로를 한 경로로 보이고, 있는 파일을 '없음'으로 보이지 않는다."""
+    c, box, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid = sb["id"]
+    try:
+        box.sandboxes._container(sid).exec_run(
+            ["sh", "-c", 'cd /workspace && touch "final report.docx" final report.docx "$(printf "a\\nb")" && '
+                         'mkdir "dir with space" && touch "dir with space/inner"'], user="1000")
+        p = box.sandboxes.preview(sid, 'rm "final report.docx"')
+        assert p["affected"] == [{"path": "final report.docx", "effect": "삭제"}]
+        p = box.sandboxes.preview(sid, "rm *")
+        assert {"path": "a\nb", "effect": "삭제"} in p["affected"]
+        assert {a["path"] for a in p["affected"]} >= {"final report.docx", "final", "report.docx"}
+        p = box.sandboxes.preview(sid, 'rm -r "dir with space"')
+        assert [a["path"] for a in p["affected"]] == ["dir with space", "dir with space/inner"]
+    finally:
+        c.delete(f"/sandboxes/{sid}", headers=H)
