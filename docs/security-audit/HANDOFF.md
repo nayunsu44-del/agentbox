@@ -86,18 +86,21 @@ pytest                                                 # 160 passed
 ### 최종 결과 (`run-3/findings.json` 14건, 두 검증기 통과)
 | 판정 | 심각도 | ID | 내용 | 수정 |
 |---|---|---|---|---|
-| 확정 | high | v11 | 유휴 GUI 구간 닫기가 남의 샌드박스 스레드와 사람 승인·감사 스레드에서 제한 시간 없는 docker exec로 돎 | 아직 |
+| 확정 | high | v11 | 유휴 GUI 구간 닫기가 남의 샌드박스 스레드와 사람 승인·감사 스레드에서 제한 시간 없는 docker exec로 돎 | `c1f88da` |
 | 확정 | medium | v02 | 감사 타임라인이 오래된 5000행에서 멈춤 | `3587c9c` |
 | 확정 | medium | v05 | 사람 토큰을 바꿔도 브라우저 세션 유지 | `3587c9c` |
 | 확정 | medium | v08 | 도구 인자가 크기 제한 없이 감사 로그에 기록 | `e63922c` |
-| 확정 | medium | v12 | 복원·일시정지 때 GUI 구간 상태 유실 | 아직 |
-| 확정 | medium | v13 | 웹 승인 카드의 방향 제어 문자 | 아직 |
-| 확정 | low | v03 | `agentbox agent` 터미널 출력의 제어 문자 | 아직 |
-| 확정 | low | v06 | `source_dir` 겹침 검사를 별칭으로 우회 (5단계에서 검증 필요→확정, l8 근거) | `152b8e4` (원본 폴더 안쪽에 마운트된 데이터 폴더는 못 막음) |
-| 검증 필요 | — | v10 | X가 멈추면 `gui_lock`을 쥔 채 무기한 → 사람의 화면 인수가 막힘 | 아직 |
-| 검증 필요 | — | v09 | GUI 구간 열 때 수집 실패를 성공으로 처리 | 아직 |
+| 확정 | medium | v12 | 복원·일시정지 때 GUI 구간 상태 유실 | `c1f88da` |
+| 확정 | medium | v13 | 웹 승인 카드의 방향 제어 문자 | `c1f88da` |
+| 확정 | low | v03 | `agentbox agent` 터미널 출력의 제어 문자 | `28fd4c9` |
+| 확정 | low | v06 | `source_dir` 겹침 검사를 별칭으로 우회 (5단계에서 검증 필요→확정, l8 근거) | `152b8e4`, 안쪽 마운트는 `28fd4c9`(NonRecursive 바인드) |
+| 확정 | low | v17 | 승인 카드 영향 표가 `rm`과 섞인 조각을 경고 없이 뺌 | `e0add14` |
+| 확정 | low | v18 | 승인 캡처 PNG가 지워지지 않고 대기 수 상한 없음 | `e0add14` |
+| 확정 | low | v19 | `/home/desktop` autostart가 스냅샷을 거쳐 복원 뒤 uid 1001로 다시 실행 | `e0add14` |
+| 검증 필요 | — | v10 | X가 멈추면 `gui_lock`을 쥔 채 무기한 → 사람의 화면 인수가 막힘 | `c1f88da`(판정과 별개로 막음) |
+| 검증 필요 | — | v09 | GUI 구간 열 때 수집 실패를 성공으로 처리 | `c1f88da`(일부) |
 | 검증 필요 | — | v15 | `gui_strays`가 창 소유로 정리 대상에서 뺌 (근본 원인을 넓힘) | — |
-| 검증 필요 | — | v14 | frame-ancestors/X-Frame-Options 없음 | — |
+| 검증 필요 | — | v14 | frame-ancestors/X-Frame-Options 없음 | `28fd4c9`(판정과 별개로 막음) |
 | 검증 필요 | — | v01 | `same_origin`이 scheme을 비교하지 않음 | — |
 | 기각 | — | v04 | runc 별칭으로 runc 차단 우회 (운영자 설정, 경계 없음) | — |
 
@@ -114,29 +117,38 @@ pytest                                                 # 160 passed
   - 큰 변경이라 재확인 뒤 반영 4건: v06(확정 low로 승격), v09, v10, v15
 - **예산:** 소유자가 63까지 승인했고 62개를 썼다.
 
-### 남은 것 (소유자의 사용량 한도로 멈춘 지점)
-예산을 80으로 올린 뒤 4차 헌팅을 했다. 70개를 썼다.
-- 결과: 헌터 `h-preview`, `h-queue`, `h-autostart`가 각자 후보를 하나씩 냈다. v16(부모가 실측한 pid 한도 후보)은 3단계에서 기각했고 `findings.json`에 넣었다. v17(영향 표 누락)은 3단계에서 확정 low로 통과했다.
-- 멈춘 것: critic-3, v18, v19는 사용량 한도 때문에 멈췄다.
+### 재개 세션 (사용량 한도 뒤)
+예산 80 중 77을 썼다. `run_status`는 `incomplete`이고 사유는 `budget_exhausted`다.
+- **3단계:** v18·v19를 다시 돌렸고 둘 다 확정 low였다(Sonnet).
+- **critic-3:** 새 단위 3개를 냈다(`stop: false`).
+  - 인증 전 요청이 하는 일
+  - GUI 구간 상태의 스레드 간 경쟁
+  - 디스크·SQLite 압박 때의 감사 읽기와 기록 유실
 
-이어서 할 순서는 다음과 같다. 지시문은 모두 커밋돼 있다. `AUDIT_SCRATCHPAD`와 스크래치패드 경로만 새 세션 값으로 바꾸고, `tools/gen3.py`와 `tools/gen_critic.py`로 다시 만들 수 있다.
-1. `agents/v18/prompt.md`, `agents/v19/prompt.md`로 3단계 검증자를 돌린다. 결과는 `tools/ingest.py`로 수거한다. v19에는 l12가 근거로 들어 있다.
-2. `agents/critic-3/prompt.md`로 4차 뒤 비평을 돌린다. 새 작업이 없으면 최종 비평(`gen_critic.py critic-4 final-clean ...`)을 돌린다.
-3. v17, v18, v19 레코드를 `findings.json`에 넣고 5단계 검증을 돌린다(`gen5.py`의 FP 표에 추가). 이어서 `apply5.py` 방식으로 반영하고 `gen6.py`로 보고서를 다시 만든다.
-4. 확정 건 수정과 회귀 테스트(아래 목록), 그리고 PR.
+  세 단위는 장부에 `deferred`로 남겼다(`tools/intake_wave3.py`). 첫 실행은 컨테이너 재시작으로 끊겨 다시 돌렸다.
+- **5단계:** v17~v19 모두 verified였다(Sonnet, `tools/apply5_wave3.py`). 다만 셋 다 도구 호출이 5~6회로 짧았다.
+- `findings.json`은 18건이다. 확정 11(high 1, medium 5, low 5), 검증 필요 5, 기각 2. 장부는 29단위다. 검사기 둘 다 PASS.
 
-수정한 것 (`c1f88da`, 회귀 테스트 포함. 내용은 REPORT 3.1·3.5·3.6과 4절 아래 메모):
-- v11·v10: GUI와 수집 exec에 컨테이너 쪽 `timeout -k`, 유휴 구간 닫기는 전용 스레드, 인수·반환은 30초 상한과 대기 중 에이전트 GUI 차단
-- v12: 일시정지 전 구간 닫기, 일시정지·재개·복원·삭제 때 타이머 초기화, 구간에 `container_id`, 닫기 실패는 `gui_burst_close_failed`
-- v13: 웹 템플릿 `finalize`로 모든 출력의 제어·bidi 문자를 보이는 이스케이프로
-- v09(일부): 수집 exec 종료 코드 확인, 기준을 못 읽으면 `gui_burst_open_failed`. fail-closed는 아직
+수정한 것. 모두 회귀 테스트가 있고, 새 테스트는 수정 전 코드나 이미지에서 실패하는 것을 확인했다.
+- **`c1f88da`**
+  - v11·v10: GUI와 수집 exec에 컨테이너 쪽 `timeout -k`를 씌웠다. 유휴 구간 닫기는 전용 스레드에서 돈다. 인수·반환은 30초 상한이 있고, 인수를 기다리는 동안 에이전트 GUI 도구를 막는다.
+  - v12: 일시정지 전에 구간을 닫는다. 일시정지·재개·복원·삭제 때 타이머를 초기화한다. 구간에 `container_id`를 기록하고, 닫기에 실패하면 `gui_burst_close_failed`를 남긴다.
+  - v13: 웹 템플릿 `finalize`로 모든 출력의 제어·bidi 문자를 보이는 이스케이프로 바꾼다.
+  - v09(일부): 수집 exec의 종료 코드를 확인한다. 기준을 못 읽으면 `gui_burst_open_failed`를 남긴다.
+- **`28fd4c9`**
+  - v03: 에이전트 출력에 줄마다 `_safe`를 건다.
+  - v14: `X-Frame-Options`와 `frame-ancestors 'self'`를 붙인다.
+  - v06 남은 틈: 원본을 NonRecursive 바인드로 붙인다. `cp -ax`는 같은 디스크의 바인드 마운트를 못 거른다.
+- **`e0add14`**
+  - v18: 캡처는 결정·만료·삭제 때 지운다. 승인 대기는 샌드박스마다 20개까지다.
+  - v19: 데스크톱 이미지가 시작할 때마다 `/home/desktop`을 처음 상태로 되돌린다. 이미지를 다시 빌드해야 한다.
+  - v17: 영향 표에 조각마다 "계산 못 함"을 단다.
 
-남은 수정 목록:
-- v03: `cmd_agent.log`에 줄 단위 `_safe`
-- v09 나머지: 기준을 못 읽었을 때 GUI 입력을 막을지(fail-closed) 결정
-- v14: X-Frame-Options SAMEORIGIN + frame-ancestors 'self'
-- v06 남은 틈: `cp -ax` 또는 하위 경로 검사
-- v17: preview가 모델링하지 못한 구간마다 경고를 단다
+남은 것:
+- critic-3의 보류 단위 3개를 헌팅하고 검증한 뒤 최종 비평(`gen_critic.py critic-4 final-clean ...`)을 돌린다. 예산을 새로 정해야 한다.
+- 검증 필요 5건의 로컬 계획(NEEDS-VALIDATION.md).
+- v09 나머지: 기준을 못 읽었을 때 GUI 입력을 막을지(fail-closed) 정한다.
+- 다음 감사에서는 이번 수정이 바꾼 소스를 다시 검증 단위로 넣는다.
 
 ### 이어서 하는 법 (환경)
 1. `nohup dockerd >/tmp/dockerd.log 2>&1 &`
@@ -148,4 +160,4 @@ pytest                                                 # 160 passed
 7. 감사 소스가 필요하면 `git worktree add --detach <scratchpad>/src-audited 8e4db9e`를 실행하고 `sbx5`를 만든다(위 참고).
 8. 검증자별 `agents/<id>/scratch`는 `chown 65534`로 미리 만든다. `gen5.py`가 대신 해 준다.
 
-이번 세션 확인 결과: 전체 pytest 214개 통과. CI의 acceptance가 건너뛴 테스트를 실패로 처리하므로, 바인드 마운트 테스트가 root가 아니면 `sudo -n`을 쓰게 고쳤다(`192019f`).
+이번 세션 확인 결과: 전체 pytest 231개 통과(재개 세션, 실제 Docker와 다시 빌드한 데스크톱 이미지, 건너뛴 것 없음). 이전 세션은 214개. CI의 acceptance가 건너뛴 테스트를 실패로 처리하므로, 바인드 마운트 테스트가 root가 아니면 `sudo -n`을 쓰게 고쳤다(`192019f`).
