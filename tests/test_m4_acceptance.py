@@ -286,3 +286,77 @@ def test_agent_input_cannot_grow_audit_rows(home):
         assert c.get("/audit/verify", headers=H).json()["ok"]
     finally:
         c.delete(f"/sandboxes/{sid}", headers=H)
+
+
+def _race_restore(box, sid, snap_id, do_delete):
+    """복원이 새 컨테이너를 만든 직후에 멈춰 있는 동안 do_delete를 다른 스레드에서 부른다."""
+    import threading
+    import time
+    real = box.sandboxes._run_container
+    started, go = threading.Event(), threading.Event()
+
+    def paused(*a, **kw):
+        cont = real(*a, **kw)
+        started.set()
+        go.wait(20)
+        return cont
+
+    box.sandboxes._run_container = paused
+    out = {}
+
+    def restore():
+        try:
+            out["restore"] = box.restore_sandbox(sid, snap_id)
+        except Exception as e:
+            out["restore"] = e
+
+    def delete():
+        try:
+            do_delete()
+            out["delete"] = "ok"
+        except Exception as e:
+            out["delete"] = e
+
+    t = threading.Thread(target=restore)
+    t.start()
+    assert started.wait(60)
+    d = threading.Thread(target=delete)
+    d.start()
+    time.sleep(1.0)            # 잠금이 없으면 삭제가 이 사이에 끝난다
+    go.set()
+    t.join(120)
+    d.join(120)
+    box.sandboxes._run_container = real
+    return out
+
+
+def _live(box, sid):
+    return [c for c in box.sandboxes.client.containers.list(all=True) if c.name == f"agentbox-{sid}"]
+
+
+def test_restore_racing_delete_does_not_resurrect(home):
+    """보안 검수 run-4 F6: 복원과 삭제가 겹쳐도 지운 샌드박스와 그 에이전트 토큰이 되살아나지 않는다."""
+    c, box, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid, tok = sb["id"], sb["agent_token"]
+    snap = box.snapshot_sandbox(sid)
+    out = _race_restore(box, sid, snap["id"], lambda: box.delete_sandbox(sid))
+    assert out["delete"] == "ok"
+    assert box.sandboxes.get(sid)["status"] == "deleted"
+    assert not box.sandboxes.token_matches(sid, tok) and box.sandboxes.sandbox_for_token(tok) is None
+    assert not _live(box, sid)
+
+
+def test_restore_refuses_a_deleted_sandbox(home):
+    """F6 다층 방어: 서비스 잠금을 거치지 않은 삭제가 끼어도 복원의 마지막 쓰기가 행을 되살리지 않는다."""
+    from agentbox.sandbox import SandboxError
+    c, box, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid, tok = sb["id"], sb["agent_token"]
+    snap = box.snapshot_sandbox(sid)
+    out = _race_restore(box, sid, snap["id"], lambda: box.sandboxes.delete(sid))
+    assert isinstance(out["restore"], SandboxError)
+    assert box.sandboxes.get(sid)["status"] == "deleted" and not box.sandboxes.token_matches(sid, tok)
+    assert not _live(box, sid)
+    with pytest.raises(SandboxError):
+        box.sandboxes.restore(sid, snap["id"])

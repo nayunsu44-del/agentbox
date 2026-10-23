@@ -386,6 +386,8 @@ class SandboxManager(DesktopTools):
 
     def restore(self, sid: str, snap_id: str) -> dict[str, Any]:
         rec = self._rec(sid)
+        if rec["status"] == "deleted":
+            raise SandboxError(f"삭제된 샌드박스: {sid}")
         snaps = {s["id"]: s for s in self.list_snapshots(sid)}
         if snap_id not in snaps:
             raise SandboxError(f"이 샌드박스의 스냅샷이 아님: {snap_id}")
@@ -395,7 +397,13 @@ class SandboxManager(DesktopTools):
             pass
         tpl = self.template_of(sid)
         c = self._run_container(tpl, snaps[snap_id]["image"], rec["source_dir"], f"agentbox-{sid}")
-        self._set(sid, container_id=c.id, status="running")
+        # 그사이 삭제됐으면 되살리지 않는다. 삭제는 상태로 토큰을 폐기하므로 덮어쓰면 토큰이 다시 살아난다 (run-4 F6)
+        with self._lock:
+            cur = self.conn.execute("UPDATE sandboxes SET container_id = ?, status = 'running' "
+                                    "WHERE id = ? AND status != 'deleted'", (c.id, sid))
+        if cur.rowcount == 0:
+            c.remove(force=True)
+            raise SandboxError(f"복원하는 사이 삭제된 샌드박스: {sid}")
         if tpl.desktop:
             self._wait_display(c)
         return self.get(sid)
