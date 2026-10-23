@@ -1,6 +1,6 @@
 # agentbox 보안 감사 run-3 — 확정 결과 상세 (medium 이상)
 
-[`findings.json`](findings.json)의 최종 레코드에서 그대로 만든 문서다(`tools/gen6.py`). 레코드 원문은 영어이고 그대로 옮겼다. 판정·심각도·근거는 JSON과 같으며 이 문서가 바꾸지 않는다. low 2건(v03, v06)은 [`REPORT.md`](REPORT.md)에 요약했다.
+[`findings.json`](findings.json)의 최종 레코드에서 그대로 만든 문서다(`tools/gen6.py`). 레코드 원문은 영어이고 그대로 옮겼다. 판정·심각도·근거는 JSON과 같으며 이 문서가 바꾸지 않는다. low 5건(v03, v06, v17, v18, v19)은 [`REPORT.md`](REPORT.md)에 요약했다.
 
 줄 번호는 감사 대상 소스 `0e4b958`(= `main`의 `8e4db9e`) 기준이다. 이 브랜치에는 이후 수정이 들어가 있어 줄이 다를 수 있다. `parent-live`라고 적힌 재현은 부모가 이 클라우드 컨테이너의 일회용 Docker에서 가짜 토큰으로 돌린 것이고, 산출물은 `agents/parent-live/artifacts/`에 있다.
 

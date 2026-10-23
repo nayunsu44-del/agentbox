@@ -4,7 +4,7 @@
 
 순서는 에이전트(가장 낮은 신뢰 주체)가 혼자 닿을 수 있는지, 막힌 사실이 얼마나 좁은지 기준의 우선순위다.
 
-검증되지 않은 후보 1건(`agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion`)은 여기 들어가지 않는다. 독립 검증을 거치지 않았기 때문이다. [`REPORT.md`](REPORT.md) 1절을 본다.
+부모가 실측한 후보(`agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion`)는 3단계에서 기각했다(v16, `findings.json`의 rejected 레코드). [`REPORT.md`](REPORT.md) 1절을 본다.
 
 ## 1. v10 — Human screen takeover (safety override) blocks behind an untimed agent GUI exec holding gui_lock while the in-container X server is unresponsive
 
@@ -166,6 +166,7 @@ Owner reproduces the same probe on the live deployed image and config to confirm
 
 - fingerprint: `agentbox/web.py:register:cookie-ui-frameable-no-frame-ancestors-single-click-approve`
 - 판정: needs_validation (심각도 없음, 확정 취약점 아님)
+- 참고: 이 근본 원인에 대한 변경 `28fd4c9`이 브랜치에 있다. 감사 대상 소스는 바뀌지 않았다.
 
 ### 설명
 

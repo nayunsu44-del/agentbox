@@ -43,6 +43,8 @@ FIX = {
                        "tests/test_m2_acceptance.py::test_frozen_display_does_not_hold_tools_or_takeover"]),
     "agentbox/service.py:_open_gui_burst:silent-fail-open-without-audit":
         ("c1f88da", ["tests/test_m2_unit.py::test_failed_burst_baseline_is_logged"]),
+    "agentbox/web.py:register:cookie-ui-frameable-no-frame-ancestors-single-click-approve":
+        ("28fd4c9", ["tests/test_m4_acceptance.py::test_ui_refuses_framing"]),
 }
 
 # short ids used in REPORT.md and HANDOFF (Phase 3 verifier ids)
@@ -60,6 +62,9 @@ SHORT = {
     "agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause": "v12",
     "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized": "v13",
     "agentbox/web.py:register:cookie-ui-frameable-no-frame-ancestors-single-click-approve": "v14",
+    "agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row": "v17",
+    "agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed": "v18",
+    "agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore": "v19",
 }
 
 # needs_validation priority (most decisive and agent-reachable first)
@@ -143,7 +148,7 @@ def main():
     big = [r for r in conf if r["severity"]["overall_severity"] in ("critical", "high", "medium")]
     head = ["# agentbox 보안 감사 run-3 — 확정 결과 상세 (medium 이상)", "",
             "[`findings.json`](findings.json)의 최종 레코드에서 그대로 만든 문서다(`tools/gen6.py`). 레코드 원문은 영어이고 그대로 옮겼다. "
-            "판정·심각도·근거는 JSON과 같으며 이 문서가 바꾸지 않는다. low 2건(v03, v06)은 [`REPORT.md`](REPORT.md)에 요약했다.", "",
+            "판정·심각도·근거는 JSON과 같으며 이 문서가 바꾸지 않는다. low 5건(v03, v06, v17, v18, v19)은 [`REPORT.md`](REPORT.md)에 요약했다.", "",
             "줄 번호는 감사 대상 소스 `0e4b958`(= `main`의 `8e4db9e`) 기준이다. 이 브랜치에는 이후 수정이 들어가 있어 줄이 다를 수 있다. "
             "`parent-live`라고 적힌 재현은 부모가 이 클라우드 컨테이너의 일회용 Docker에서 가짜 토큰으로 돌린 것이고, 산출물은 `agents/parent-live/artifacts/`에 있다.", ""]
     with open(f"{RUN}/FINDINGS-DETAIL.md", "w", encoding="utf-8") as f:
@@ -155,8 +160,8 @@ def main():
             "**확정 취약점이 아니며 심각도를 매기지 않는다.** 각 항목은 소스에서 경로가 확인됐지만, 결론을 가를 사실 하나가 소스와 로컬 sandbox 밖에 있다. "
             "해소 계획은 일회용 로컬 환경이나 운영자가 자기 설정을 보는 방법만 적었고, 배포된 서비스에 감사 트래픽을 보내는 방법은 적지 않았다.", "",
             "순서는 에이전트(가장 낮은 신뢰 주체)가 혼자 닿을 수 있는지, 막힌 사실이 얼마나 좁은지 기준의 우선순위다.", "",
-            "검증되지 않은 후보 1건(`agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion`)은 여기 들어가지 않는다. "
-            "독립 검증을 거치지 않았기 때문이다. [`REPORT.md`](REPORT.md) 1절을 본다.", ""]
+            "부모가 실측한 후보(`agentbox/sandbox.py:exec:backgrounded-children-survive-early-bash-exit-pid-exhaustion`)는 "
+            "3단계에서 기각했다(v16, `findings.json`의 rejected 레코드). [`REPORT.md`](REPORT.md) 1절을 본다.", ""]
     with open(f"{RUN}/NEEDS-VALIDATION.md", "w", encoding="utf-8") as f:
         f.write("\n".join(head) + "\n" + "\n\n---\n\n".join(nv(nvr[k], i) for i, k in enumerate(NV_ORDER, 1)) + "\n")
     print("detail:", [SHORT[r["fingerprint"]] for r in big], "nv:", NV_ORDER)

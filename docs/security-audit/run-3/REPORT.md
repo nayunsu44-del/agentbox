@@ -2,26 +2,28 @@
 
 ## 1. 실행 조건과 범위
 
-**이번 감사는 미완료 상태(부분 패스)다.** `findings.json`에 있는 확정·검증 필요 레코드는 모두 3단계 검증과 5단계 재검증을 거쳤다. 보고서를 처음 쓴 뒤 소유자가 예산을 80으로 올려 4차 헌팅을 돌렸지만, 소유자의 사용량 한도 때문에 도중에 멈췄다(`owner_usage_limit`).
+**이번 감사는 미완료 상태(부분 패스)다.** `findings.json`의 확정·검증 필요 레코드는 모두 3단계 검증과 5단계 재검증을 거쳤다. 보고서를 처음 쓴 뒤 소유자가 예산을 80으로 올려 4차 헌팅을 돌렸고, 그 후보들도 3단계와 5단계를 마쳤다. 4차 뒤 비평(critic-3)이 새 단위 3개를 제안했지만, 남은 예산(3)으로는 헌팅과 검증을 다 할 수 없어 보류했다(`budget_exhausted`). 최종 비평(final-clean critic)도 돌지 않았다. **그래서 커버리지가 깨끗하다고 주장하지 않는다.**
 
-1. **4차 헌팅.** 보류됐던 단위 3개를 모두 헌팅했고, 세 단위 모두 후보를 하나씩 냈다. 이 3건은 **아직 발견 사항이 아니며 `findings.json`에 없다.**
-   - `agentbox/sandbox.py:preview:unrecognized-destructive-segment-omitted-and-catchall-note-suppressed-by-rm-curl-row`: 승인 카드의 영향 표가 `rm`/`curl`이 아닌 구간을 빼고, 명령에 `rm`이 하나라도 있으면 "계산 못 함" 경고도 보이지 않는다. 3단계(v17)는 확정 **low**로 통과했지만 5단계는 돌지 않았다.
-   - `agentbox/service.py:_call_tool:approval-capture-png-and-pending-approval-never-reclaimed`: 승인 대기마다 캡처 PNG가 남고 지워지지 않으며, 대기 수에도 상한이 없다. 3단계 검증자(v18)는 결과를 내기 전에 멈췄다.
-   - `agentbox/sandbox.py:gui-burst:home-desktop-autostart-write-survives-snapshot-and-reexecutes-on-restore`: `/home/desktop` autostart에 쓴 파일이 `gui_changes`에 남지 않고 스냅샷에 들어갔다가 복원 때 uid 1001로 다시 실행된다. 부모가 에이전트 GUI 도구만으로 체인 전체를 재현했다(`agents/parent-live/artifacts/l12_autostart.out`). 3단계 검증자(v19)는 결과를 내기 전에 멈췄다.
+1. **4차 헌팅.** 보류됐던 단위 3개를 헌팅했고, 세 단위 모두 후보를 하나씩 냈다. 세 건 모두 3단계와 5단계를 거쳐 **확정 low**가 됐다(v17, v18, v19, 3절).
+   - 5단계 검증자 셋(Sonnet)은 모두 verified를 냈다. 다만 셋 다 도구 호출이 5~6회로 짧았다.
+   - 그래서 주된 근거는 3단계 검증과 부모의 실측이다. v19는 parent-live `l12`가 근거이고, v17은 3단계 검증자의 sandbox 실행 결과가 근거다.
 2. **부모가 실측한 후보(v16)는 3단계에서 기각했다.** exec가 끝난 뒤 남는 백그라운드 프로세스가 pid 한도를 채운다는 후보였다. 동작 자체는 재현됐다. 하지만 영향이 에이전트 자기 샌드박스 안에 그치고, 사람이 복원으로 완전히 복구할 수 있다(l11). 이 기각 레코드는 `findings.json`에 넣었다.
-3. **비평.** 4차 헌팅 뒤 비평(critic-3)은 도중에 멈췄고, 최종 비평(final-clean critic)은 돌지 않았다. **그래서 커버리지가 깨끗하다고 주장하지 않는다.**
+3. **critic-3이 제안하고 보류한 단위 3개.** 장부에 `deferred`로 남겼다.
+   - **인증 전 요청이 하는 일:** 본문 버퍼링과 multipart 임시 파일, noVNC 추출의 Docker 작업, 로그인 실패 때마다 남는 감사 행
+   - **GUI 구간 상태의 경쟁:** 이 상태는 도구 스레드와 사람 요청 스레드가 함께 바꾼다. 구간 열기와 유휴 닫기의 순서가 문제이고, 승인 경로(`decide`)가 같은 불변식을 지키는지도 봐야 한다.
+   - **디스크나 SQLite가 압박받을 때:** 감사 읽기 경로가 잠금을 오래 쥐는지, 실패했을 때 기록이 사라지거나 승인 상태가 걸려 남는지
 
 | 항목 | 값 |
 |---|---|
 | 대상 | `nayunsu44-del/agentbox` @ `0e4b958` (`main`의 `8e4db9e`와 `agentbox/`, `images/`, `deploy/`, `tests/`가 같음) |
 | 프로필 | `standard`, 범위 = 저장소 전체 |
 | 실행 정책 | **sandboxed-source-and-local-only** |
-| 예산 | 처음에 부모가 제안한 40개. 소유자가 50, 60, 63, 80으로 올렸다. **70개 사용**(내역은 아래). 이 중 3개는 결과를 내기 전에 멈췄다 |
+| 예산 | 처음에 부모가 제안한 40개. 소유자가 50, 60, 63, 80으로 올렸다. **77개 사용**(내역은 아래). 이 중 4개는 결과를 내기 전에 멈췄다(사용량 한도 3, 컨테이너 재시작 1) |
 | 이전 감사 사용 | run-1(`7fc501f`) 장부와 run-2 실측 결과. 이전 확정 9건은 모두 수정돼 소스가 바뀌었으므로 다시 검증하는 단위로 넣었다(`prior_confirmed_changed_source` 8, `prior_covered_changed_source` 6). 소스가 같아 그대로 넘어온 확정은 없다. run-1에서 기각한 주장 1건(desktop 티켓의 범위)은 소스가 바뀌어 다시 확인했다 |
-| `findings.json` | 15건: 확정 8 (high 1 · medium 5 · low 2), 검증 필요 5, 기각 2. `validate-findings.cjs` **PASS** |
-| 커버리지 장부 | 26개 단위: covered 8 · candidate 18 · deferred 0 · blocked 0. `validate-coverage-ledger.cjs` **PASS** |
+| `findings.json` | 18건: 확정 11 (high 1 · medium 5 · low 5), 검증 필요 5, 기각 2. `validate-findings.cjs` **PASS** |
+| 커버리지 장부 | 29개 단위: covered 8 · candidate 18 · deferred 3 · blocked 0. `validate-coverage-ledger.cjs` **PASS** |
 
-**에이전트 사용 내역(70개).**
+**에이전트 사용 내역(77개).**
 
 | 단계 | 개수 | 내역 |
 |---|---|---|
@@ -32,6 +34,7 @@
 | 5단계 레코드 검증 | 13 | Sonnet |
 | 5단계 재확인 | 4 | Opus. 판정이 올라가거나 근거가 크게 바뀐 교체안 대상 |
 | 4차 헌팅 이후 | 8 | 헌터 3, 3단계 검증 4(v16 기각 · v17 · 멈춤 2), 4차 뒤 비평 1(멈춤). 모두 Opus |
+| 재개 세션 | 7 | 3단계 v18·v19 2, critic-3 2(한 번은 컨테이너 재시작으로 끊김), 5단계 v17~v19 3. 모두 Sonnet |
 
 **실행 경계.**
 - **대상 코드를 직접 돌린 경우:** 대상 코드는 부모의 `sbx` 래퍼 안에서만 돌렸다. 네트워크 없음, 루트 파일 시스템 읽기 전용, 대상과 `/usr`는 읽기 전용, 쓰기는 `agents/<id>/scratch`에만 허용했다. uid 65534, 모든 권한 제거, 512 MiB, CPU 1개, pid 64개, 120초 제한이다. 5단계에서는 이후 수정이 섞이지 않도록 감사 대상 소스(`8e4db9e`)를 붙인 `sbx5`를 썼다.
@@ -53,13 +56,16 @@ agentbox의 핵심 통제는 이전 감사 뒤 단단해졌다.
   - 웹 승인 카드가 유니코드 방향 제어 문자로 다른 명령처럼 보인다(v13).
   - 감사 타임라인이 5000번째 행에서 멈춘다(v02).
   - `agentbox agent` 출력이 제어 문자를 그대로 낸다(v03).
+  - 승인 카드의 영향 표가 `rm`과 섞인 다른 명령 조각을 경고 없이 빠뜨린다(v17).
 - **감사 기록:**
   - 지울 수 없는 감사 로그에 크기 제한 없이 큰 행이 쌓인다(v08).
   - GUI 구간 기록이 복원과 일시정지 때 사라진다(v12).
+  - GUI 터미널로 `/home/desktop`의 autostart에 써 둔 것이 기록에 남지 않는다. 스냅샷에 들어갔다가 복원한 뒤 uid 1001로 다시 실행된다(v19).
 - **사람의 개입 수단:**
   - 한 샌드박스의 X가 멈추면, 다른 샌드박스의 도구 호출과 사람의 승인·감사 요청이 제한 시간 없이 막힌다(v11, high).
   - 토큰을 바꿔도 예전 브라우저 세션이 살아 있다(v05).
   - 원본 폴더 겹침 검사를 별칭으로 우회하면 사람 토큰이 에이전트에게 넘어간다(v06, 운영자 실수가 필요해 low).
+- **호스트 자원:** 승인 요청마다 화면 캡처 PNG가 호스트에 남고 지워지지 않는다. 승인 대기 수에도 상한이 없다(v18).
 
 GUI 도구는 설계상 승인을 거치지 않는다(N-1). 이를 보완하는 장치(구간 스냅샷, `gui_changes`, 정리 kill)에 남은 빈틈은 검증 필요로 넘겼다(v09, v10, v15).
 
@@ -73,8 +79,11 @@ GUI 도구는 설계상 승인을 거치지 않는다(N-1). 이를 보완하는 
 | **medium** | v08 | 도구 인자가 크기 제한 없이 지울 수 없는 감사 로그에 기록 | 에이전트 → 공유 감사 DB | 3 MiB 인자가 그대로 한 행이 됨. UPDATE·DELETE는 트리거가 막고, verify·list가 전부 다시 읽음 | `e63922c` |
 | **medium** | v12 | 복원·일시정지 때 GUI 구간의 정리 kill과 `gui_changes` 기록이 사라짐 | 에이전트 → GUI 보완 장치(N-1) | 복원 뒤 남은 백그라운드 프로세스가 죽지 않았고 `gui_changes`도 없었음. 낡은 기준으로는 새 데스크톱의 프로세스를 죽이기도 함 | `c1f88da` |
 | **medium** | v13 | 웹 승인 카드가 exec 명령의 유니코드 방향 제어 문자를 그대로 표시 | 에이전트 → 사람의 승인 판단 | Chromium에서 `; python3 /workspace/job.py ;`가 앞의 `echo` 따옴표 안에 든 것처럼 보임(parent-live l5) | `c1f88da` |
-| **low** | v03 | `agentbox agent`가 파일 내용·파일 이름·모델 출력을 제어 문자 그대로 터미널에 출력 | 문서·파일 작성자 → 운영자 터미널 기록 | pyte 화면에서 `→ read_file(...)` 줄이 지워지고 가짜 `[사용자]` 줄이 나타남 | 아직 |
-| **low** | v06 | `source_dir` 겹침 검사가 파일 시스템 실체가 아니라 경로 문자열을 비교 | 운영자 실수 → 사람 토큰이 에이전트에게 노출 | 바인드 마운트 별칭은 받아들여졌고, 에이전트의 `read_file`이 진짜 사람 토큰을 돌려줌. 원래 경로는 거부됨(parent-live l8) | `152b8e4` (아래 남은 틈 참고) |
+| **low** | v03 | `agentbox agent`가 파일 내용·파일 이름·모델 출력을 제어 문자 그대로 터미널에 출력 | 문서·파일 작성자 → 운영자 터미널 기록 | pyte 화면에서 `→ read_file(...)` 줄이 지워지고 가짜 `[사용자]` 줄이 나타남 | `28fd4c9` |
+| **low** | v06 | `source_dir` 겹침 검사가 파일 시스템 실체가 아니라 경로 문자열을 비교 | 운영자 실수 → 사람 토큰이 에이전트에게 노출 | 바인드 마운트 별칭은 받아들여졌고, 에이전트의 `read_file`이 진짜 사람 토큰을 돌려줌. 원래 경로는 거부됨(parent-live l8) | `152b8e4`, 남은 틈은 `28fd4c9` |
+| **low** | v17 | 승인 카드 영향 표가 `rm`/`curl`이 아닌 조각을 빼고, `rm`이 있으면 "계산 못 함" 경고도 사라짐 | 에이전트 → 사람의 승인 판단 | `rm a; mv important.db /tmp/gone`의 영향이 `a 삭제` 한 줄, 경고 없음. `mv`만 단독이면 경고가 나옴(v17 sbx 실행) | `e0add14` |
+| **low** | v18 | 승인 요청마다 호스트에 캡처 PNG가 남고 지워지지 않으며, 승인 대기 수에 상한이 없음 | 에이전트 → 호스트 디스크 | 대기 30건에 PNG 30개. 거절 1건과 만료 29건 뒤에도 30개가 모두 남음(v18 sbx 실행, 화면은 stub) | `e0add14` |
+| **low** | v19 | GUI로 `/home/desktop/.config/autostart`에 쓴 파일이 `gui_changes`에 없고, 스냅샷을 거쳐 복원 뒤 uid 1001로 다시 실행됨 | 에이전트 → GUI 보완 장치와 복원 지점 | 에이전트 GUI 도구만으로 쓰고, 사람이 스냅샷·복원하자 `/workspace/PROOF_autostart.txt`(내용 1001)가 생김(parent-live l12) | `e0add14` |
 
 medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS-DETAIL.md`](FINDINGS-DETAIL.md)에 레코드 그대로 옮겼다. 아래에는 건별로 요약한다.
 
@@ -152,7 +161,7 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
 - **결과:** 운영자 터미널 기록에서 도구 호출 줄이 지워지고 가짜 `[사용자]` 줄이 생긴다(pyte 화면 기준).
   - 승인은 `_safe`를 쓰는 `agentbox approve`로 하고 감사 기록은 정확하므로, 영향은 화면 표시에 그친다(low).
   - 클립보드(OSC 52)와 실제 터미널 에뮬레이터에서의 동작은 시험하지 않았다.
-- **수정 방향:** 출력하는 모든 줄에 기존 `_safe`를 줄 단위로 적용한다.
+- **수정:** `28fd4c9`. `cmd_agent.log`가 찍는 모델 글과 도구 결과에 줄마다 `_safe`를 건다. 줄바꿈만 남는다. 회귀 테스트: `tests/test_unit.py::test_agent_log_neutralises_container_output`.
 
 ### 3.8 [low] v06 — `source_dir` 겹침 검사를 별칭으로 우회
 - **위치:** `sandbox.py:398`(`resolve()`는 철자를 유지), `403-404`(문자열 비교), `421-422`(root가 `cp -a`로 복사하고 chown).
@@ -160,7 +169,34 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
 - **결과:** parent-live `l8`. 프로젝트 폴더를 바인드 마운트한 별칭(같은 inode, 심볼릭 링크 아님)은 받아들여졌고, 에이전트의 `read_file /workspace/data/human_token`이 진짜 사람 토큰을 돌려줬다. 원래 경로는 거부됐다. 대소문자를 구분하지 않는 WSL2 drvfs의 다른 철자도 그럴듯한 경로지만, 관찰하지는 못했다.
 - **심각도:** 영향은 high(사람 권한 전체)지만, 운영자의 드문 실수가 있어야 해서 likelihood가 low다. 그래서 overall은 low다.
   - 이 레코드는 3단계에서 검증 필요였다. 5단계에서 l8을 근거로 확정으로 올렸고, 다른 검증자가 재확인했다.
-- **수정:** `152b8e4`(`os.path.samefile`로 조상까지 비교). 재확인 검증자가 남은 틈을 하나 지적했다. 원본 폴더 *안쪽에* 데이터 폴더가 마운트돼 있으면, 이 수정으로도 `cp -a`가 그것을 복사한다. `cp -ax`나 하위 경로 검사로 막을 수 있다.
+- **수정:** `152b8e4`(`os.path.samefile`로 조상까지 비교). 재확인 검증자가 남은 틈을 하나 지적했다. 원본 폴더 *안쪽에* 데이터 폴더가 마운트돼 있으면, 이 수정으로도 `cp -a`가 그것을 복사한다.
+  - `28fd4c9`에서 원본 폴더를 `NonRecursive` 바인드로 붙이게 바꿨다. 그래서 안쪽 마운트는 컨테이너에 보이지 않는다.
+  - 처음 고려한 `cp -ax`는 막지 못했다. 같은 디스크의 바인드 마운트는 장치 번호가 같기 때문이다. 이것은 테스트로 확인했다.
+  - 회귀 테스트: `tests/test_m4_acceptance.py::test_nested_mount_under_source_not_copied`. 실제 중첩 바인드 마운트로 돌린다.
+
+### 3.9 [low] v17 — 승인 카드 영향 표가 조각을 빠뜨림
+- **위치:** `sandbox.py`의 `preview`. `rm`과 `curl`만 계산하고, "계산 못 함" 경고는 표가 통째로 비었을 때만 붙인다.
+- **주체:** 프롬프트 주입 에이전트. 혼자서는 못 하는 삭제나 이름 바꾸기를 사람의 승인으로 실행하게 하려 한다.
+- **결과:** `rm`이 하나라도 있는 복합 명령에서는 다른 조각(`mv`, `find -delete`)이 표에도, 경고에도 나오지 않는다. 그런 조각만 단독으로 내면 경고가 나온다. 명령 원문은 표 위에 그대로 보이고, 실행 전에 AP-2 스냅샷도 뜨므로 low다.
+- **수정:** `e0add14`. `rm`·`curl`이 아닌 조각마다 "자동 계산하지 못함" 경고를 단다. `sudo`처럼 감싸는 명령이면 안쪽 조각을 본다. 회귀 테스트: `tests/test_m4_acceptance.py::test_preview_flags_every_unmodeled_segment`.
+
+### 3.10 [low] v18 — 승인 캡처 PNG가 쌓임
+- **위치:** `service.py`의 `_call_tool`이 데스크톱 샌드박스의 승인 요청마다 `captures/<id>.png`를 쓴다. 이 파일을 지우는 경로가 없고, 대기 수에도 상한이 없다.
+- **결과:** 에이전트가 승인이 필요한 호출을 반복하면 호스트 디스크가 조금씩 찬다. 거절·만료되거나 샌드박스를 지워도 파일이 남는다. 운영자가 파일을 지우면 복구되므로 low다.
+- **수정:** `e0add14`.
+  - 캡처는 결정·만료·샌드박스 삭제 때 지운다. 감사 로그에는 sha256과 크기가 남는다.
+  - 승인 대기는 샌드박스마다 20개까지다. 넘으면 429를 주고 `tool_blocked`(`too_many_pending_approvals`)를 남긴다.
+  - 회귀 테스트: `tests/test_m3_acceptance.py::test_approval_captures_reclaimed_and_pending_capped`.
+
+### 3.11 [low] v19 — 화면 계정 홈에 써 둔 autostart가 복원 뒤 다시 실행됨
+- **위치:**
+  - `workspace_manifest`는 `/workspace`만 보고, 정리 kill은 프로세스만 멈춘다.
+  - `docker commit`은 `/home/desktop`까지 담는다.
+  - 복원하면 `agentbox-desktop-start`가 `startxfce4`를 uid 1001로 다시 띄운다.
+- **결과:** parent-live `l12`. 에이전트가 GUI 도구만으로 터미널을 열어 `~/.config/autostart/t.desktop`을 썼다. 감사 기록에는 그 흔적이 없었다. 사람이 스냅샷을 뜨고 복원하자, 그 명령이 구간 밖에서 uid 1001로 실행됐다. GUI 입력은 설계상 승인을 거치지 않고(N-1) 컨테이너 경계도 넘지 않으므로 low다.
+- **수정:** `e0add14`.
+  - 데스크톱 이미지가 화면 계정 홈의 처음 상태를 root 소유로 보관한다. 컨테이너가 시작할 때마다(만들기·복원) `/home/desktop`을 그 상태로 되돌린다.
+  - 회귀 테스트: `tests/test_m2_acceptance.py::test_desktop_home_reset_on_restore`. autostart와 `.bashrc`를 함께 본다. 이전 이미지에서는 실패하는 것을 확인했다.
 
 ## 4. 검증 필요 (확정 아님, 심각도 없음)
 
@@ -174,10 +210,11 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
 | 4 | v14 | 쿠키 인증 UI에 frame-ancestors/X-Frame-Options가 없음 → 같은 사이트 출처가 framing해 클릭 한 번으로 승인 | `web.py:181` → … → `service.py:415` | 배포에 공격자가 영향을 줄 수 있는 같은 사이트 출처(같은 루프백 호스트의 다른 포트, 형제 서브도메인)가 있는가. Firefox와 WebKit 동작 | Firefox와 WebKit에서 l3 재현 반복, 수정 후 회귀 확인 | 배포의 같은 사이트 출처 목록 확인 |
 | 5 | v01 | `same_origin`이 scheme을 비교하지 않음 | `web.py:203` → `api.py:119` → `api.py:110` → `web.py:209` | schemeful same-site가 없는 운영자 브라우저가 있는가(Chromium 141은 쿠키를 보내지 않았음, l4). HSTS와 경로상 공격자가 범위에 드는가 | Firefox와 WebKit에서 http→https 교차 scheme POST 시험 | 운영 호스트의 HSTS(또는 preload) 여부와 운영자 브라우저 종류 확인 |
 
-이 브랜치에서 판정과 상관없이 먼저 막아 둔 것이 두 건 있다. 감사 대상 소스는 바뀌지 않았고, 판정도 그대로 needs_validation이다.
+이 브랜치에서 판정과 상관없이 먼저 막아 둔 것이 세 건 있다. 감사 대상 소스는 바뀌지 않았고, 판정도 그대로 needs_validation이다.
 
 - **v10 (`c1f88da`):** GUI exec에 컨테이너 쪽 제한 시간이 걸린다. 인수와 반환은 `gui_lock`을 최대 30초까지만 기다리고, 넘으면 503을 준다. 인수를 기다리는 동안과 그 뒤 60초 동안은 에이전트의 GUI 도구를 새로 돌리지 않는다(423). 그래서 다시 누르면 인수된다. 테스트: `tests/test_m2_unit.py::test_takeover_waits_bounded_and_stops_new_agent_gui_calls`, `tests/test_m2_acceptance.py::test_frozen_display_does_not_hold_tools_or_takeover`.
 - **v09 (`c1f88da`, 일부):** 파일 목록과 프로세스 목록 exec의 종료 코드를 확인한다. 기준을 못 읽으면 빈 기준으로 구간을 열지 않고 `gui_burst_open_failed`를 남긴다. 닫기에 실패하면 `gui_burst_close_failed`를 남긴다. 실패했을 때 GUI 입력을 막는 쪽(fail-closed)은 아직 넣지 않았다. 테스트: `tests/test_m2_unit.py::test_failed_burst_baseline_is_logged`.
+- **v14 (`28fd4c9`):** 모든 HTTP 응답에 `X-Frame-Options: SAMEORIGIN`과 `Content-Security-Policy: frame-ancestors 'self'`를 붙인다. 같은 출처의 데스크톱 iframe은 그대로 된다. 테스트: `tests/test_m4_acceptance.py::test_ui_refuses_framing`.
 
 ## 5. 보강 메모와 좋은 패턴
 
@@ -234,9 +271,9 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
 
 ## 6. 커버리지 요약
 
-- **장부 26개 단위:** covered 8, candidate 18, deferred 0, blocked 0, out_of_scope 0.
-  - candidate 18개 중 15개는 `findings.json` 레코드와 연결된다.
-  - 나머지 3개는 4차 헌팅의 미검증 후보다(1절).
+- **장부 29개 단위:** covered 8, candidate 18, deferred 3, blocked 0, out_of_scope 0.
+  - candidate 18개는 모두 `findings.json` 레코드와 연결된다.
+  - deferred 3개는 critic-3이 제안하고 예산 때문에 보류한 단위다(1절).
 - **동반 지침:** RESOURCE-EXHAUSTION, AI-AND-LLM, WEB-PROTOCOL-AND-AUTH, CLIENT-SIDE, DESKTOP-MOBILE-AND-LOCAL-IPC, CLOUD-AND-DEPLOYMENT, DATA-ISOLATION-AND-LIFECYCLE.
 - **이유를 적고 뺀 지침:**
   - MEMORY-SAFETY: 네이티브 코드가 없음
@@ -244,9 +281,9 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
   - PROTOCOLS: HTTP/WS/MCP stdio 외의 broker나 RPC가 없음
 - **비평:**
   - 1차 뒤 비평(critic-1)과 2차 뒤 비평(critic-2)이 돌았다. critic-2가 제안한 단위 3개는 4차 헌팅에서 맡았다.
-  - 4차 뒤 비평(critic-3)은 도중에 멈췄고, 최종 비평은 돌지 않았다. **그래서 깨끗한 커버리지를 주장하지 않는다.**
+  - 4차 뒤 비평(critic-3)은 새 단위 3개를 내며 `stop: false`라고 했다. 그 단위들을 헌팅하지 못했고 최종 비평도 돌지 않았다. **그래서 깨끗한 커버리지를 주장하지 않는다.**
+  - critic-3은 부모가 실측한 후보(v16)를 해결된 것으로 보았다.
 - **다음 감사에서 할 일:**
-  - v17의 5단계 검증
-  - v18과 v19의 3단계·5단계 검증
-  - critic-3과 최종 비평
+  - 보류한 단위 3개의 헌팅과 검증, 그다음 최종 비평
   - 검증 필요 5건의 로컬 계획
+  - 이번 수정(`c1f88da`, `28fd4c9`, `e0add14`)이 바꾼 소스를 다시 검증하는 단위
