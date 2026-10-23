@@ -275,7 +275,7 @@ pytest                                                 # 160 passed
 - **수정:** 소유자 지시로 확정 6건을 같은 PR에서 고쳤다. 새 회귀 테스트는 `tests/test_m5_unit.py`(9개)와 `tests/test_retention.py`(2개)이고 수정 전 코드에서 실패한다.
 - **소유자 결정(2026-10-24):**
   - N1(인증 없는 JSON): (a)+(c)로 고쳤다(PR #25). 본문이 있는 요청은 토큰·로그인 세션이 유효해야 본문을 읽고(아니면 401, 로그인 폼만 64KiB까지), compose `mem_limit`(기본 2g), Caddy 경로별 본문 상한(파일 넣기 256MB, 나머지 8MiB), uvicorn `limit_concurrency`(기본 256). 같은 조건(512MiB, 동시 4·8건)에서 수정 뒤 최고 RSS 59MB, 서버 생존(`run-5/agents/parent-live/artifacts/preauth_json_512m_after_fix.json`).
-  - 도구 인자 16KiB 상한: 소유자가 실사용자가 아니라 실제 사례를 보고 정하기로 했다. 정할 때까지 16KiB 유지.
+  - 도구 인자 16KiB 상한: 소유자 결정으로 그대로 둔다(바꿀 실익이 없음. 큰 내용은 write_file로 보내면 된다).
   - policy-cpu 레코드: 다시 검토하기로 했다(재검증자 `rv2-policy-cpu`, 31번째 호출, 소유자 승인).
   - `same_origin`: 감사 없이 고치지 않고 run-6 범위에 넣는다.
 - **run-6 계획(다른 세션에서 할 수 있음):**
