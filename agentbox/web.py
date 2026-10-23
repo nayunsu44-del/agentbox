@@ -271,6 +271,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
         box.log_human("sandbox_delete", sid, {"session": p.session})
         box.end_desktop(sid, "sandbox_deleted")
         guard(lambda: box.sandboxes.delete(sid))
+        box.drop_captures(sid)
         return Response("", headers={"HX-Redirect": "/ui"})
 
     # ---- 감사 로그 타임라인 (UX-6) -----------------------------------------

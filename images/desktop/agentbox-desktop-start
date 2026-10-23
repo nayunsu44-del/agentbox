@@ -6,6 +6,14 @@ D=/home/desktop
 GEOM="${AGENTBOX_SCREEN:-1280x800x24}"
 
 rm -f /tmp/.X0-lock /tmp/.X11-unix/X0
+
+# 화면 계정의 홈은 시작할 때마다 이미지의 처음 상태로 되돌린다. GUI 터미널로 ~/.config/autostart, .bashrc,
+# 저장된 세션 등에 써 둔 것이 스냅샷에 들어갔다가 복원한 뒤 다시 실행되지 않게 (보안 검수 run-3 v19).
+# 남길 결과물은 /workspace에 둔다.
+rm -rf "$D"
+cp -a /usr/local/share/agentbox-desktop-home "$D"
+chown -R desktop:desktop "$D"
+chmod 700 "$D"
 mkdir -p /tmp/.X11-unix && chmod 1777 /tmp/.X11-unix
 
 as_desktop() {

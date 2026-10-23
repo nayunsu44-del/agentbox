@@ -268,6 +268,14 @@ def safe_path(path: str) -> str:
 # 영향 미리보기: 승인 화면에 보여줄 '시스템이 계산한' 영향 범위
 # ---------------------------------------------------------------------------
 
+_WRAPPERS = ("xargs", "sudo", "env", "nohup", "timeout", "nice")
+
+
+def _short_seg(seg: list[str]) -> str:
+    text = " ".join(seg)
+    return text if len(text) <= 80 else text[:79] + "…"
+
+
 def _split_segments(command: str, depth: int = 0) -> list[list[str]]:
     """명령을 ; && || | 단위 argv 조각으로 나눈다. sh -c / bash -c 안쪽은 펼친다."""
     if depth > 3:
@@ -295,7 +303,7 @@ def _split_segments(command: str, depth: int = 0) -> list[list[str]]:
             if i + 1 < len(s):
                 out.extend(_split_segments(s[i + 1], depth + 1))
                 continue
-        if name in ("xargs", "sudo", "env", "nohup", "timeout", "nice") and len(s) > 1:
+        if name in _WRAPPERS and len(s) > 1:
             out.append(s)  # 원래 조각도 남기고
             rest = s[1:]
             while rest and (rest[0].startswith("-") or re.match(r"^\w+=", rest[0]) or rest[0].isdigit()):
@@ -907,6 +915,10 @@ class SandboxManager:
                     affected.append({"path": u, "effect": "외부로 보낼 파일"})
                 if not urls:
                     notes.append("curl 대상 주소를 명령에서 찾지 못함.")
+            elif name not in _WRAPPERS:  # 감싸는 명령은 안쪽 조각을 따로 본다
+                # rm·curl 말고는 영향을 계산하지 않는다. 계산한 줄이 있어도 이 조각의 영향은 표에 없다는 것을
+                # 조각마다 알린다 (보안 검수 run-3 v17: 'rm a; mv b /tmp'가 'a 삭제' 한 줄로만 보였다)
+                notes.append(f"'{_short_seg(seg)}' 부분의 영향은 자동 계산하지 못함. 명령 원문을 확인할 것.")
         if len(affected) > limit:
             notes.append(f"영향 항목 {len(affected)}개 중 앞의 {limit}개만 표시.")
             affected = affected[:limit]

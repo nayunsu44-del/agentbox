@@ -281,6 +281,28 @@ def test_gui_burst_restarts_after_pause_and_restore(desk):
 
 
 @needs_desktop
+def test_desktop_home_reset_on_restore(desk):
+    """보안 검수 run-3 v19: GUI 터미널로 ~/.config/autostart에 써 둔 것이 스냅샷에 들어가도, 복원한 뒤 다시 실행되지 않는다."""
+    e = desk
+    c = e.box.sandboxes._container(e.sid)
+    entry = "[Desktop Entry]\nType=Application\nName=t\nExec=sh -c 'id -u > /workspace/PROOF_autostart.txt'\n"
+    assert c.exec_run(["sh", "-c", f'mkdir -p ~/.config/autostart && printf "{entry}" > ~/.config/autostart/t.desktop '
+                       '&& echo "touch /workspace/PROOF_bashrc" >> ~/.bashrc'], user="desktop").exit_code == 0
+    r = e.c.post(f"/sandboxes/{e.sid}/snapshots", headers=e.H)
+    assert r.status_code == 201, r.text
+    assert e.c.post(f"/sandboxes/{e.sid}/restore", json={"snapshot_id": r.json()["id"]}, headers=e.H).status_code == 200
+    c = e.box.sandboxes._container(e.sid)
+    for _ in range(60):                                                # Xfce 세션이 autostart를 다 돌 때까지
+        if c.exec_run(["pgrep", "-u", "desktop", "-x", "xfce4-panel"]).exit_code == 0:
+            break
+        time.sleep(0.5)
+    time.sleep(5)
+    assert "PROOF_autostart.txt" not in ls(e)
+    out = c.exec_run(["sh", "-c", "ls -A ~/.config/autostart 2>&1; grep -c PROOF ~/.bashrc"], user="desktop").output
+    assert b"t.desktop" not in out and out.strip().endswith(b"0"), out
+
+
+@needs_desktop
 def test_gui_background_jobs_stopped_when_burst_closes(desk):
     """보안 검수 N-1 보강: GUI 터미널로 띄운 백그라운드 일은 구간이 끝나면 멈춘다 (정책 밖 변경이 구간 뒤로 이어지지 않게)."""
     e = desk

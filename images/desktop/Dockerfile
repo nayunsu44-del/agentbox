@@ -27,7 +27,9 @@ RUN usermod -l agent -d /home/agent -m ubuntu && groupmod -n agent ubuntu \
     && useradd -m -u 1001 -U -G agent -s /bin/bash desktop \
     && chmod 700 /home/desktop \
     && mkdir -p /home/desktop/Desktop && ln -s /workspace /home/desktop/Desktop/workspace \
-    && chown -R desktop:desktop /home/desktop
+    && chown -R desktop:desktop /home/desktop \
+    && cp -a /home/desktop /usr/local/share/agentbox-desktop-home \
+    && chown -R root:root /usr/local/share/agentbox-desktop-home
 
 COPY agentbox-desktop-start /usr/local/bin/agentbox-desktop-start
 RUN chmod 755 /usr/local/bin/agentbox-desktop-start

@@ -41,6 +41,8 @@ LOGGED_ARGS_HEAD = 16 * 1024   # 넘으면 남기는 앞부분
 # 기다리는 동안과 그 뒤 한동안은 에이전트의 GUI 도구를 새로 돌리지 않아, 다시 누르면 잡을 수 있다.
 GUI_LOCK_WAIT = 30
 AUDIT_BURST_WAIT = 5   # 감사 로그 조회가 방금 닫기 시작한 구간 기록을 기다리는 최대 시간(초)
+# 샌드박스 하나가 동시에 걸어 둘 수 있는 승인 요청 수. 요청마다 화면 캡처 PNG가 호스트에 남는다 (보안 검수 run-3 v18).
+PENDING_APPROVALS_MAX = 20
 
 
 @dataclass
@@ -94,6 +96,20 @@ class AgentBox:
             return None
         p = self.captures / f"{aid}.png"
         return p if p.is_file() else None
+
+    def _drop_capture(self, aid: str) -> None:
+        """캡처는 사람이 결정할 때 보는 것이다. 결정·만료·삭제되면 지운다 (감사 로그에는 sha256이 남는다)."""
+        p = self.capture_path(aid)
+        if p:
+            try:
+                p.unlink()
+            except OSError:
+                pass
+
+    def drop_captures(self, sid: str) -> None:
+        """샌드박스를 지울 때 그 샌드박스의 승인 캡처를 모두 지운다."""
+        for apr in self.approvals.list(sandbox_id=sid):
+            self._drop_capture(apr["id"])
 
     def _capture(self, sid: str) -> tuple[bytes, dict[str, Any]] | None:
         """승인 요청 시점의 화면. 실패해도 승인 요청은 그대로 낸다."""
@@ -394,6 +410,11 @@ class AgentBox:
             return ToolOutcome(403, {"status": "denied", "rule_id": decision.rule_id, "reason": decision.reason})
 
         if decision.action == REQUIRE_APPROVAL:
+            if len(self.approvals.list(status=A.PENDING, sandbox_id=sid)) >= PENDING_APPROVALS_MAX:
+                self._safe_log(sid, tool, "tool_blocked", {"request": req_id, "reason": "too_many_pending_approvals",
+                                                           "limit": PENDING_APPROVALS_MAX})
+                raise ServiceError(429, f"이 샌드박스의 승인 대기가 이미 {PENDING_APPROVALS_MAX}개. "
+                                        "사람이 결정하거나 기한이 지난 뒤 다시 호출할 것.")
             try:
                 preview = self._preview(sid, tool, args)
             except Exception as e:  # 미리보기가 실패해도 승인은 사람에게 넘긴다
@@ -413,6 +434,7 @@ class AgentBox:
                                            "capture": preview.get("capture"), "expires_in": self.approval_timeout})
             except AuditWriteError as e:
                 self.approvals.claim(apr["id"], A.FAILED, "system")
+                self._drop_capture(apr["id"])
                 raise ServiceError(503, f"{e}. 기록할 수 없어서 승인 요청을 취소함.") from e
             return ToolOutcome(202, {"status": "pending", "approval_id": apr["id"],
                                      "expires_in": self.approval_timeout,
@@ -459,6 +481,7 @@ class AgentBox:
             if datetime.fromisoformat(apr["created_at"]) > limit:
                 continue
             if self.approvals.claim(apr["id"], A.EXPIRED, "system"):
+                self._drop_capture(apr["id"])
                 self.approvals.finish(apr["id"], A.EXPIRED, {
                     "message": f"{self.approval_timeout}초 안에 결정이 없어 거부함. 실행하지 않음."})
                 self._safe_log(apr["sandbox_id"], apr["tool"], "approval_expired",
@@ -472,6 +495,7 @@ class AgentBox:
         decision = A.APPROVED if approve else A.DENIED
         if not self.approvals.claim(aid, decision, actor):
             raise ServiceError(409, f"이미 결정된 요청: {aid} ({apr['status']})")
+        self._drop_capture(aid)
         sid, tool, args = apr["sandbox_id"], apr["tool"], apr["args"]
         try:
             self.audit.append(actor=actor, event="approval_decision", sandbox_id=sid, tool=tool,

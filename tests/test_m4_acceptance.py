@@ -223,3 +223,19 @@ def test_ui_refuses_framing(home):
         r = c.get(path, headers=H, follow_redirects=False)
         assert r.headers["x-frame-options"] == "SAMEORIGIN", path
         assert r.headers["content-security-policy"] == "frame-ancestors 'self'", path
+
+
+def test_preview_flags_every_unmodeled_segment(home):
+    """보안 검수 run-3 v17: rm이 섞인 명령의 다른 조각(mv, find -delete)도 '계산 못 함'으로 표시한다."""
+    c, _, H, _ = _build()
+    sb = c.post("/sandboxes", json={"source_dir": None, "template": "cli"}, headers=H).json()
+    sid, A = sb["id"], {"Authorization": f"Bearer {sb['agent_token']}"}
+    try:
+        r = c.post(f"/sandboxes/{sid}/tools/exec", headers=A, json={"args": {
+            "command": "rm -f /workspace/harmless.txt; mv /workspace/important.db /tmp/gone && sudo rm -f /workspace/x"}})
+        assert r.status_code == 202, r.text
+        prev = c.get(f"/approvals/{r.json()['approval_id']}", headers=H).json()["preview"]
+        assert [a["path"] for a in prev["affected"]] == ["/workspace/harmless.txt", "/workspace/x"]
+        assert prev["notes"] == ["'mv /workspace/important.db /tmp/gone' 부분의 영향은 자동 계산하지 못함. 명령 원문을 확인할 것."]
+    finally:
+        c.delete(f"/sandboxes/{sid}", headers=H)

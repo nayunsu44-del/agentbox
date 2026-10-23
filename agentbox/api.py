@@ -224,6 +224,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         box.log_human("sandbox_delete", sid, {})
         box.end_desktop(sid, "sandbox_deleted")
         guard(lambda: box.sandboxes.delete(sid))
+        box.drop_captures(sid)
         return {"deleted": sid}
 
     # ---- 도구 ----------------------------------------------------------
