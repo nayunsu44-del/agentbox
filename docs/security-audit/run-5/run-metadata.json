@@ -44,6 +44,7 @@
  "phase": "phase5_and_final_critic",
  "retry_note": "h-gui-lease and h-bodylimit were each resumed once to fix only the unit reviewed_paths union (HUNTING.md contract); results otherwise unchanged.",
  "deviations": [
-  "r-prune Phase 5 replace changed only two line references (cli.py:322->323, audit.py:353-354->358-359) and wording in trace/execution/confidence; apply.py parked it as material by field, the parent checked the diff (verdict, root cause, severity, trace kinds/files/lines unchanged) and applied it with tools/apply5_nonmaterial.py without a re-verifier."
+  "r-prune Phase 5 replace changed only two line references (cli.py:322->323, audit.py:353-354->358-359) and wording in trace/execution/confidence; apply.py parked it as material by field, the parent checked the diff (verdict, root cause, severity, trace kinds/files/lines unchanged) and applied it with tools/apply5_nonmaterial.py without a re-verifier.",
+  "rv-policy-cpu (fresh re-verifier of r-policy-cpu's parked replacement) returned a final message that is not valid JSON (one closing brace missing at the end). Under the never-repair rule it was discarded; a resend would have been invocation 31 over the owner cap of 30. The parked replacement (agents/r-policy-cpu/pending-replacement.json) was therefore not applied and findings.json keeps the Phase 3 record (v-policy-cpu, confirmed low). The discarded text is kept at agents/rv-policy-cpu/final.txt; its technical point (a narrower _words recursion would lose detection; use a lossless skip) was used for the code fix, not for the record."
  ]
 }
