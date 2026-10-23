@@ -63,6 +63,10 @@ def test_policy_parse_does_not_relex_every_token(monkeypatch):
     assert "rm" in command_names("echo `rm x`")
     assert "rm" in command_names("a$(rm z)")
     assert "curl" in command_names('sh -c "curl a"')
+    # 공백 없이 따옴표·구분자로 숨긴 이름도 계속 찾는다 (다시 렉싱을 줄이며 놓치면 이름 기준 규칙이 뚫린다)
+    assert "rm" in command_names("""sh -c 'x;r""m'""")
+    assert "curl" in command_names("""sh -c 'a|c""url'""")
+    assert "rm" in command_names("""sh -c 'a`r""m`'""")
     p = Policy.load(Settings().policy_path)
     assert p.decide("exec", {"command": "bash -c 'x;rm y'"}).rule_id == "rm-curl-needs-approval"
 
