@@ -264,7 +264,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     @app.get("/audit")
     def list_audit(sandbox_id: str | None = None, after_id: int = 0, limit: int = 500,
                    p: Principal = Depends(human_only)):
-        box.close_idle_gui_bursts(wait=AUDIT_BURST_WAIT)
+        box.bursts.close_idle(wait=AUDIT_BURST_WAIT)
         return audit.list(sandbox_id=sandbox_id, after_id=after_id, limit=min(limit, 5000))
 
     @app.get("/audit/verify")

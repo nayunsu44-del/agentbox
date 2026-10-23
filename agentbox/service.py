@@ -15,8 +15,6 @@ import hashlib
 import json
 import threading
 import time
-from concurrent.futures import Future, ThreadPoolExecutor
-from concurrent.futures import wait as wait_futures
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -27,8 +25,9 @@ from . import approvals as A
 from .approvals import ApprovalStore
 from .audit import AuditLog, AuditWriteError
 from .desktop import DesktopControl, Lease
+from .gui_bursts import GuiBursts
 from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Decision, Policy
-from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, diff_manifest, gui_strays, safe_path
+from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, safe_path
 
 FILE_TOOLS = {"list_dir", "read_file", "exec", "write_file", "delete_file"}
 GUI_TOOLS = {"screenshot", "click", "type", "key"}
@@ -84,19 +83,10 @@ class AgentBox:
         self.captures = captures
         self._busy: dict[str, int] = {}
         self._snap_locks: dict[str, threading.Lock] = {}
-        # GUI 구간 스냅샷용 (time.monotonic). 서버를 다시 켜면 비어서 첫 GUI 입력 때 스냅샷을 뜬다.
-        self._gui_input_at: dict[str, float] = {}
-        self._gui_snap_at: dict[str, float] = {}
-        # 열린 GUI 구간: 시작 스냅샷과 그때의 /workspace 파일 목록. 구간이 끝나면 바뀐 파일을 기록한다.
-        self._gui_burst: dict[str, dict[str, Any]] = {}
-        self._burst_locks: dict[str, threading.Lock] = {}
-        # 입력이 끊긴 구간은 여기서 닫는다. 다른 샌드박스의 도구 스레드나 사람 요청 스레드에서 그 샌드박스의
-        # docker exec를 돌리면, 그 컨테이너가 응답하지 않을 때 상관없는 호출이 묶인다 (보안 검수 run-3 v11).
-        self._burst_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="agentbox-burst")
-        self._closing: dict[str, Future] = {}
         # 인수를 기다리는 중: sid -> (세션, 이때까지 에이전트 GUI 도구를 새로 돌리지 않음)
         self._takeover_wanted: dict[str, tuple[str, float]] = {}
         self._busy_lock = threading.Lock()
+        self.bursts = GuiBursts(sandboxes, self.desktop, self.log_best_effort, self._takeover_pending, self._busy_lock)
 
     def capture_path(self, aid: str) -> Path | None:
         if not self.captures or not aid.replace("_", "").isalnum():
@@ -146,7 +136,7 @@ class AgentBox:
             with self.desktop.gui_lock(sid):
                 self._check_control(sid)
                 if tool in GUI_INPUT:
-                    self._gui_input_at[sid] = time.monotonic()
+                    self.bursts.mark_input(sid)
                 if tool == "screenshot":
                     shot = sb.screenshot(sid)
                     png = shot.pop("png")
@@ -247,21 +237,8 @@ class AgentBox:
             except SandboxError:
                 return False
         if tool in GUI_INPUT:
-            return self._gui_needs_snapshot(sid)
+            return self.bursts.needs_snapshot(sid)
         return False
-
-    def _gui_needs_snapshot(self, sid: str) -> bool:
-        """GUI 입력은 터미널·파일 관리자 등으로 정책 밖에서 /workspace를 바꿀 수 있다. 막을 수는 없으니
-        AP-2의 복구 지점만이라도 남긴다: GUI 구간이 시작될 때와, 구간이 길면 interval마다."""
-        s = self.sandboxes.settings
-        if s.gui_snapshot_interval <= 0:
-            return False
-        if (self.desktop.lease(sid) and not self.desktop.is_stale(sid)) or self._takeover_pending(sid):
-            return False  # 사람이 조작 중이라 어차피 423
-        now = time.monotonic()
-        last_input, last_snap = self._gui_input_at.get(sid), self._gui_snap_at.get(sid)
-        return (last_input is None or now - last_input > s.gui_snapshot_idle
-                or last_snap is None or now - last_snap > s.gui_snapshot_interval)
 
     def _over_snapshot_quota(self, sid: str, tool: str, args: dict[str, Any]) -> bool:
         """허용 규칙이 매번 docker commit을 일으켜 호스트 디스크를 채우지 못하게, 상한부터는 승인으로 돌린다."""
@@ -270,112 +247,20 @@ class AgentBox:
             return False
         return self._needs_snapshot(sid, tool, args)
 
-    def _open_gui_burst(self, sid: str, snapshot_id: str) -> bool:
-        try:
-            # 구간은 지금 컨테이너의 것이다. 복원으로 컨테이너가 바뀌면 옛 pid·파일 목록으로 새 데스크톱을 판단하지 않는다
-            container_id = self.sandboxes.get(sid)["container_id"]
-            manifest, truncated = self.sandboxes.workspace_manifest(sid)
-            procs, _ = self.sandboxes.desktop_processes(sid)
-        except Exception as e:  # 기록용이라 실패해도 도구 호출은 막지 않는다. 다만 구간 기록이 없다는 것은 남긴다
-            self.log_best_effort(sid, None, "gui_burst_open_failed", {"snapshot_id": snapshot_id,
-                                                                       "error": (str(e) or type(e).__name__)[:300]})
-            return False
-        self._gui_burst[sid] = {"snapshot_id": snapshot_id, "manifest": manifest, "truncated": truncated,
-                                "pids": {p["pid"] for p in procs}, "container_id": container_id}
-        return True
-
-    def _stop_gui_strays(self, sid: str, burst: dict[str, Any], reason: str) -> str | None:
-        """구간에서 GUI로 띄운 백그라운드 일을 멈춘다. 그대로 두면 구간이 끝난 뒤에도 정책 밖에서 파일을 바꾼다.
-        멈추지 못했으면 그 까닭을 돌려준다."""
-        try:
-            procs, wins = self.sandboxes.desktop_processes(sid)
-            pids = gui_strays(procs, wins, burst["pids"])
-            self.sandboxes.kill_processes(sid, pids)
-        except Exception as e:
-            return str(e) or type(e).__name__
-        if pids:
-            args = {p["pid"]: p["args"][:200] for p in procs}
-            self.log_best_effort(sid, None, "gui_processes_stopped", {
-                "snapshot_id": burst["snapshot_id"], "reason": reason,
-                "processes": [{"pid": pid, "args": args.get(pid, "")} for pid in pids[:50]], "count": len(pids)})
-        return None
-
-    def _burst_close_failed(self, sid: str, burst: dict[str, Any], reason: str, error: str) -> None:
-        """조용히 버리지 않는다: 사람이 그 구간 시작 스냅샷을 보고 판단할 수 있게 남긴다."""
-        self.log_best_effort(sid, None, "gui_burst_close_failed",
-                             {"snapshot_id": burst["snapshot_id"], "reason": reason, "error": error[:300]})
-
-    def _close_gui_burst(self, sid: str, reason: str, only: dict[str, Any] | None = None) -> None:
-        """GUI 구간 동안 /workspace에서 바뀐 파일을 감사 로그에 남긴다. 정책 밖에서 바뀐 것을 사람이 보고,
-        필요하면 구간 시작 스냅샷으로 되돌릴 수 있게. 같은 샌드박스의 닫기는 하나씩 한다: 되돌리기 전에 닫을 때
-        백그라운드 닫기가 아직 돌고 있으면 그것이 끝날 때까지 기다린다. only를 주면 그 구간일 때만 닫는다."""
-        with self._busy_lock:
-            lock = self._burst_locks.setdefault(sid, threading.Lock())
-        with lock:
-            burst = self._gui_burst.get(sid)
-            if not burst or (only is not None and burst is not only):
-                return
-            del self._gui_burst[sid]
-            self._finish_gui_burst(sid, burst, reason)
-
-    def _finish_gui_burst(self, sid: str, burst: dict[str, Any], reason: str) -> None:
-        try:
-            replaced = self.sandboxes.get(sid)["container_id"] != burst.get("container_id")
-        except Exception as e:
-            return self._burst_close_failed(sid, burst, reason, str(e))
-        if replaced:
-            return self._burst_close_failed(sid, burst, reason, "컨테이너가 바뀌어 비교하지 않음 (복원)")
-        failed = self._stop_gui_strays(sid, burst, reason)
-        try:
-            manifest, truncated = self.sandboxes.workspace_manifest(sid)
-        except Exception as e:
-            return self._burst_close_failed(sid, burst, reason, failed or str(e))
-        if failed:
-            self._burst_close_failed(sid, burst, reason, failed)
-        diff = diff_manifest(burst["manifest"], manifest)
-        if not any(diff.values()):
-            return
-        self.log_best_effort(sid, None, "gui_changes", {
-            "snapshot_id": burst["snapshot_id"], "reason": reason,
-            "counts": {k: len(v) for k, v in diff.items()},
-            **{k: v[:100] for k, v in diff.items()},
-            "truncated": burst["truncated"] or truncated or any(len(v) > 100 for v in diff.values()),
-        })
-
-    def close_idle_gui_bursts(self, wait: float = 0) -> None:
-        """입력이 끊긴 GUI 구간을 닫는다. 조회·도구 호출 때 부른다 (승인 기한 처리와 같은 방식).
-        닫기는 전용 스레드에서 돈다. wait초까지는 끝나기를 기다린다 (감사 로그 조회가 방금 닫힌 구간을 보이게)."""
-        idle = self.sandboxes.settings.gui_snapshot_idle
-        now = time.monotonic()
-        with self._busy_lock:
-            for sid, burst in list(self._gui_burst.items()):
-                if now - self._gui_input_at.get(sid, 0.0) > idle and sid not in self._closing:
-                    self._closing[sid] = self._burst_pool.submit(self._close_idle, sid, burst)
-            pending = list(self._closing.values())
-        if wait > 0 and pending:
-            wait_futures(pending, timeout=wait)
-
-    def _close_idle(self, sid: str, burst: dict[str, Any]) -> None:
-        try:
-            self._close_gui_burst(sid, "idle", only=burst)  # 그새 다음 구간이 열렸으면 그것은 두고 간다
-        finally:
-            with self._busy_lock:
-                self._closing.pop(sid, None)
-
     def _snapshot(self, sid: str, tool: str, reason: str, ref: dict[str, Any]) -> dict[str, Any]:
         if tool in GUI_INPUT:
-            self._close_gui_burst(sid, "next_burst")
+            self.bursts.close(sid, "next_burst")
         snap = self.sandboxes.snapshot(sid, reason=reason)
         opened = True
         if tool in GUI_INPUT:
-            self._gui_snap_at[sid] = time.monotonic()
-            opened = self._open_gui_burst(sid, snap["id"])
+            self.bursts.mark_snapshot(sid)
+            opened = self.bursts.open(sid, snap["id"])
         self.audit.append(actor="system", event="snapshot", sandbox_id=sid, tool=tool,
                           payload={**ref, "snapshot_id": snap["id"], "image": snap["image"]})
         if not opened:
             # 기준 없이 구간을 돌리면 그 동안 GUI로 바꾼 것이 기록되지 않는다. 에이전트가 pid 한도를 채워 일부러
             # 이 상태를 만들 수 있으니 이 입력은 실행하지 않고, 다음 입력이 다시 구간을 열게 한다 (보안 검수 run-3 v09)
-            self.reset_gui_timers(sid)
+            self.bursts.reset_timers(sid)
             raise SandboxError("GUI 구간 기준(파일·프로세스 목록)을 읽지 못해 GUI 입력을 실행하지 않음. 잠시 뒤 다시 호출할 것")
         return snap
 
@@ -383,7 +268,7 @@ class AgentBox:
     def call_tool(self, sid: str, tool: str, args: dict[str, Any], actor: str = "agent") -> ToolOutcome:
         """샌드박스 하나가 동시에 돌리는 도구 호출 수를 제한한다. 출력 없는 허용 명령(tail -f 등)을
         여러 개 띄워 도구 실행 스레드를 제한 시간 내내 붙잡지 못하게 한다."""
-        self.close_idle_gui_bursts()
+        self.bursts.close_idle()
         limit = self.sandboxes.settings.tool_concurrency
         with self._busy_lock:
             if limit > 0 and self._busy.get(sid, 0) >= limit:
@@ -489,7 +374,7 @@ class AgentBox:
     # ---- 승인 결정 --------------------------------------------------------
     def expire_stale(self) -> None:
         """AP-1: 기한이 지난 대기 요청을 거부로 끝낸다. 조회·결정 때마다 부른다."""
-        self.close_idle_gui_bursts()
+        self.bursts.close_idle()
         limit = datetime.now(timezone.utc) - timedelta(seconds=self.approval_timeout)
         for apr in self.approvals.list(status=A.PENDING):
             if datetime.fromisoformat(apr["created_at"]) > limit:
@@ -558,14 +443,14 @@ class AgentBox:
     # session을 넘기지 않으면(JSON API) 기록에 session 항목을 넣지 않고, 넘기면(웹 UI) None이어도 넣는다.
     def pause_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
         self.log_human("sandbox_pause", sid, _with_session({}, session))
-        self.end_gui_burst(sid, "sandbox_paused")  # 멈춘 컨테이너에서는 구간을 닫지 못한다
+        self.bursts.end(sid, "sandbox_paused")  # 멈춘 컨테이너에서는 구간을 닫지 못한다
         self.sandboxes.pause(sid)
         return self.sandboxes.get(sid)
 
     def resume_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
         self.log_human("sandbox_resume", sid, _with_session({}, session))
         self.sandboxes.resume(sid)
-        self.reset_gui_timers(sid)  # 멈춘 동안의 GUI 호출이 남긴 시각 때문에 다음 구간을 건너뛰지 않게
+        self.bursts.reset_timers(sid)  # 멈춘 동안의 GUI 호출이 남긴 시각 때문에 다음 구간을 건너뛰지 않게
         return self.sandboxes.get(sid)
 
     def snapshot_sandbox(self, sid: str, session: str | None = _NO_SESSION) -> dict[str, Any]:
@@ -578,7 +463,7 @@ class AgentBox:
         self.log_human("restore_request", sid, _with_session({"snapshot_id": snap_id}, session))
         self.end_desktop(sid, "sandbox_restored")
         rec = self.sandboxes.restore(sid, snap_id)
-        self.reset_gui_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
+        self.bursts.reset_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
         self.log_human("restored", sid, _with_session({"snapshot_id": snap_id, "container_id": rec["container_id"]},
                                                       session))
         return rec
@@ -626,7 +511,7 @@ class AgentBox:
                 if cur and cur.session != session:
                     raise ServiceError(409, f"다른 사람 세션({cur.session})이 이미 조작 중")
                 if not cur:
-                    self._close_gui_burst(sid, "human_takeover")  # 사람이 바꾸는 것은 에이전트 구간에 넣지 않는다
+                    self.bursts.close(sid, "human_takeover")  # 사람이 바꾸는 것은 에이전트 구간에 넣지 않는다
                     self.log_human("human_takeover", sid, {"session": session})  # 기록 못 하면 인수하지 않는다
                     self.desktop.take(sid, session)
             finally:
@@ -655,11 +540,11 @@ class AgentBox:
             # 기록 없이 에이전트에게 화면을 넘기지 않는다.
             raise ServiceError(503, f"{e}. 기록할 수 없어서 돌려주지 않음.") from e
         self.desktop.release(sid)
-        self._gui_input_at.pop(sid, None)  # 사람이 바꾼 상태까지 담도록 에이전트의 다음 GUI 입력 때 스냅샷
+        self.bursts.forget_input(sid)  # 사람이 바꾼 상태까지 담도록 에이전트의 다음 GUI 입력 때 스냅샷
 
     def close(self) -> None:
         """DB 연결과 Docker 클라이언트를 닫는다 (서버 종료, 테스트)."""
-        self._burst_pool.shutdown(wait=False, cancel_futures=True)
+        self.bursts.shutdown()
         for close in (self.audit.conn.close, self.approvals.conn.close, self.sandboxes.conn.close,
                       self.sandboxes.client.close, self.desktop.close):
             try:
@@ -691,20 +576,9 @@ class AgentBox:
             self.desktop.close_session(session)
         return session
 
-    def end_gui_burst(self, sid: str, reason: str) -> None:
-        """컨테이너가 멈추거나 바뀌기 전에 열린 구간을 닫고, 다음 GUI 입력이 새 구간(스냅샷)을 열게 한다.
-        일시정지·재개·복원·삭제 때 부른다. 그러지 않으면 바로 뒤의 GUI 입력이 스냅샷도 구간도 없이 돈다
-        (보안 검수 run-3 v12)."""
-        self._close_gui_burst(sid, reason)
-        self.reset_gui_timers(sid)
-
-    def reset_gui_timers(self, sid: str) -> None:
-        self._gui_input_at.pop(sid, None)
-        self._gui_snap_at.pop(sid, None)
-
     def end_desktop(self, sid: str, reason: str) -> None:
         """삭제·복원 때: 인수 상태를 기록하고 정리, 열린 화면 연결을 끊는다."""
-        self.end_gui_burst(sid, reason)  # 되돌리거나 지우기 전에, 그때까지 바뀐 것을 남긴다
+        self.bursts.end(sid, reason)  # 되돌리거나 지우기 전에, 그때까지 바뀐 것을 남긴다
         if self.desktop.lease(sid):
             try:
                 self.handback(sid, None, reason)

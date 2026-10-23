@@ -130,9 +130,9 @@ def _gui_box():
 
 
 def _burst(box, sid):
-    box._gui_burst[sid] = b = {"snapshot_id": "snap_1", "manifest": {}, "truncated": False, "pids": set(),
+    box.bursts._gui_burst[sid] = b = {"snapshot_id": "snap_1", "manifest": {}, "truncated": False, "pids": set(),
                                "container_id": "c1"}
-    box._gui_input_at[sid] = time.monotonic() - 3600
+    box.bursts._gui_input_at[sid] = time.monotonic() - 3600
     return b
 
 
@@ -140,8 +140,8 @@ def test_idle_burst_close_does_not_run_on_caller_thread():
     box, sb = _gui_box()
     _burst(box, "sb_b")
     t0 = time.monotonic()
-    box.close_idle_gui_bursts()          # 다른 샌드박스의 도구 호출·승인 조회가 부르는 곳
-    box.close_idle_gui_bursts()          # 닫는 중인 구간은 다시 넣지 않는다
+    box.bursts.close_idle()          # 다른 샌드박스의 도구 호출·승인 조회가 부르는 곳
+    box.bursts.close_idle()          # 닫는 중인 구간은 다시 넣지 않는다
     assert time.monotonic() - t0 < 1
     for _ in range(100):
         if sb.threads:
@@ -149,14 +149,14 @@ def test_idle_burst_close_does_not_run_on_caller_thread():
         time.sleep(0.01)
     assert sb.threads == ["agentbox-burst_0"]
     t0 = time.monotonic()
-    box.close_idle_gui_bursts(wait=0.2)  # 감사 로그 조회는 잠깐만 기다린다
+    box.bursts.close_idle(wait=0.2)  # 감사 로그 조회는 잠깐만 기다린다
     assert time.monotonic() - t0 < 1
     sb.release.set()
-    box.close_idle_gui_bursts(wait=5)
-    assert "sb_b" not in box._gui_burst and not box._closing
+    box.bursts.close_idle(wait=5)
+    assert "sb_b" not in box.bursts._gui_burst and not box.bursts._closing
     assert [r["event"] for r in box.audit.rows] == ["gui_changes"]
     assert box.audit.rows[0]["payload"]["added"] == ["new.txt"]
-    box._burst_pool.shutdown()
+    box.bursts._burst_pool.shutdown()
 
 
 def test_idle_close_leaves_a_newer_burst_alone():
@@ -164,9 +164,9 @@ def test_idle_close_leaves_a_newer_burst_alone():
     sb.release.set()
     old = _burst(box, "sb_b")
     new = _burst(box, "sb_b")             # 닫기가 돌기 전에 다음 구간이 열렸다
-    box._close_gui_burst("sb_b", "idle", only=old)
-    assert box._gui_burst["sb_b"] is new and not box.audit.rows
-    box._burst_pool.shutdown()
+    box.bursts.close("sb_b", "idle", only=old)
+    assert box.bursts._gui_burst["sb_b"] is new and not box.audit.rows
+    box.bursts._burst_pool.shutdown()
 
 
 def test_takeover_waits_bounded_and_stops_new_agent_gui_calls(monkeypatch):
@@ -197,7 +197,7 @@ def test_takeover_waits_bounded_and_stops_new_agent_gui_calls(monkeypatch):
     lock.release()
     box.handback("sb", "hs_1")
     box._check_control("sb")               # 돌려준 뒤에는 에이전트 차례
-    box._burst_pool.shutdown()
+    box.bursts._burst_pool.shutdown()
 
 
 def test_gui_execs_have_a_container_side_deadline():
@@ -233,15 +233,15 @@ def test_lifecycle_change_resets_gui_burst_timers():
     box, sb = _gui_box()
     sb.release.set()
     _burst(box, "sb")
-    box._gui_input_at["sb"] = box._gui_snap_at["sb"] = time.monotonic()   # 막 GUI 입력이 있었다
-    assert not box._gui_needs_snapshot("sb")
-    box.end_gui_burst("sb", "sandbox_paused")
-    assert "sb" not in box._gui_burst and box._gui_needs_snapshot("sb")   # 다음 입력이 새 구간을 연다
+    box.bursts._gui_input_at["sb"] = box.bursts._gui_snap_at["sb"] = time.monotonic()   # 막 GUI 입력이 있었다
+    assert not box.bursts.needs_snapshot("sb")
+    box.bursts.end("sb", "sandbox_paused")
+    assert "sb" not in box.bursts._gui_burst and box.bursts.needs_snapshot("sb")   # 다음 입력이 새 구간을 연다
     assert [r["event"] for r in box.audit.rows] == ["gui_changes"]
-    box._gui_input_at["sb"] = box._gui_snap_at["sb"] = time.monotonic()
-    box.reset_gui_timers("sb")                                           # 재개·복원 뒤
-    assert box._gui_needs_snapshot("sb")
-    box._burst_pool.shutdown()
+    box.bursts._gui_input_at["sb"] = box.bursts._gui_snap_at["sb"] = time.monotonic()
+    box.bursts.reset_timers("sb")                                           # 재개·복원 뒤
+    assert box.bursts.needs_snapshot("sb")
+    box.bursts._burst_pool.shutdown()
 
 
 def test_burst_from_replaced_container_kills_nothing():
@@ -252,9 +252,9 @@ def test_burst_from_replaced_container_kills_nothing():
     _burst(box, "sb")                     # 복원 직전에 열린 구간 (옛 컨테이너의 pid가 기준)
     sb.container_id = "c2"
     sb.procs = [{"pid": 50, "ppid": 1, "sid": 50, "uid": DESKTOP_UID, "args": "xfce4-panel"}]
-    box._close_gui_burst("sb", "idle")
+    box.bursts.close("sb", "idle")
     assert sb.killed == [] and [r["event"] for r in box.audit.rows] == ["gui_burst_close_failed"]
-    box._burst_pool.shutdown()
+    box.bursts._burst_pool.shutdown()
 
 
 def test_failed_burst_close_is_logged_not_dropped_silently():
@@ -265,10 +265,10 @@ def test_failed_burst_close_is_logged_not_dropped_silently():
 
     sb.workspace_manifest = sb.desktop_processes = broken
     _burst(box, "sb")
-    box._close_gui_burst("sb", "idle")
+    box.bursts.close("sb", "idle")
     rows = box.audit.rows
     assert [r["event"] for r in rows] == ["gui_burst_close_failed"] and "일시정지" in rows[0]["payload"]["error"]
-    box._burst_pool.shutdown()
+    box.bursts._burst_pool.shutdown()
 
 
 def test_failed_burst_baseline_is_logged():
@@ -279,10 +279,10 @@ def test_failed_burst_baseline_is_logged():
         raise RuntimeError("/workspace 파일 목록 실패 (exit 126)")
 
     sb.workspace_manifest = broken
-    box._open_gui_burst("sb", "snap_9")
-    assert "sb" not in box._gui_burst
+    box.bursts.open("sb", "snap_9")
+    assert "sb" not in box.bursts._gui_burst
     assert [(r["event"], r["payload"]["snapshot_id"]) for r in box.audit.rows] == [("gui_burst_open_failed", "snap_9")]
-    box._burst_pool.shutdown()
+    box.bursts._burst_pool.shutdown()
 
 
 def test_gui_input_refused_when_burst_baseline_unreadable():
@@ -296,9 +296,9 @@ def test_gui_input_refused_when_burst_baseline_unreadable():
         raise RuntimeError("/workspace 파일 목록 실패 (exit 126)")
 
     sb.workspace_manifest = broken
-    box._gui_input_at["sb"] = time.monotonic()
+    box.bursts._gui_input_at["sb"] = time.monotonic()
     with pytest.raises(SandboxError, match="실행하지 않음"):
         box._snapshot("sb", "key", "before key", {"request": 1})
-    assert "sb" not in box._gui_burst and box._gui_needs_snapshot("sb")
+    assert "sb" not in box.bursts._gui_burst and box.bursts.needs_snapshot("sb")
     assert [r["event"] for r in box.audit.rows] == ["gui_burst_open_failed", "snapshot"]
-    box._burst_pool.shutdown()
+    box.bursts._burst_pool.shutdown()

@@ -203,14 +203,14 @@ def test_gui_input_snapshots_per_burst(desk):
     assert tool(e, "screenshot").status_code == 200 and snaps() == 0      # 화면 보기는 스냅샷 없음
     assert tool(e, "key", keys="ctrl+Escape").status_code == 200 and snaps() == 1   # 구간 시작
     assert tool(e, "click", x=10, y=10).status_code == 200 and snaps() == 1        # 같은 구간
-    e.box._gui_input_at[e.sid] -= 61                                              # 60초 쉬었다가
+    e.box.bursts._gui_input_at[e.sid] -= 61                                              # 60초 쉬었다가
     assert tool(e, "click", x=10, y=10).status_code == 200 and snaps() == 2
-    e.box._gui_snap_at[e.sid] -= 601                                              # 쉬지 않아도 10분마다
+    e.box.bursts._gui_snap_at[e.sid] -= 601                                              # 쉬지 않아도 10분마다
     assert tool(e, "type", text="a").status_code == 200 and snaps() == 3
 
     # 스냅샷 상한에서는 구간 시작 입력이 승인을 거치고, 승인하면 그 구간은 다시 바로 돈다
     e.box.sandboxes.settings.snapshot_quota = snaps()
-    e.box._gui_input_at[e.sid] -= 61
+    e.box.bursts._gui_input_at[e.sid] -= 61
     r = tool(e, "click", x=10, y=10)
     assert r.status_code == 202, r.text
     res = e.c.post(f"/approvals/{r.json()['approval_id']}", json={"decision": "approve"}, headers=e.H).json()
@@ -234,7 +234,7 @@ def test_gui_input_refused_without_burst_baseline(desk, monkeypatch):
     assert "gui_burst_open_failed" in ev and "tool_result" not in ev
     monkeypatch.setattr(e.box.sandboxes, "workspace_manifest", real)
     assert tool(e, "key", keys="ctrl+Escape").status_code == 200        # 다시 부르면 구간을 연다
-    assert e.sid in e.box._gui_burst and len(e.box.sandboxes.list_snapshots(e.sid)) == 2
+    assert e.sid in e.box.bursts._gui_burst and len(e.box.sandboxes.list_snapshots(e.sid)) == 2
 
 
 @needs_desktop
@@ -251,7 +251,7 @@ def test_gui_burst_changes_logged(desk):
                        "sed -i 's/12/99/' /workspace/new-report.md; touch -r /tmp/ref /workspace/new-report.md"],
                       user="desktop").exit_code == 0
     assert not [x for x in events(e) if x["event"] == "gui_changes"]   # 아직 구간 안
-    e.box._gui_input_at[e.sid] -= 61                                   # 입력이 끊기면 구간이 닫힌다
+    e.box.bursts._gui_input_at[e.sid] -= 61                                   # 입력이 끊기면 구간이 닫힌다
     ch = [x for x in events(e) if x["event"] == "gui_changes"]
     assert len(ch) == 1 and ch[0]["actor"] == "system"
     p = ch[0]["payload"]
@@ -295,7 +295,7 @@ def test_gui_burst_restarts_after_pause_and_restore(desk):
     snap = e.box.sandboxes.list_snapshots(e.sid)[0]["id"]
     assert e.c.post(f"/sandboxes/{e.sid}/restore", json={"snapshot_id": snap}, headers=e.H).status_code == 200
     assert tool(e, "key", keys="ctrl+Escape").status_code == 200 and snaps() == 3
-    burst = e.box._gui_burst[e.sid]
+    burst = e.box.bursts._gui_burst[e.sid]
     assert burst["container_id"] == e.box.sandboxes.get(e.sid)["container_id"]
 
 
@@ -345,7 +345,7 @@ def test_gui_background_jobs_stopped_when_burst_closes(desk):
     time.sleep(1)
     assert len(desktop_pids("sleep 4")) == 4                           # 일 두 개, 각각 sh와 sleep
     panel = desktop_pids("xfce4-panel")
-    e.box._gui_input_at[e.sid] -= 61                                   # 입력이 끊기면 구간이 닫힌다
+    e.box.bursts._gui_input_at[e.sid] -= 61                                   # 입력이 끊기면 구간이 닫힌다
     stopped = [x["payload"] for x in events(e) if x["event"] == "gui_processes_stopped"]
     assert len(stopped) == 1 and stopped[0]["reason"] == "idle"
     assert any("sleep 4; rm" in x["args"] for x in stopped[0]["processes"])
@@ -369,7 +369,7 @@ def test_frozen_display_does_not_hold_tools_or_takeover(desk):
         r = tool(e, "screenshot")
         assert r.status_code == 400 and "응답하지 않음" in r.json()["detail"], r.text
         assert time.monotonic() - t0 < 25
-        e.box._gui_input_at[e.sid] -= 61                                  # 멈춘 화면의 구간을 닫는다
+        e.box.bursts._gui_input_at[e.sid] -= 61                                  # 멈춘 화면의 구간을 닫는다
         t0 = time.monotonic()
         assert tool(e, "list_dir", path="/workspace").status_code == 200
         assert e.c.get("/approvals", headers=e.H).status_code == 200
