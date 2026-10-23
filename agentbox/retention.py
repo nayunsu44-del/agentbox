@@ -101,7 +101,11 @@ def prune(db_path: Path | str, before: str, archive: Path | str, dry_run: bool =
         if archive.exists():
             raise FileExistsError(f"아카이브 파일이 이미 있음: {archive}")
         # 감사 행은 바뀌지 않으니(추가 전용) 잠금 밖에서 내보낸다. 서버의 기록이 그동안 막히지 않게.
-        sha = _write_archive(archive, cutoff, rows, approvals)
+        try:
+            sha = _write_archive(archive, cutoff, rows, approvals)
+        except BaseException:
+            archive.unlink(missing_ok=True)   # 쓰다 만 파일이 남으면 다시 실행할 때 FileExistsError가 난다
+            raise
         try:
             conn.execute("BEGIN IMMEDIATE")
             try:
@@ -125,10 +129,19 @@ def prune(db_path: Path | str, before: str, archive: Path | str, dry_run: bool =
                 insert_record(conn, "human", "audit_pruned", None, None, bound_payload(summary))
                 conn.execute("COMMIT")
             except BaseException:
-                conn.execute("ROLLBACK")
+                if conn.in_transaction:   # COMMIT 뒤에 온 예외(Ctrl-C 등)면 되돌릴 것이 없다
+                    conn.execute("ROLLBACK")
                 raise
         except BaseException:
-            archive.unlink(missing_ok=True)   # 지우지 못했으면 아카이브도 남기지 않는다 (다시 실행할 수 있게)
+            # 지우지 못했을 때만 아카이브도 지운다 (다시 실행할 수 있게). 기준점이 이미 이 아카이브를 가리키면
+            # 지운 행의 유일한 사본이니 남긴다. 확인조차 못 하면 남기는 쪽으로 (보안 검수 run-5)
+            try:
+                committed = conn.execute("SELECT 1 FROM audit_anchor WHERE archive = ? AND archive_sha256 = ?",
+                                         (archive.name, sha)).fetchone() is not None
+            except sqlite3.Error:
+                committed = True
+            if not committed:
+                archive.unlink(missing_ok=True)
             raise
     finally:
         conn.close()
