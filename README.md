@@ -285,10 +285,10 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 | --- | --- | --- |
 | POST | `/sandboxes` | 사람 (응답에 그 샌드박스 전용 에이전트 토큰) |
 | GET | `/sandboxes`, `/sandboxes/{id}` | 사람 (에이전트는 자기 것만) |
-| POST | `/sandboxes/{id}/pause` · `/resume` | 사람 |
-| POST·GET | `/sandboxes/{id}/snapshots` | 사람 |
-| POST | `/sandboxes/{id}/restore` | 사람 |
-| DELETE | `/sandboxes/{id}` | 사람 |
+| POST | `/sandboxes/{id}/pause` · `/resume` | 사람. 503 기록 실패로 실행 안 함 |
+| POST·GET | `/sandboxes/{id}/snapshots` | 사람. POST는 503 기록 실패로 실행 안 함 |
+| POST | `/sandboxes/{id}/restore` | 사람. 503 기록 실패로 실행 안 함 |
+| DELETE | `/sandboxes/{id}` | 사람. 503 기록 실패로 실행 안 함 |
 | POST | `/sandboxes/{id}/tools/{tool}` | 에이전트(자기 샌드박스만)·사람. 200 실행됨 / 202 승인 대기 + `approval_id` / 403 차단 / 423 사람이 화면 조작 중 / 429 동시 호출 상한 또는 승인 대기 20건 초과 / 503 기록 실패로 실행 안 함 |
 | GET | `/approvals` | 사람 |
 | GET | `/approvals/{id}` | 사람, 에이전트(자기 요청의 상태와 결과만) |

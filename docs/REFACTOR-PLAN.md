@@ -42,6 +42,10 @@ run-3 감사와 수정이 main에 들어갔다(PR #8 `5decb11`, #9 `f497c86`). �
    - `box._safe_log`는 `api.py`·`web.py`에서 3곳이 쓴다.
    - 공개 이름 `log_best_effort`로 바꾸고 `_safe_log` 호출은 모두 교체한다.
 
+**진행: PR #11.** 구현하면서 정한 것은 두 가지다.
+- 감사 payload의 session은 JSON API와 웹 UI가 원래 달랐다. JSON API는 항목을 넣지 않고, 웹 UI는 None이어도 넣는다. 그래서 `session`의 기본값을 `_NO_SESSION` 표지로 두어 둘 다 그대로 남겼다.
+- 라우트가 `box.*_sandbox(...)` 호출 전체를 `guard`로 감싼다. 그래서 감사 기록 실패가 처리되지 않은 500 대신 503이 되고, pause·resume 뒤 `sandboxes.get`의 `SandboxError`는 400이 된다. 실패 경로만 바뀌고, 소유자가 승인했다. README의 API 표에 반영했다.
+
 ## PR 2. `service.py`에서 GUI 구간 분리
 - 새 파일 `agentbox/gui_bursts.py`에 `class GuiBursts`를 만든다.
   - 옮길 상태: `_gui_input_at`, `_gui_snap_at`, `_gui_burst`, `_burst_locks`, `_burst_pool`, `_closing`.
@@ -90,6 +94,6 @@ run-3 감사와 수정이 main에 들어갔다(PR #8 `5decb11`, #9 `f497c86`). �
 
 ## 진행 순서와 브랜치
 - 순서는 PR 1 → 2 → 3 → 4다. PR 2와 3은 PR 1의 `log_best_effort`에 기댄다.
-- 브랜치는 지정 브랜치 `ccr-e2c70e17-r0gmhn`을 main에서 다시 시작해 PR 1부터 쓴다.
+- 브랜치는 그 세션의 지정 브랜치를 main에서 다시 시작해 PR 1부터 쓴다. PR 1은 `ccr-e5de0397-31ksj8`에서 했다.
 - 앞 PR이 병합되면 같은 브랜치를 main에서 다시 시작해 다음 PR을 만든다.
 - 각 PR은 draft로 올리고 CI를 지켜본다.
