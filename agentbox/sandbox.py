@@ -28,6 +28,7 @@ from typing import Any
 
 import docker
 from docker.errors import APIError, ImageNotFound, NotFound
+from docker.types import Mount
 
 from .config import Settings, Template
 
@@ -231,6 +232,14 @@ def gui_strays(procs: list[dict[str, Any]], window_pids: set[int], baseline: set
     return sorted(out)
 
 
+def _source_mount(source_dir: str) -> Mount:
+    """원본 폴더 안쪽에 다른 폴더(데이터 폴더 등)가 바인드 마운트돼 있으면 docker 기본값(rbind)은 그것까지 붙이고,
+    cp -a가 작업 폴더로 복사한다. 같은 디스크의 바인드 마운트는 장치 번호가 같아 cp -x로도 못 거른다 (보안 검수 run-3 v06)."""
+    m = Mount(SOURCE, source_dir, type="bind", read_only=True)
+    m["BindOptions"] = {"NonRecursive": True}
+    return m
+
+
 def overlaps(a: Path, b: Path) -> bool:
     """두 폴더가 같거나 한쪽이 다른 쪽 안에 있는가. 경로 문자열이 아니라 파일 시스템의 실체(장치·inode)로
     비교한다. 대소문자를 가리지 않는 파일 시스템(WSL2 /mnt/c 등)의 다른 철자나 바인드 마운트처럼
@@ -383,6 +392,7 @@ class SandboxManager:
 
     # ---- SB-1 생성·삭제 -----------------------------------------------
     def _run_container(self, tpl: Template, image: str, source_dir: str, name: str):
+        """원본 폴더는 읽기 전용으로, 그 안쪽에 걸린 다른 마운트는 빼고 붙인다."""
         kwargs: dict[str, Any] = dict(
             image=image,
             command=tpl.command or ["sleep", "infinity"],
@@ -390,7 +400,7 @@ class SandboxManager:
             detach=True,
             init=True,
             network_mode="none",                       # SB-4
-            volumes={source_dir: {"bind": SOURCE, "mode": "ro"}},
+            mounts=[_source_mount(source_dir)],
             mem_limit=tpl.mem_limit,                   # SB-5
             memswap_limit=tpl.mem_limit,
             nano_cpus=int(tpl.cpus * 1e9),

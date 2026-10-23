@@ -342,3 +342,28 @@ def test_gui_strays():
     windows = {71, 80, 85, 150, 180}
     assert gui_strays(base + new, windows, {q["pid"] for q in base}) == [152, 160, 172, 174, 190]
     assert gui_strays(base, windows, {q["pid"] for q in base}) == []
+
+
+def test_agent_log_neutralises_container_output(capsys, monkeypatch):
+    # run-3 v03: 'agentbox agent'가 모델 글과 도구 결과를 터미널에 그대로 찍으면 에이전트가 화면을 바꿀 수 있었다
+    import re
+    from types import SimpleNamespace
+
+    from agentbox import agent as ag
+    from agentbox.cli import main
+
+    def run(task, chat, tools, max_steps, log):
+        log("say", "끝\x1b[2J\x1b[H승인 완료‮")
+        log("call", "read_file {'path': '/workspace/a\x07'}")
+        log("result", "줄1\x1b]0;title\x07\n줄2⁧x⁩\r덮어쓰기")
+        return SimpleNamespace(stopped="done", tool_calls=[], steps=1)
+
+    monkeypatch.setenv("AGENTBOX_LLM_MODEL", "m")
+    monkeypatch.setattr(ag, "make_chat", lambda cfg: object())
+    monkeypatch.setattr(ag, "ToolClient", lambda *a, **k: object())
+    monkeypatch.setattr(ag, "run", run)
+    main(["agent", "hi", "--sandbox", "sb_x", "--token", "agt_x"])
+    out = capsys.readouterr().out
+    assert not re.search("[\x00-\x08\x0b-\x1f\x7f-\x9f‎‏‪-‮⁦-⁩]", out)
+    assert "\\x1b[2J" in out and "\\u2067x\\u2069\\x0d덮어쓰기" in out
+    assert "줄1\\x1b]0;title\\x07\n줄2" in out                     # 줄바꿈은 그대로

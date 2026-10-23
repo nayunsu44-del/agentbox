@@ -357,12 +357,14 @@ def cmd_agent(a: argparse.Namespace) -> None:
         cfg.model = a.model
 
     def log(kind: str, msg: str) -> None:
+        # 모델 글과 도구 결과(컨테이너 출력)도 에이전트가 정한다. 줄마다 _safe를 걸어 줄바꿈만 살린다 (보안 검수 run-3 v03)
+        msg = "\n".join(_safe(line) for line in msg.split("\n"))
         if kind == "say":
             print(f"{CYAN}[에이전트]{RESET} {msg}", flush=True)
         elif kind == "call":
             print(f"{DIM}  → {msg}{RESET}", flush=True)
         elif kind == "result":
-            lines = msg.splitlines()
+            lines = msg.split("\n")
             head = "\n".join(lines[:6]) + (f"\n… ({len(lines) - 6}줄 더)" if len(lines) > 6 else "")
             print(f"{DIM}{head}{RESET}", flush=True)
 

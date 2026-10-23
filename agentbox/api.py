@@ -59,6 +59,26 @@ class Restore(BaseModel):
     snapshot_id: str
 
 
+class _NoFraming:
+    """쿠키로 로그인한 화면을 다른 출처가 iframe에 넣고 승인 버튼을 누르게 하지 못하게 한다 (보안 검수 run-3 v14).
+    샌드박스 화면이 띄우는 데스크톱 iframe은 같은 출처라 그대로 된다."""
+    HEADERS = [(b"x-frame-options", b"SAMEORIGIN"), (b"content-security-policy", b"frame-ancestors 'self'")]
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+
+        async def send_with_headers(message):
+            if message["type"] == "http.response.start":
+                message["headers"] = [*message.get("headers", []), *self.HEADERS]
+            await send(message)
+
+        await self.app(scope, receive, send_with_headers)
+
+
 def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     settings = settings or Settings()
     settings.home.mkdir(parents=True, exist_ok=True)
@@ -89,6 +109,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     app = FastAPI(title="agentbox", version="0.1.0", lifespan=lifespan)
     app.state.box = box
+    app.add_middleware(_NoFraming)
 
     def principal(authorization: str = Header(default="")) -> Principal:
         if not authorization.lower().startswith("bearer "):

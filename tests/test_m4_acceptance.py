@@ -186,3 +186,40 @@ def test_preview_does_not_run_find_options(home):
         assert "keep.md" in names and "-delete" in names          # 승인 전에는 아무것도 안 지워졌다
     finally:
         c.delete(f"/sandboxes/{sid}", headers=H)
+
+
+def test_nested_mount_under_source_not_copied(home):
+    """보안 검수 run-3 v06 남은 틈: 원본 폴더 안쪽에 다른 폴더(데이터 폴더 등)가 마운트돼 있어도 복사하지 않는다."""
+    import os
+    import subprocess
+
+    sudo = [] if os.geteuid() == 0 else ["sudo", "-n"]
+    src, secret = home / "proj", home / "secret"
+    (src / "inner").mkdir(parents=True)
+    secret.mkdir()
+    (src / "keep.md").write_text("keep")
+    (secret / "agentbox.db").write_text("비밀")
+    if subprocess.run([*sudo, "mount", "--bind", str(secret), str(src / "inner")], capture_output=True).returncode != 0:
+        pytest.skip("바인드 마운트를 만들 수 없음")
+    c, _, H, _ = _build()
+    sid = None
+    try:
+        r = c.post("/sandboxes", json={"source_dir": str(src), "template": "cli"}, headers=H)
+        assert r.status_code == 201, r.text
+        sid, A = r.json()["id"], {"Authorization": f"Bearer {r.json()['agent_token']}"}
+        r = c.post(f"/sandboxes/{sid}/tools/exec", json={"args": {"command": "ls -R /workspace"}}, headers=A)
+        out = r.json()["result"]["stdout"]
+        assert "keep.md" in out and "inner" in out and "agentbox.db" not in out, out
+    finally:
+        if sid:
+            c.delete(f"/sandboxes/{sid}", headers=H)
+        subprocess.run([*sudo, "umount", str(src / "inner")])
+
+
+def test_ui_refuses_framing(home):
+    """보안 검수 run-3 v14: 쿠키로 로그인하는 화면을 다른 출처가 iframe에 넣지 못한다 (같은 출처의 데스크톱 iframe은 된다)."""
+    c, _, H, _ = _build()
+    for path in ("/login", "/ui", "/healthz"):
+        r = c.get(path, headers=H, follow_redirects=False)
+        assert r.headers["x-frame-options"] == "SAMEORIGIN", path
+        assert r.headers["content-security-policy"] == "frame-ancestors 'self'", path
