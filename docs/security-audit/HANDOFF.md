@@ -281,7 +281,7 @@ pytest                                                 # 160 passed
 - **run-6 계획(다른 세션에서 할 수 있음):**
   - 범위: run-5 보류 중 상위 4단위(`same_origin` scheme — run-4 N1, 컨테이너 출력 판독기 상한 — run-4 N3, 승인 미리보기가 실제 실행과 맞는지, `AuditLog._lock` 경합) + PR #24·#25가 바꾼 코드(`DesktopControl` 잠금 분리, `_snapshot`의 GUI 구간 개폐와 `decide` 인수 확인, `TOOL_ARG_MAX`·미리보기 상한, `_BodyLimit` 자격 증명 확인, `retention.prune` 정리).
   - 나머지 보류 3단위(GUI 입력 차단의 컨테이너 바인딩, 제어 문자 필터 출력 지점, Docker 디스크 계산)는 가치가 낮다고 비평이 매겼다. 예산이 남으면 본다.
-  - 예산 약 20, 헌터만 Opus, 나머지 Sonnet, 실제 Docker 확인은 부모가 예산 밖에서. 넘길 것 같으면 먼저 묻는다.
+  - 예산 약 20. 모델은 시작할 때 소유자가 지정한다(마지막 감사라 지금까지와 다른 모델을 쓸 수도 있다). 실제 Docker 확인은 부모가 예산 밖에서. 넘길 것 같으면 먼저 묻는다.
   - 시작 순서: (1) 아래 '실행 환경'대로 준비, (2) `run-5/tools`를 `run-6/tools`로 복사하고 `run-5`→`run-6`, `run-4`→`run-5`(이전 기록), 기준 커밋을 바꾼다(run-5 때 한 `sed`와 같다), (3) `seed5.py`를 본떠 `seed6.py`를 쓴다: run-5 장부의 `deferred` 단위를 `prior_deferred`로 옮기고 바뀐 코드 단위를 더한다. 제외 사유가 장부에 없는 단위(h-session 등)를 가리키지 않게 한다, (4) `architecture.md`에 0절(변경분)을 새로 쓴다, (5) `gen_hunt.py` → 헌터 → `ingest_hunt.py` → `gen3.py`/`apply.py 3` → `gen5.py`/`apply.py 5` → `gen_critic.py` → `gen6.py`.
   - run-5에서 배운 것: 헌터 결과는 단위 `reviewed_paths`가 검사들의 합집합과 같아야 한다(지시문에 미리 적었다). 검증자가 Docker 없이 가짜로 낸 경쟁 주장은 실제 dockerd에서 꼭 확인한다(삭제 중 커밋 건은 실제로는 성립하지 않았다). 사용량 한도로 멈춘 에이전트는 같은 에이전트로 이어 가면 된다.
 - **실행 환경:** run-4와 같다. 도구는 `run-5/tools/`(seed5, gen_hunt, gen3, gen5, gen_critic, apply, ingest_hunt, promote_linux, apply_reverify, apply5_nonmaterial, intake_critic1/2, settle_xres, gen6). `common.py`의 스크래치패드 기본값과 `tools/sbx`의 `TARGET`·`LOG`를 새 세션 값으로 바꾼다.
