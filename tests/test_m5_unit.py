@@ -107,8 +107,11 @@ def test_long_tool_argument_is_refused_before_policy(tmp_path):
     with pytest.raises(ServiceError) as e:
         box.call_tool("sb", "exec", {"command": "x;" * TOOL_ARG_MAX}, actor="agent")
     assert e.value.status == 413
+    with pytest.raises(ServiceError) as e:   # 목록에 넣어도 정책은 str()로 읽는다
+        box.call_tool("sb", "exec", {"command": ["x;" * TOOL_ARG_MAX]}, actor="agent")
+    assert e.value.status == 413
     assert sb.previews == 0
-    assert [r["event"] for r in box.audit.list()] == ["tool_blocked"]
+    assert [r["event"] for r in box.audit.list()] == ["tool_blocked", "tool_blocked"]
     out = box.call_tool("sb", "exec", {"command": "echo " + "a" * (TOOL_ARG_MAX - 5)}, actor="agent")
     assert out.status == 202                                     # 상한까지는 받는다
     box.bursts._burst_pool.shutdown()

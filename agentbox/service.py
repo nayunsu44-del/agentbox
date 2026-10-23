@@ -319,7 +319,9 @@ class AgentBox:
         if tool not in TOOLS:
             raise ServiceError(404, f"알 수 없는 도구: {tool}")
         self.sandboxes.get(sid)  # 없으면 SandboxError
-        long = [k for k, v in args.items() if k != "content" and isinstance(v, str) and len(v) > TOOL_ARG_MAX]
+        # 문자열이 아닌 값도 잰다: 정책은 str(args["command"])로 읽으므로 목록에 넣어도 같은 비용이 든다
+        long = [k for k, v in args.items()
+                if k != "content" and len(v if isinstance(v, str) else json.dumps(v, default=str)) > TOOL_ARG_MAX]
         if long:
             # 정책 판단과 승인 미리보기는 명령 길이에 비례해 CPU·exec를 쓴다. 판단 전에 길이부터 막는다 (보안 검수 run-5)
             self.log_best_effort(sid, tool, "tool_blocked", {"reason": "argument_too_long", "args": long,
