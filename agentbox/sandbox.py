@@ -37,6 +37,11 @@ SOURCE = "/source"
 _OUT_LIMIT = 64 * 1024
 # 파일 읽기 한 번의 제한 시간(초). 일반 파일만 읽지만, 확인과 읽기 사이에 FIFO로 바뀌면 head가 끝없이 기다린다.
 _READ_TIMEOUT = 30
+# 화면(X)과 구간 기록용 exec의 제한 시간(초). X 서버가 멈추면 xdotool·scrot은 끝없이 기다리고, 그동안 gui_lock과
+# 부른 스레드가 묶인다. 컨테이너 안에서 끊어야 exec가 돌아온다 (클라이언트 쪽 시간 제한으로는 풀리지 않았다).
+_X_TIMEOUT = 15
+_MANIFEST_TIMEOUT = 30
+_TIMED_OUT = (124, 137)   # timeout(1)이 끊었을 때의 종료 코드 (TERM, 안 끝나서 KILL)
 
 # 데스크톱 템플릿 (images/desktop/Dockerfile과 맞춘다)
 DESKTOP_USER = "desktop"
@@ -509,8 +514,11 @@ class SandboxManager:
         """/workspace의 파일 목록 {경로: (크기, mtime, ctime)}. root로 읽어 에이전트가 권한으로 숨기지 못하게 한다.
         mtime은 파일 주인이 touch로 되돌릴 수 있지만 ctime은 못 되돌린다(시계를 바꿀 권한이 없다)."""
         c = self._container(sid)
-        res = c.exec_run(["sh", "-c", f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0%C@\\0' "
-                                      f"| head -c {_MANIFEST_CAP}"], user="0:0", demux=True)
+        res = c.exec_run(["timeout", "-k", "2", str(_MANIFEST_TIMEOUT), "sh", "-c",
+                          f"find {WORKSPACE} -xdev ! -type d -printf '%P\\0%s\\0%T@\\0%C@\\0' "
+                          f"| head -c {_MANIFEST_CAP}"], user="0:0", demux=True)
+        if res.exit_code != 0:  # 시간 초과 등. 잘린 목록으로 비교하면 없는 파일을 지워졌다고 적는다
+            raise SandboxError(f"/workspace 파일 목록 실패 (exit {res.exit_code})")
         return _parse_manifest(res.output[0] or b"")
 
     def snapshot_count(self, sid: str) -> int:
@@ -693,13 +701,20 @@ class SandboxManager:
         return self._require_running(sid)
 
     @staticmethod
-    def _x(c, argv: list[str]):
-        return c.exec_run(argv, user=DESKTOP_USER, environment=DESKTOP_ENV, demux=True)
+    def _x(c, argv: list[str], timeout: int = _X_TIMEOUT):
+        res = c.exec_run(["timeout", "-k", "2", str(timeout), *argv],
+                         user=DESKTOP_USER, environment=DESKTOP_ENV, demux=True)
+        if res.exit_code in _TIMED_OUT:  # 반쯤 받은 결과(창 목록 등)로 판단하지 않게 실패로 돌린다
+            raise SandboxError(f"화면(X 서버)이 {timeout}초 안에 응답하지 않음")
+        return res
 
     def desktop_processes(self, sid: str) -> tuple[list[dict[str, Any]], set[int]]:
         """컨테이너의 프로세스 목록과, 보이는 창을 가진 pid (_NET_WM_PID)."""
         c = self._desktop(sid)
-        procs = _parse_ps(c.exec_run(["ps", "-eo", "pid=,ppid=,sid=,uid=,args="]).output or b"")
+        res = c.exec_run(["timeout", "-k", "2", str(_X_TIMEOUT), "ps", "-eo", "pid=,ppid=,sid=,uid=,args="])
+        if res.exit_code != 0:  # 빈 목록을 기준으로 삼으면 구간이 끝날 때 데스크톱 세션 전체를 낯선 프로세스로 본다
+            raise SandboxError(f"프로세스 목록 실패 (exit {res.exit_code})")
+        procs = _parse_ps(res.output or b"")
         res = self._x(c, ["sh", "-c", "for w in $(xdotool search --onlyvisible --name . 2>/dev/null); do "
                                       "xdotool getwindowpid $w 2>/dev/null; done"])
         wins = {int(x) for x in (res.output[0] or b"").split() if x.isdigit()}
@@ -707,7 +722,8 @@ class SandboxManager:
 
     def kill_processes(self, sid: str, pids: list[int]) -> None:
         if pids:
-            self._desktop(sid).exec_run(["kill", "-KILL", "--", *map(str, pids)], user=DESKTOP_USER)
+            self._desktop(sid).exec_run(["timeout", "-k", "2", str(_X_TIMEOUT), "kill", "-KILL", "--", *map(str, pids)],
+                                        user=DESKTOP_USER)
 
     def _wait_display(self, c, timeout: float = 45) -> None:
         deadline = time.monotonic() + timeout
@@ -754,7 +770,9 @@ class SandboxManager:
         c = self._desktop(sid)
         if len(text) > 2000:
             raise SandboxError("한 번에 2000자까지 입력할 수 있음")
-        res = self._x(c, ["xdotool", "type", "--clearmodifiers", "--delay", "12", "--", text])
+        # 글자마다 12ms를 쉬니 긴 글은 그만큼 더 기다린다 (2000자면 115초)
+        res = self._x(c, ["xdotool", "type", "--clearmodifiers", "--delay", "12", "--", text],
+                      timeout=_X_TIMEOUT + len(text) // 20)
         if res.exit_code != 0:
             raise SandboxError(_truncate(res.output[1]) or "입력 실패")
         return {"chars": len(text)}

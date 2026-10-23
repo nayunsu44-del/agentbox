@@ -202,6 +202,22 @@ def test_web_approval_shows_system_summary_and_executes(ui):
 
 
 @needs_desktop
+def test_web_approval_neutralises_bidi_controls(ui):
+    """보안 검수 run-3 v13: 승인 화면이 에이전트 명령의 양방향 문자를 그대로 내보내면 브라우저가 순서를 바꿔 보여준다."""
+    e = ui
+    login(e)
+    sid, A = create(e)
+    cmd = "sh -c 'echo ok \u2067; rm -rf /workspace/x \u2069 #\u202e'\nexit"
+    r = tool(e, sid, A, "exec", command=cmd)
+    assert r.status_code == 202, r.text
+    for path in ("/ui/approvals", "/ui/audit"):
+        page = e.c.get(path, params={"sandbox_id": sid}).text
+        assert not any(ch in page for ch in "\u2067\u2069\u202e"), path
+        assert "\\u2067" in page and "\\u202e" in page, path
+    page = e.c.get("/ui/approvals", params={"sandbox_id": sid}).text
+    assert "#\\u202e&#39;\nexit</pre>" in page                     # 줄바꿈은 그대로 보인다
+
+
 def test_approval_has_screen_capture(ui):
     e = ui
     login(e)
