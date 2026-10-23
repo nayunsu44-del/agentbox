@@ -1,0 +1,124 @@
+{
+ "proposed_verdict": "confirmed",
+ "fingerprint": "agentbox/api.py:preauth-request-body-read-before-principal",
+ "title": "Unauthenticated request bodies are fully read, JSON-decoded and multipart-spooled before the principal dependency rejects the request",
+ "description": "agentbox's routes declare a request-body model (or a File(...) list) together with Depends(principal) / screen_human / human_only (api.py:174-177, 205-207, 215-221, 250-262, 276-286). FastAPI reads the whole body and JSON-decodes it - or calls request.form() for multipart - before it solves those dependencies, and agentbox installs no body-size gate at any layer: the only HTTP middleware is _NoFraming (api.py:63-80, 113), uvicorn is started without request-size or concurrency limits (cli.py:127), and deploy/Caddyfile forwards bodies without a request_body directive (Caddyfile:5). The per-file upload cap (settings.max_upload_bytes, 50 MiB) and the audit arg cap (LOGGED_ARGS_MAX) are enforced only after a principal exists (api.py:278-283, service.py:37-38). An unauthenticated client therefore makes the control plane read, decode and spool bodies of its choosing before it is told 401.",
+ "root_cause": "Authentication dependencies run after FastAPI's body-parsing stage, and nothing in front of the app - ASGI middleware, uvicorn options, or the bundled Caddy reverse proxy - enforces a maximum request-body size, so unauthenticated work scales with the attacker's body size instead of with the negligible work needed to reject an unauthenticated request.",
+ "intended_behavior": "Requests that cannot yet be authenticated should be rejected before their body is buffered, decoded or written to disk, and bodies above a documented cap should be refused with 413 regardless of credential state.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 215,
+   "scope": "POST /sandboxes/{sid}/tools/{tool} route (sibling body routes at 174, 205, 250, 276)",
+   "description": "The route declares body: ToolCall together with p: Principal = Depends(principal). FastAPI's handler stage reads request.body() and json-decodes the whole body before solve_dependencies runs, so the body is already in memory when the 401 is produced."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/api.py",
+   "line": 115,
+   "scope": "principal() bearer verification",
+   "description": "principal() is the first credential check (compare_digest at 119, sandbox_for_token at 121) and raises 401 at 117/124. It runs only after the body stage, so no principal exists while the body is read and decoded."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/api.py",
+   "line": 277,
+   "scope": "POST /sandboxes/{sid}/files multipart body",
+   "description": "files: list[UploadFile] = File(...) makes FastAPI call request.form(), which streams the whole multipart body and rolls every file part over the 1 MiB spool threshold into a SpooledTemporaryFile under the control plane's TMPDIR, all before screen_human runs."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/api.py",
+   "line": 278,
+   "scope": "per-file cap applied after parsing and after authentication",
+   "description": "limit = settings.max_upload_bytes with await f.read(limit + 1) at 281-283 executes only inside the endpoint, i.e. after the whole body has been spooled and after the principal check, so it cannot bound pre-auth work."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/cli.py",
+   "line": 127,
+   "scope": "uvicorn.run without request-size limits",
+   "description": "The production entry point starts uvicorn with only host/port/log_level plus TLS/proxy extras: no limit_max_request_size and no limit_concurrency are passed, and uvicorn has no default body cap, so every byte the proxy forwards is accumulated in the control-plane process."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/api.py",
+   "line": 63,
+   "description": "_NoFraming (63-80), registered at 113, is the only HTTP middleware in the app; there is no body-limit middleware."
+  },
+  {
+   "file": "deploy/Caddyfile",
+   "line": 5,
+   "description": "reverse_proxy agentbox:8765 with no request_body directive: the shipped proxy does not bound request bodies either."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 57,
+   "description": "The only upload bound is max_upload_bytes (50 MiB per file by default), consumed inside the endpoint after parsing."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 37,
+   "description": "LOGGED_ARGS_MAX / LOGGED_ARGS_HEAD (37-38) cap only the audit copy of tool args, after a principal is established."
+  },
+  {
+   "file": "deploy/docker-compose.yml",
+   "line": 22,
+   "description": "The compose deployment runs behind Caddy with AGENTBOX_BEHIND_TLS_PROXY=1 and exposes 8765 only on the compose network; the service definition sets no mem_limit and no request-size limit."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "None: no Authorization header and no session cookie are required for the buffering to happen."
+  },
+  {
+   "kind": "network_routing",
+   "description": "The client can reach the control plane through the shipped Caddy front end (compose publishes 443/80 and forwards bodies without a size directive), or directly when agentbox serve is used."
+  },
+  {
+   "kind": "environmental_dependency",
+   "description": "Impact scales with control-plane process memory: one uvicorn process serves the JSON API, the approval UI and the audit chain, and the compose service sets no mem_limit, so exhausting memory takes down the approval path rather than only the offending request."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "An unauthenticated network client that never holds a token sends oversized bodies to routes it knows will answer 401, or to the upload route, and lets the server do the reading, decoding and disk writing.",
+  "payloads": [
+   "POST /sandboxes HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: application/json\r\nContent-Length: 16777220\r\n\r\n{\"source_dir\": null, \"template\": \"cli\", \"pad\": \"AAAA...\"}",
+   "POST /sandboxes/sid1/files HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: multipart/form-data; boundary=X-BOUNDARY\r\n\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"files\"; filename=\"a.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n<4 MiB of bytes>\r\n--X-BOUNDARY--"
+  ],
+  "instructions": [
+   "Inside the approved sandbox only (no network, no Docker socket), import the read-only audited tree from /target and build the real app with api.build(Settings()) using AGENTBOX_HOME=/scratch/..., replacing docker.from_env() with an in-process fake because the sandbox has no daemon.",
+   "Drive the app directly at the ASGI layer with a receive() that streams the declared body in 64 KiB chunks, and count how many bytes the app consumed before it emitted http.response.start.",
+   "Patch starlette.requests.Request.json and starlette.formparsers.SpooledTemporaryFile to record the decoded body length and the size of the rolled temp file."
+  ],
+  "observed_result": "POST /sandboxes with a 16,777,220-byte JSON body and no Authorization header returned 401, but the app had already consumed all 16,777,220 bytes and Request.json() had decoded 16,777,220 bytes (identical on /sandboxes/{sid}/tools/exec, /sandboxes/{sid}/restore and /approvals/{id}); peak RSS grew ~32 MiB per 16 MiB body and 8-12 MiB per 4 MiB body. POST /sandboxes/sid1/files with one 4 MiB part and no credentials returned 401 after consuming all 4,194,442 bytes, with a SpooledTemporaryFile (max_size 1 MiB) rolled to a real temp file that received all 4,194,304 part bytes; the endpoint's 50 MiB per-file cap never ran."
+ },
+ "remediation": {
+  "strategy": "Reject unauthenticated and oversized bodies before routing: add an ASGI middleware (installed like _NoFraming) that refuses a Content-Length above a small cap with 413 and counts streamed bytes for chunked bodies, aborting at the cap; raise the cap only for the authenticated upload path, after the principal check; and add request_body { max_size <cap> } to deploy/Caddyfile so the shipped proxy enforces the same bound.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/api.py",
+    "fixed_code": "class _BodyLimit:\n    \"\"\"Reject oversized bodies before FastAPI parses them (pre-auth).\"\"\"\n    def __init__(self, app, max_bytes: int, upload_max_bytes: int):\n        self.app, self.max_bytes, self.upload_max_bytes = app, max_bytes, upload_max_bytes\n\n    async def __call__(self, scope, receive, send):\n        if scope[\"type\"] != \"http\":\n            return await self.app(scope, receive, send)\n        headers = dict(scope[\"headers\"])\n        try:\n            declared = int(headers.get(b\"content-length\") or 0)\n        except ValueError:\n            declared = 0\n        cap = self.upload_max_bytes if scope[\"path\"].endswith(\"/files\") else self.max_bytes\n        if declared > cap:\n            return await Response(\"요청 본문이 너무 큼\", status_code=413)(scope, receive, send)\n        sent = 0\n\n        async def limited():\n            nonlocal sent\n            message = await receive()\n            sent += len(message.get(\"body\", b\"\"))\n            if sent > cap:\n                raise ClientDisconnect()\n            return message\n\n        return await self.app(scope, limited, send)\n\napp.add_middleware(_BodyLimit, max_bytes=64 * 1024,\n                   upload_max_bytes=settings.max_upload_bytes + 4096)"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "high",
+   "reason": "No token, no interaction and no knowledge beyond the route list: a single ordinary HTTP request with a large declared body."
+  },
+  "impact": {
+   "score": "medium",
+   "reason": "Memory and temp-disk exhaustion of the single control-plane process that also serves the human approval queue and the audit chain; JSON decoding of the buffered body happens synchronously in the request task, so a large body also stalls unrelated requests, and recovery needs a restart while pending approvals age toward timeout. No confidentiality or integrity boundary is crossed."
+  },
+  "overall_severity": "medium"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "Complete source trace plus a local observation on the real app object: the full body was read and decoded before the 401, the multipart part was on disk before the 401, and no middleware, uvicorn option or Caddy directive in the tree bounds the body."
+ },
+ "x_proposed_by": "h-preauth"
+}

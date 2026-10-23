@@ -1,0 +1,132 @@
+{
+ "P1_login_cross_scheme_http_origin": {
+  "status": 303,
+  "set_cookie": "agentbox_session=<session-id-redacted>; HttpOnly; Max-Age=43200; Path=/; SameSite=strict; Secure",
+  "hsts": null,
+  "location": "/ui",
+  "sinks_entered": [],
+  "body_head": ""
+ },
+ "P2_login_matching_https_origin": {
+  "status": 303,
+  "set_cookie": "agentbox_session=<session-id-redacted>; HttpOnly; Max-Age=43200; Path=/; SameSite=strict; Secure",
+  "hsts": null,
+  "location": "/ui",
+  "sinks_entered": [],
+  "body_head": ""
+ },
+ "N1_login_foreign_origin": {
+  "status": 403,
+  "set_cookie": null,
+  "hsts": null,
+  "location": null,
+  "sinks_entered": [],
+  "body_head": "{\"detail\":\"다른 출처의 요청\"}"
+ },
+ "N2_login_null_origin": {
+  "status": 403,
+  "set_cookie": null,
+  "hsts": null,
+  "location": null,
+  "sinks_entered": [],
+  "body_head": "{\"detail\":\"다른 출처의 요청\"}"
+ },
+ "N3_login_userinfo_trick": {
+  "status": 403,
+  "set_cookie": null,
+  "hsts": null,
+  "location": null,
+  "sinks_entered": [],
+  "body_head": "{\"detail\":\"다른 출처의 요청\"}"
+ },
+ "P3_login_no_origin": {
+  "status": 303,
+  "set_cookie": "agentbox_session=<session-id-redacted>; HttpOnly; Max-Age=43200; Path=/; SameSite=strict; Secure",
+  "hsts": null,
+  "location": "/ui",
+  "sinks_entered": [],
+  "body_head": ""
+ },
+ "N7_login_origin_with_port_vs_bare_host": {
+  "status": 403,
+  "set_cookie": null,
+  "hsts": null,
+  "location": null,
+  "sinks_entered": [],
+  "body_head": "{\"detail\":\"다른 출처의 요청\"}"
+ },
+ "session_cookie_raw": "agentbox_session=<session-id-redacted>; HttpOnly; Max-Age=43200; Path=/; SameSite=strict; Secure",
+ "session_scope": "*",
+ "P4_approve_cross_scheme": {
+  "status": 200,
+  "set_cookie": null,
+  "hsts": null,
+  "location": null,
+  "sinks_entered": [
+   "decide"
+  ],
+  "body_head": "<p class=\"err\">승인 요청 없음: apr_000000000000</p> <p class=\"mut\">대기 중인 승인 요청 없음</p> "
+ },
+ "N4_approve_foreign_origin": {
+  "status": 403,
+  "set_cookie": null,
+  "hsts": null,
+  "location": null,
+  "sinks_entered": [],
+  "body_head": "{\"detail\":\"다른 출처의 요청\"}"
+ },
+ "P5_create_cross_scheme": {
+  "status": 500,
+  "set_cookie": null,
+  "hsts": null,
+  "location": null,
+  "sinks_entered": [
+   "create_sandbox"
+  ],
+  "body_head": "Internal Server Error"
+ },
+ "N5_create_foreign_origin": {
+  "status": 403,
+  "set_cookie": null,
+  "hsts": null,
+  "location": null,
+  "sinks_entered": [],
+  "body_head": "{\"detail\":\"다른 출처의 요청\"}"
+ },
+ "P6_logout_cross_scheme_with_cookie": {
+  "status": 303,
+  "set_cookie": "agentbox_session=<session-id-redacted>"\"; expires=Fri, 23 Oct 2026 06:46:23 GMT; Max-Age=0; Path=/; SameSite=lax",
+  "hsts": null,
+  "location": "/login",
+  "sinks_entered": [
+   "end_ui_session"
+  ],
+  "body_head": ""
+ },
+ "AFTER_logout_get_ui_same_cookie": {
+  "status": 303,
+  "set_cookie": null,
+  "hsts": null,
+  "location": "/login",
+  "sinks_entered": [],
+  "body_head": ""
+ },
+ "P7_logout_cross_scheme_no_cookie": {
+  "status": 303,
+  "set_cookie": "agentbox_session=<session-id-redacted>"\"; expires=Fri, 23 Oct 2026 06:46:23 GMT; Max-Age=0; Path=/; SameSite=lax",
+  "hsts": null,
+  "location": "/login",
+  "sinks_entered": [
+   "end_ui_session"
+  ],
+  "body_head": ""
+ },
+ "N6_logout_foreign_origin": {
+  "status": 403,
+  "set_cookie": null,
+  "hsts": null,
+  "location": null,
+  "sinks_entered": [],
+  "body_head": "{\"detail\":\"다른 출처의 요청\"}"
+ }
+}

@@ -17,6 +17,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+fence = chr(96) * 3
+
 from common import RUN, SRC, SBX, SK, block, fenced, schema_branch, ledger, save_ledger, make_scratch  # noqa: E402
 
 PRIOR = json.load(open(f"{RUN}/../run-3/findings.json", encoding="utf-8"))
@@ -40,7 +42,7 @@ def main():
     if not any(u["status"] == "candidate" for u in units):
         print(f"note: unit(s) for {fp} are not in candidate state: {[u['status'] for u in units]}")
     vbody = fenced("VALIDATION-AND-REPORTING.md", "#### Candidate-verifier prompt")
-    promo = fenced("VALIDATION-AND-REPORTING.md", "Artifact promotion procedure (trusted parent-side code only):")
+    promo = fenced("VALIDATION-AND-REPORTING.md", "Copy this promotion procedure verbatim into every candidate-verifier prompt:")
     arch = open(f"{RUN}/architecture.md", encoding="utf-8").read().strip()
     arch_facts = "\n".join(ln for ln in arch.splitlines() if ln.strip())[:12000]
     refs = []

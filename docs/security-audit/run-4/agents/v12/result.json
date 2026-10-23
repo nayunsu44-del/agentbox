@@ -1,0 +1,106 @@
+{
+ "decision": "needs_validation",
+ "record": {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized",
+  "title": "The shared control-character filter misses U+061C - the only Unicode Bidi_Control code point it omits - plus the Cf/Zl/Zp invisibles, and the approval card renders them raw beside the argv that will execute",
+  "description": "Source and a local render confirm a residual gap in the run-3 fix, but not its security outcome. web._shown (web.py:33-37) sends every template output through display.escape_controls with keep_newlines=True (web.py:94), and that class does neutralise the run-3 payloads: rendering the real _approvals.html through web.py's exact Jinja wiring turns U+200E/U+200F/U+202A-E/U+2066-9 into literal \\uXXXX escapes while markupsafe escapes markup. The class is hand-written (display.py:13,15) and covers 11 of the 12 Unicode Bidi_Control characters: U+061C ARABIC LETTER MARK is absent, and so are U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028 and U+2029. Measured in the approved sandbox, all of them survive raw in both the command <pre> and the affected-path cell of the same card, and cli._safe (cli.py:33-35) is byte-identical, so the terminal approval view carries the same gap rather than disagreeing with the web view. What is not established is whether any of them lets the card read as a different command in the operator's browser. U+061C is bidi class AL, a strong right-to-left character, not an isolate: on its own it cannot reverse a run of ASCII letters (they stay strong L), and its bidi effect is limited to the resolved direction of adjacent neutral punctuation sitting between two of them. U+2028/U+2029 are mandatory line breaks that would split one argv into two visual lines inside the same pre block without hiding either line, and the remaining characters are invisible rather than reordering. That leaves a display-integrity question whose answer lives in the renderer, which no surface in this audit can observe.",
+  "claimed_root_cause": "display.py:13 and display.py:15 enumerate the control and bidi characters by hand. The set is C0/C1 plus exactly Bidi_Control minus U+061C, so ALM (Bidi_Control=Yes, bidi class AL) together with the Cf invisibles U+200B-200D, U+2060, U+FEFF, U+00AD and the separators U+2028/U+2029 pass through. web._shown applies that class to every str template output (web.py:35-36, 94) and cli._safe applies it to the terminal view (cli.py:35), so both human surfaces share the residual gap; nothing else filters those characters on the path from the stored approval args to the card.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 215,
+    "scope": "call_tool (POST /sandboxes/{sid}/tools/{tool}, agent token)",
+    "description": "The lowest-trust agent principal posts an exec call whose args.command it chooses; policy.decide routes a non-allowlisted program to approval, and nothing normalises or rejects unusual code points in the string."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 324,
+    "scope": "call_tool REQUIRE_APPROVAL branch",
+    "description": "The approval is created with the agent's original args dict and the system preview (service.py:318; preview adds no affected paths for a plain echo/python3 command). approvals.py:56 persists the args with json.dumps(ensure_ascii=False), so the code points are stored as bytes the card will show and service.py:398/421 later executes."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/web.py",
+    "line": 208,
+    "scope": "approvals_view",
+    "description": "Pending approvals, including the original args and the system-computed preview paths, are listed and rendered into _approvals.html by the same view that serves both GET /ui/approvals and the approve/deny POST handlers."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/web.py",
+    "line": 94,
+    "scope": "tpl.env.finalize = _shown",
+    "description": "finalize runs _shown over every output expression, which applies escape_controls(value, keep_newlines=True) to str values only (web.py:33-37); no template uses |safe or Markup, so this hand-written class is the entire filter for the card."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/templates/_approvals.html",
+    "line": 8,
+    "scope": "exec command <pre> (and the affected-path cell at line 14)",
+    "description": "The command is emitted into <pre> without short(), so only autoescape plus display.py:13/15 apply. Locally rendered with U+061C, U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028 and U+2029 placed in the command and in an affected path, every one of them reaches the HTML raw in both cells while U+200E/U+200F/U+202A-E/U+2066-9 come out as visible \\uXXXX escapes."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/display.py",
+    "line": 13,
+    "description": "UNSAFE is [\\x00-\\x1f\\x7f-\\x9f\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069]. Tested in the sandbox against the 12 code points with Bidi_Control=Yes: it matches 11 of them and does not match U+061C; it also does not match U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028 or U+2029."
+   },
+   {
+    "file": "agentbox/display.py",
+    "line": 15,
+    "description": "_UNSAFE_KEEP_NEWLINES, the variant the web UI actually uses, repeats the same class minus tab/newline, so the U+061C and Cf/Zl/Zp omissions are identical on the web path."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 35,
+    "description": "_shown returns non-str values unchanged and calls escape_controls(value, keep_newlines=True) for str; a direct escape_controls call leaves U+061C, U+200B, U+200D, U+2060, U+FEFF, U+00AD, U+2028 and U+2029 unchanged in both keep_newlines modes while escaping U+200E/U+200F/U+202A-E/U+2066-9."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 94,
+    "description": "tpl.env.finalize = _shown is the only string filter registered for the web templates (filters['short'] is added at line 93), so the card's command and path cells depend entirely on the display.py class plus markupsafe autoescape."
+   },
+   {
+    "file": "agentbox/templates/_approvals.html",
+    "line": 8,
+    "description": "The exec command is emitted into <pre> with no short() and no filter; in the local render the markup payload was escaped ('&lt;script&gt;') and the run-3 bidi set became literal escapes, while U+061C/U+200B/U+2028 stayed raw."
+   },
+   {
+    "file": "agentbox/templates/_approvals.html",
+    "line": 14,
+    "description": "Container-derived affected paths are rendered by the same finalize; the local render shows the same nine code points raw inside the path cell, so the second human-facing string on the card is equally unfiltered."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 35,
+    "description": "cli._safe is escape_controls(str(s), keep_newlines=False); measured on the same command its output is byte-identical to web._shown, so the terminal approver shares the omission and there is no web-only asymmetry left to exploit."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 126,
+    "description": "exec runs str(args.get('command','')) from the approval row loaded at service.py:398 and executed at service.py:421, so the argv keeps the exact code points the card displayed; only the display side is filtered."
+   },
+   {
+    "file": "docs/security-audit/run-3/findings.json",
+    "line": 363,
+    "description": "Calibration: the run-3 remediation text for the shared class already listed 'Optionally add U+061C to _UNSAFE', so the ALM omission was known and deliberately left optional; this record is that follow-through, not a re-opened run-3 isolate spoof."
+   }
+  ],
+  "blockers": [
+   "No browser or terminal renderer is reachable from the approved sandbox (python3 plus the repo and jinja2/fastapi only, no network, no display), so the rendered order of the residual code points cannot be observed. The local run proves the reachability half only: U+061C, U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028 and U+2029 arrive raw in the card's <pre> and path cell while the argv executed by service.decide (service.py:398,421 -> service.py:126) keeps the same code points.",
+   "The decisive fact is whether a residual code point makes the card read as a different command. U+061C is bidi class AL, a strong right-to-left character that cannot reverse ASCII letter runs; U+2028/U+2029 add a mandatory break inside the same pre block but hide nothing; U+200B-200D/U+2060/U+FEFF/U+00AD are invisible and only affect how individual characters join. Which of these, if any, yields a misstatement depends on the browser engine, the resolved base direction and the font stack, none of which the repository pins (base.html:23 sets white-space: pre-wrap and no unicode-bidi isolation).",
+   "Which browser engine versions, fonts and terminal emulator the operator actually uses is unknown to this audit, and that choice decides whether ALM and the separator characters produce any visible difference between the approved view and the executed command."
+  ],
+  "validation_plan": {
+   "local": "Already done in this run (artifact v12bidi.out): a per-code-point table (unicodedata.category, unicodedata.bidirectional, UNSAFE/_UNSAFE_KEEP_NEWLINES match) plus a render of the real _approvals.html through web.py's exact wiring (Jinja2Templates over agentbox/templates, env.finalize = web._shown, env.filters['short'] = web._short) with a command and an affected path carrying every candidate code point and an inline script tag. Result: U+061C, U+200B-200D, U+2060, U+FEFF, U+00AD, U+2028, U+2029 raw in both cells; U+200E/U+200F/U+202A-E/U+2066-9 as literal escapes; markup escaped; cli._safe output byte-identical to web._shown. Next, still offline with dummy data: render the same fragment from a loopback static file in a local browser engine (Playwright Chromium, Firefox, WebKit) and capture the rendered line/baseline order of the pre block for payloads built only from the residual set - (a) echo 'x' + ALM + ';>' + ALM + ' ; python3 /workspace/job.py', (b) the same command with U+2028 placed before the trailing echo, (c) a ZWSP inside one option token - then compare each capture with the argv string and record whether the card states a different command. Regression, worth doing regardless of the browser result: add U+061C to both regexes in display.py plus the Cf/Zl/Zp invisibles (keeping tab/newline in the keep_newlines variant) and add a test asserting escape_controls neutralises U+061C, U+200B and U+2028 in both modes; grep shows no test currently exercises this class.",
+   "deployment": "Owner-side and non-destructive: on a dummy sandbox, queue one pending exec approval whose command contains two ALMs around a ';' and a U+2028 between two shell commands, open /ui/approvals in the operator's real browser and the same request in the terminal 'agentbox approve' view, and compare what is rendered with the exact argv returned by GET /approvals/{aid} (or the audit 'tool_execute' args). No probing of live endpoints beyond the owner's own instance."
+  }
+ },
+ "artifacts_to_promote": [
+  "v12bidi.out"
+ ]
+}

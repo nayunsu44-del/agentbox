@@ -15,6 +15,8 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import RUN, SRC, SK, make_scratch  # noqa: E402
 
+fence = chr(96) * 3
+
 PRIOR_GAPS = """- run-3 confirmed records were all fixed afterwards and the refactor (PRs #11-#14) moved
   the code, so every one of them is a revalidation unit in this ledger, not an exclusion.
 - run-3 needs_validation records v01 (same_origin scheme), v09 (burst open), v10 (gui_lock

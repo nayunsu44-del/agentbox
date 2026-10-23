@@ -1,0 +1,24 @@
+== A. race: GUI input queued on gui_lock across the human handback ==
+seed click status=200 snaps=1 burst_open=True gui_changes=0
+after takeover: lease=True burst_open=False snaps=1 gui_changes=1
+handback ok=True lease_now=False controller=agent
+queued agent call was blocked on gui_lock while lease still present: True
+burst decision for the queued input: {'sid': 'sb_x', 'needs_snapshot': False, 'lease_present': True, 'burst_open': False}
+queued click: status=200 body={'status': 'executed', 'result': {'x': 2, 'y': 2, 'button': 'left'}} err=None
+after queued click: snaps=1 burst_open=False gui_changes=1
+follow-up click 0 status=200
+follow-up click 1 status=200
+follow-up click 2 status=200
+all burst decisions: [{'sid': 'sb_x', 'needs_snapshot': False, 'lease_present': True, 'burst_open': False}, {'sid': 'sb_x', 'needs_snapshot': False, 'lease_present': False, 'burst_open': False}, {'sid': 'sb_x', 'needs_snapshot': False, 'lease_present': False, 'burst_open': False}, {'sid': 'sb_x', 'needs_snapshot': False, 'lease_present': False, 'burst_open': False}]
+final: files_touched=5 snaps=1 burst_open=False gui_changes=1 needs_snapshot=False
+audit events: ['policy_decision', 'snapshot', 'tool_result', 'gui_changes', 'human_takeover', 'human_handback', 'tool_request', 'policy_decision', 'tool_result', 'tool_request', 'policy_decision', 'tool_result', 'tool_request', 'policy_decision', 'tool_result', 'tool_request', 'policy_decision', 'tool_result']
+
+== B. control: the same four clicks while a burst is open ==
+control before close: snaps=1 burst_open=True gui_changes=0
+control after burst close: gui_changes=1 rows=[('snap_1', {'added': 4, 'modified': 0, 'deleted': 0})]
+
+== C. source bound of the burstless window (no clock waiting) ==
+input 1s ago, snapshot fresh -> needs_snapshot=False
+input 61s ago (> gui_snapshot_idle=60) -> needs_snapshot=True
+continuous input, snapshot 601s old (> gui_snapshot_interval=600) -> needs_snapshot=True
+done

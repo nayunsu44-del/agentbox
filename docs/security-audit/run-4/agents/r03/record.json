@@ -1,0 +1,114 @@
+{
+ "verdict": "needs_validation",
+ "fingerprint": "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention",
+ "title": "Agent-grown audit and approval rows in the shared control-plane SQLite file have no aggregate bound or retention, so an agent can fill the host disk and neither recovery path keeps the audit chain",
+ "description": "Every accepted agent tool request appends two audit rows (tool_request before the policy decision, policy_decision as soon as decide() returns) before any approval request, snapshot or execution, a risky call adds an approval_requested row plus an approvals row holding the full raw args, and every failed POST /approvals/{aid} adds an approval_forbidden row. Args are now capped per record (80,000-byte command is stored as a 16,384-byte head), but nothing bounds the tables: in an isolated fixture two rows per call added 17,203 bytes to the .db file, identically at n=20 and n=40, and 512 bytes per call for {command: ls}; five approval rows of 400,000-byte args took 2,007,040 bytes and every row survived executed/denied/expired. Triggers abort UPDATE and DELETE on audit, grep finds no DELETE for audit or approvals, no VACUUM, no count/size quota and no retention job, so growth is permanent and host disk is the only limit. When the volume fills, AuditLog.append raises AuditWriteError, which service.py turns into 503 for tool calls, human lifecycle, approval decisions and handbacks, so all sandboxes stop rather than the offending one. Recovery is not available either: deleting the oldest rows made verify() fail permanently at the first survivor (broken_at=7, 'id가 1 다음에 7로 건너뜀'), while deleting every row made verify() report ok=True with checked=0, so an operator must choose between permanently broken verification and a silently erased history.",
+ "claimed_root_cause": "The audit table is append-only by design (audit.py:35-38) and the per-record arg cap (service.py:37-38, 180-194) is the only bound on agent-driven growth; grep over agentbox/ finds no aggregate quota, retention window, pruning command or size check for the audit or approvals tables (the only sqlite DELETEs are ui_tickets, ui_sessions and takeover_leases in desktop.py), and the delete path for a sandbox only unlinks capture PNGs (service.py:106-109, 471-475). The shared SQLite file used by AuditLog, SandboxManager, ApprovalStore and DesktopControl (api.py:86-94, config.py:84-86, default ./data/agentbox.db, host bind mount at deploy/docker-compose.yml:28) therefore has the host volume as its only limit, and capacity recovery is mutually exclusive with the integrity contract (audit.py:230-236).",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 215,
+   "scope": "call_tool (POST /sandboxes/{sid}/tools/{tool})",
+   "description": "An agent token reaches this route through principal() (api.py:115-124). The body is ToolCall whose args is an unconstrained dict[str, Any] (api.py:51-52), and there is no request-body, key-count or value-size cap on this route; the only body cap in the API is the human upload route (api.py:278-283) and the shipped Caddyfile is a bare reverse_proxy with no request_body limit (deploy/Caddyfile:4-6)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 295,
+   "scope": "_call_tool: tool_request and policy_decision appends",
+   "description": "tool_request is appended with _logged_args(args) (295-296) and policy_decision is appended the moment policy.decide returns (297, appended at 303), before any approval request (324), snapshot (343) or execution, so every accepted request writes two rows even when the decision is DENY (308-309) and nothing runs."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 189,
+   "scope": "_logged_args per-record cap",
+   "description": "Only the single record is bounded: args over 64 KiB become a 16 KiB head plus args_bytes and args_sha256. Measured: {'command': 'a'*80000} produced args_head of exactly 16,384 bytes and args_bytes 80,015; the two rows added 17,203 bytes per call at both n=20 and n=40 (linear), and {command: 'ls'} added 512 bytes per call, so per-record capping does not bound the table."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 324,
+   "scope": "_call_tool REQUIRE_APPROVAL branch",
+   "description": "approvals.create stores the full raw args and preview with no cap (approvals.py:49-59); PENDING_APPROVALS_MAX=20 (service.py:44, 312-316) limits pending concurrency only, and measured rows of 400,000-byte args took 401,408 bytes each and were still present after executed, denied and expired transitions. A sandbox delete does not remove them."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/audit.py",
+   "line": 179,
+   "scope": "AuditLog.append INSERT",
+   "description": "The row is inserted into the same SQLite file; the append-only triggers (audit.py:35-38) abort any UPDATE and DELETE (both reproduced: 'audit log is append-only'), and no code path in the package removes audit rows."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 592,
+   "scope": "log_human fail-closed conversion",
+   "description": "At disk-full every append raises AuditWriteError, which becomes ServiceError(503) here (593-594) and likewise for tool calls (305-306), approval decisions (402-404) and handbacks (539-541), so the blast radius is every sandbox and every human operation rather than the agent's own process."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/audit.py",
+   "line": 230,
+   "scope": "AuditLog.verify chain and id check",
+   "description": "verify starts from GENESIS with expected_id 1 and rejects the first row that does not chain (233-236). Reclaiming space by deleting the oldest rows therefore fails permanently (measured: after removing ids 1..6, ok=False, broken_at=7), while deleting every row returns ok=True with checked=0, so capacity recovery either breaks /audit/verify for good or erases the history without a trace."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/audit.py",
+   "line": 35,
+   "description": "audit_no_update and audit_no_delete raise ABORT 'audit log is append-only'; the fixture reproduced both rejections."
+  },
+  {
+   "file": "agentbox/audit.py",
+   "line": 233,
+   "description": "verify() rejects any row whose id is not expected_id and any prev_hash that does not match, which is what makes prefix pruning distinguishable from tampering forever."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 37,
+   "description": "LOGGED_ARGS_MAX and LOGGED_ARGS_HEAD are the only size controls on the audit path and they are per record, not per table, per sandbox or per deployment."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 182,
+   "description": "The author comment states the audit log cannot be deleted and that an agent growing it with large args cannot be undone."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 106,
+   "description": "drop_captures removes only capture PNGs (106-109) and delete_sandbox only calls it (471-475); approval rows holding the full unmasked args and preview survive decision and expiry (5 of 5 measured rows remained) and nothing removes them on sandbox deletion."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 44,
+   "description": "snapshot_quota exists specifically so an agent cannot fill host disk with docker commits without a human, showing the intended invariant that agent actions are host-disk bounded; no comparable control exists for the audit or approvals tables."
+  },
+  {
+   "file": "agentbox/approvals.py",
+   "line": 49,
+   "description": "create() stores json.dumps(args) and the preview with no cap, and ApprovalStore exposes no delete method; 400,000-byte args measured 401,408 bytes per row."
+  },
+  {
+   "file": "agentbox/api.py",
+   "line": 86,
+   "description": "AuditLog, SandboxManager, ApprovalStore and DesktopControl all open settings.db_path, so one file carries all four components' state (config.py:84-86; the compose deployment bind-mounts that home on the host, deploy/docker-compose.yml:28)."
+  },
+  {
+   "file": "agentbox/web.py",
+   "line": 206,
+   "description": "/ui/approvals loads every historical approval row for the sandbox with full args and preview parsed and then keeps the last five (208-209); agentbox/templates/index.html:25 and agentbox/templates/sandbox.html:25 poll that view every 2 s, so retained rows keep costing control-plane read work."
+  }
+ ],
+ "blockers": [
+  "Free space, any filesystem or volume quota, and the planned lifetime of the volume holding data/agentbox.db (config.py:29 home=./data, config.py:84-86 db_path, deployed as a host bind mount at deploy/docker-compose.yml:26-28) are deployment facts. Nothing in the repository bounds stored total: no retention, no count or size quota, no VACUUM. At the measured 17,203 bytes per maximum-size tool call (512 bytes for a trivial call) the time to exhaustion depends entirely on that free space, from minutes on a small volume to months on a large one, and no repository fact decides it.",
+  "The call rate an agent can sustain is partly a deployment fact: the repository has no rate limit on the tool route, tool_concurrency=4 (config.py:53) and the 32-thread tool_pool (api.py:103) bound concurrency only, and the shipped Caddyfile is a bare reverse_proxy (deploy/Caddyfile:4-6), but any operator-added proxy or network control is outside the source.",
+  "Whether operators prune or rotate that SQLite file out of band, and which loss they accept, is a deployment/owner decision: source and fixture show that partial pruning permanently fails /audit/verify (audit.py:230-236) while total truncation passes as an empty log, so the product offers no capacity recovery that keeps the history verifiable."
+ ],
+ "validation_plan": {
+  "local": "Already performed in the approved sandbox (tools/sbx.py v03: /target read-only on PYTHONPATH, /scratch writable, no network, no Docker socket, uid 65534, 512 MiB, 120 s). Built AuditLog and ApprovalStore on scratch databases and replayed exactly what _call_tool writes: (1) _logged_args('exec', {'command': 'a'*80000}) returned args_head of 16,384 bytes and args_bytes 80,015; (2) 20 and 40 pairs of tool_request plus policy_decision rows added 344,064 and 688,128 bytes after PRAGMA wal_checkpoint(TRUNCATE), i.e. 17,203 bytes per call at both sizes, and 40 pairs with {'command': 'ls'} added 20,480 bytes, i.e. 512 bytes per call; (3) DELETE FROM audit and UPDATE audit both failed with sqlite3.IntegrityError 'audit log is append-only'; (4) dropping only the delete trigger and removing ids 1..6 left verify() returning ok=False, checked=0, broken_at=7, reason 'id가 1 다음에 7로 건너뜀', while deleting every row left verify() returning ok=True with checked=0; (5) five ApprovalStore rows of 400,000-byte args took 2,007,040 bytes (401,408 each) and all five were still listed after executed, denied and expired, with no delete method on the store; (6) approvals.list() re-parses full args. The disk-full to AuditWriteError to 503 conversion was not exercised (filling a filesystem is a saturation test); it rests on audit.py:193-194 wrapping sqlite3.Error and the fail-closed handlers cited in the trace. Output: scratch/fixout.txt and scratch/fixout2.txt; the numbers above were observed directly, the files are supplementary.",
+  "deployment": "Owner-observed on a throwaway deployment, never a shared or production host, and without filling the volume: record the free space and any quota on the volume holding data/agentbox.db; issue 200 bounded tool calls from one agent token with 80,000-byte exec commands (denied calls are sufficient, since the two audit rows are written before any execution) and 200 with {command: ls}; confirm the .db size delta is about 3.4 MB and 0.1 MB respectively and that it does not shrink after the calls stop, after sandbox deletion, or after any documented maintenance command; then check whether the operator has any out-of-band retention or rotation for that file, and confirm that once the volume is full the tool route and the human lifecycle route both return 503 from AuditWriteError while other sandboxes are unaffected by definition only. Extrapolate from the per-call delta instead of filling the disk."
+ }
+}

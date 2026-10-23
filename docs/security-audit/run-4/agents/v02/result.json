@@ -1,0 +1,104 @@
+{
+ "decision": "needs_validation",
+ "record": {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+  "title": "same_origin compares only the Origin netloc with Host, so an http:// page on the same host passes the CSRF origin check of a TLS deployment and can clear the session cookie",
+  "description": "Every cookie-authenticated UI mutation funnels through api.same_origin (api.py:131-133), which returns True when Origin is absent or when urlsplit(Origin).netloc equals the Host header; the scheme is never compared. A plaintext http://H page is a different web origin from the TLS deployment https://H but carries the same netloc, so the gate accepts it. Independently reproduced (agents/v02/scratch/v02_origin.py, artifact v02_origin.out; api.build with docker.from_env stubbed, ASGI served as https://agentbox.example): Origin http://agentbox.example was accepted for POST /login (303, issuing the Secure SameSite=strict HttpOnly host-only session cookie), POST /ui/approvals/apr_000000000000/approve (200; box.decide entered with the '*' session and rendered approval-not-found), POST /ui/sandboxes (handler reached box.create_sandbox) and POST /logout (303; end_ui_session entered, server session ended - a later GET /ui with the same cookie redirected to /login). Origin https://agentbox.example was accepted identically; Origin https://evil.example, Origin: null, Origin http://agentbox.example@evil.example and Origin http://agentbox.example:8443 against Host agentbox.example were all 403; a POST with no Origin was accepted. Consequence (1): where a browser attaches the Strict cookie to a cross-scheme POST, the human-scoped action runs - approve/deny for a known apr_ id, a sandbox built for an attacker-chosen source_dir, or server-side session end. Consequence (2), browser-independent once the request is sent: POST /logout answers even a cookieless cross-origin request with 303 plus an unconditional cookie-clearing Set-Cookie (web.py:149-150), so a page served at http://H forces a client-side logout while the server-side session survives. No anti-CSRF token, Referer or Sec-Fetch check exists anywhere in agentbox/ (grep finds none) and the only response-wide guard is X-Object-Frame/CSP frame-ancestors (api.py:66), which stops iframe clickjacking but not a top-level auto-submitted form; no Strict-Transport-Security is emitted in agentbox/ or deploy/ (no response carries one; only audit docs mention it), so nothing forces the upgrade of http://H. The decisive unknown stays the browser's schemeful same-site behaviour: the run-3 loopback Chromium 141 run had the Secure cookie withheld (only the forced browser logout occurred), no browser exists in sbx, and Firefox/WebKit are unobserved, so whether consequence (1) is reachable cannot be decided from source or from this sandbox.",
+  "claimed_root_cause": "api.py:131-133: same_origin() returns True when urlsplit(origin).netloc == headers.get('host') (and when Origin is absent); the scheme is never compared, and the closure receives only headers (api.py:131) although the app derives the request scheme elsewhere (api.py:136, web.py:114). Nothing in agentbox/ or deploy/ emits Strict-Transport-Security (deploy/Caddyfile:5 is a bare reverse_proxy), so the CSRF gate degrades to whatever same-site semantics the browser applies to http://H versus https://H.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/web.py",
+    "line": 217,
+    "scope": "decide - POST /ui/approvals/{aid}/{decision} (peers: create web.py:174, logout web.py:142)",
+    "description": "Cookie-authenticated, form-encodable mutations with no anti-CSRF token; the only origin binding is same_origin. All three decorators verified in the audited tree."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 145,
+    "scope": "screen_principal",
+    "description": "Resolves the browser cookie via box.desktop.session_scope() at api.py:142 and then calls same_origin(request.headers) at api.py:145; logout calls the same closure directly at web.py:144. The cookie is checked before the origin, so a cross-scheme request without a cookie gets 401 rather than 403."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 133,
+    "scope": "same_origin",
+    "description": "Netloc-only comparison, missing Origin accepted - reproduced: Origin http://agentbox.example passes against a request served over https://agentbox.example, foreign host, null, the userinfo trick and a port mismatch fail."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/web.py",
+    "line": 223,
+    "scope": "box.decide (also create_sandbox web.py:178, end_ui_session web.py:146)",
+    "description": "With the request accepted the human-scoped action runs: decide executes the stored args with actor='human' and the '*' session, create builds a sandbox for a form-supplied source_dir, and logout ends the session when the cookie did arrive."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/api.py",
+    "line": 133,
+    "description": "urlsplit(origin).netloc == headers.get('host') drops the scheme component, so http://H and https://H are indistinguishable to the gate; reproduced accepting http://agentbox.example for a request served as https://agentbox.example."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 131,
+    "description": "same_origin is typed to receive only headers, so the served scheme is not even in scope; the app already derives it from request.url.scheme at api.py:136 and web.py:114, which is the seam a fix needs."
+   },
+   {
+    "file": "agentbox/desktop.py",
+    "line": 60,
+    "description": "set_cookie issues the session cookie httponly=True, samesite='strict', max_age=12h, host-only (no Domain); observed Set-Cookie: HttpOnly; Max-Age=43200; Path=/; SameSite=strict; Secure under the https fixture. Whether it travels on a cross-scheme POST is browser policy (schemeful same-site), the decisive unknown."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 149,
+    "description": "logout builds a 303 and calls r.delete_cookie(D.COOKIE) unconditionally at web.py:150, even when end_ui_session returned None because no cookie was attached; reproduced: cookieless cross-scheme POST /logout -> 303 with agentbox_session cleared (Max-Age=0, Path=/) while the server session state is untouched."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 102,
+    "description": "s.secure_cookie = s.secure_cookie or tls or behind: the Secure attribute is forced exactly for direct-TLS and behind-TLS-proxy deployments, i.e. the deployments where the http/https scheme fork exists."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 66,
+    "description": "The only response-wide middleware adds X-Frame-Options SAMEORIGIN and CSP frame-ancestors 'self'; there is no CSRF token, Referer or Sec-Fetch-Site validation in agentbox/ (grep over *.py finds none) and no TrustedHostMiddleware, so a top-level form POST is unguarded beyond same_origin."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 5,
+    "description": "The site block is a bare reverse_proxy agentbox:8765; no header directive, no HSTS anywhere in deploy/, agentbox/ or images/ (tree-wide grep for Strict-Transport-Security matches only audit docs), and the fixture responses carry no strict-transport-security header."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 126,
+    "description": "Behind-proxy mode trusts X-Forwarded-Proto (proxy_headers=True, forwarded_allow_ips from AGENTBOX_TRUSTED_PROXIES) and deploy/Caddyfile:2-3 says the proxy supplies Host and X-Forwarded-Proto, so request.url.scheme is a usable served scheme for the regression fix."
+   },
+   {
+    "file": "docs/security-audit/run-4/agents/v02/artifacts/v02_origin.out",
+    "line": 1,
+    "description": "Verifier's own ASGI reproduction (produced in sbx from agents/v02/scratch/v02_origin.py; session ids redacted): cross-scheme Origin accepted on /login, /ui/approvals approve and /ui/sandboxes, 403 for foreign/null/userinfo/port-mismatch, 303 plus clearing Set-Cookie on /logout both with and without a cookie, and no HSTS on any response."
+   },
+   {
+    "file": "docs/security-audit/run-3/agents/parent-live/artifacts/l3/l4.out",
+    "line": 4,
+    "description": "Real Chromium 141, run-3 parent-live (not re-run here): the cross-scheme POST had same_origin accept the http Origin but the Secure SameSite=Strict cookie was withheld (schemeful same-site), so only delete_cookie forced a client-side logout; the server session was not ended. Firefox and WebKit are unobserved."
+   }
+  ],
+  "blockers": [
+   "Browser behaviour (decisive): whether a browser an operator actually uses attaches the Secure SameSite=strict session cookie to a cross-scheme http://H -> https://H form POST. Chromium 141 withheld it (docs/security-audit/run-3/agents/parent-live/artifacts/l3/l4.out:4, reported, not re-run in run-4); Firefox and WebKit current behaviour and the legacy cut-offs are untested, no browser exists in sbx, and the answer cannot be derived from source. Without the cookie only consequence (2), the client-side forced logout, remains.",
+   "Network position: whether an attacker can serve plaintext http://H on the deployment host name at all (on-path network attacker, a plaintext listener on port 80, or a DNS/HTTP hijack). No Strict-Transport-Security is emitted anywhere in agentbox/ or deploy/, so nothing forces the upgrade, but whether an on-path attacker and browser preload state are in scope is an owner decision.",
+   "Deployment shape: whether both schemes are exposed at the same effective netloc (direct TLS on 443 plus cleartext 80, or behind-proxy mode where Caddy owns the http->https redirect). In a loopback http-only deployment the scheme fork does not exist, and if HSTS or a preload entry is present the http page never loads."
+  ],
+  "validation_plan": {
+   "local": "Repo-side half is done and reproduced by the verifier: agents/v02/scratch/v02_origin.py builds the real app (api.build with docker.from_env stubbed) and drives it over ASGI as https://agentbox.example - cross-scheme Origin accepted on /login, /ui/approvals approve, /ui/sandboxes and /logout, foreign/null/userinfo/port-mismatch 403, /logout always emitting the clearing Set-Cookie; artifact v02_origin.out. Remaining decisive step is a loopback browser lab run outside sbx (parent-live): map H to 127.0.0.1, start agentbox with --tls-cert/--tls-key (self-signed, lab-trusted) on https://H:443 with a dummy human token, and a plaintext http://H:80 page that auto-submits a top-level form to https://H/logout and to https://H/ui/sandboxes with source_dir set; log in on https://H, open http://H, and record (a) whether agentbox_session is sent on the POST, (b) whether the response is 303/200 (accepted) rather than 403, (c) for /logout whether the server session ends (GET /ui then 303 /login) and whether a ui_logout row appears in /audit, (d) for /ui/sandboxes whether a new sandbox exists. Repeat on current Firefox and WebKit and on any engine or policy that disables schemeful same-site. Regression: change same_origin to compare BOTH the scheme and the netloc, taking the served scheme from request.url.scheme (already used at api.py:136 and web.py:114, and X-Forwarded-Proto-aware under cli.py:126) instead of the headers-only signature at api.py:131; then both cross-scheme POSTs must return 403 and the clearing Set-Cookie must disappear, while Origin https://H with Host H still passes and the existing tests/test_unit.py suite stays green.",
+   "deployment": "Owner confirms, without probing live endpoints: (1) whether the operator-facing host name sends Strict-Transport-Security or is on the browser preload list; (2) whether a plaintext http:// listener for that name is reachable (direct TLS on 443 plus cleartext 80, or a TLS proxy fronting the plaintext port where the http->https redirect is the only barrier) and whether an on-path attacker is in scope; (3) which browser engines and versions operators use; (4) whether any operator browser or policy lacks schemeful same-site. If HSTS is present and every browser is schemeful, only the browser-independent forced-logout residual from the unconditional delete_cookie at web.py:149-150 remains, and the same scheme comparison removes it."
+  }
+ },
+ "artifacts_to_promote": [
+  "v02_origin.out"
+ ]
+}

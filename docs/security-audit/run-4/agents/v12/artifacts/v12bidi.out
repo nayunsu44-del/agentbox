@@ -1,0 +1,91 @@
+== 1. per-code-point properties and filter coverage ==
+cp      category bidi  UNSAFE  KEEP_NEWLINES  bidi_control
+U+061C  Cf       AL    False   False          True
+U+200E  Cf       L     True    True           True
+U+200F  Cf       R     True    True           True
+U+202A  Cf       LRE   True    True           True
+U+202E  Cf       RLO   True    True           True
+U+2066  Cf       LRI   True    True           True
+U+2067  Cf       RLI   True    True           True
+U+2069  Cf       PDI   True    True           True
+U+200B  Cf       BN    False   False          False
+U+200C  Cf       BN    False   False          False
+U+200D  Cf       BN    False   False          False
+U+2060  Cf       BN    False   False          False
+U+FEFF  Cf       BN    False   False          False
+U+00AD  Cf       BN    False   False          False
+U+2028  Zl       WS    False   False          False
+U+2029  Zp       B     False   False          False
+
+UNSAFE repr      = '[\x00-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]'
+KEEP_NEWLINES repr = '[\x00-\x08\x0b-\x1f\x7f-\x9f\u200e\u200f\u202a-\u202e\u2066-\u2069]'
+Bidi_Control set size=12, not matched by UNSAFE: ['U+061C']
+
+== 2. real _approvals.html render through web.py's exact Jinja wiring ==
+autoescape=<function select_autoescape.<locals>.autoescape at 0x7bc8a26c6ac0> finalize='_shown'
+pre blocks found = 1
+command <pre> length=153 ; raw newline inside pre: False
+
+cp      in <pre> raw?  escaped form present?
+U+061C  True           False (looking for '\\u061c')
+U+200E  False          True (looking for '\\u200e')
+U+200F  False          True (looking for '\\u200f')
+U+202A  False          True (looking for '\\u202a')
+U+202E  False          True (looking for '\\u202e')
+U+2066  False          True (looking for '\\u2066')
+U+2067  False          True (looking for '\\u2067')
+U+2069  False          True (looking for '\\u2069')
+U+200B  True           False (looking for '\\u200b')
+U+200C  True           False (looking for '\\u200c')
+U+200D  True           False (looking for '\\u200d')
+U+2060  True           False (looking for '\\u2060')
+U+FEFF  True           False (looking for '\\ufeff')
+U+00AD  True           False (looking for '\\xad')
+U+2028  True           False (looking for '\\u2028')
+U+2029  True           False (looking for '\\u2029')
+
+markup: '<script>' survived raw? False ; '&lt;script&gt;' present? True
+affected path cell: '/workspace/x\u061c\\u200e\\u200f\\u202a\\u202e\\u2066\\u2067\\u2069\u200b\u200c\u200d\u2060\ufeff\xad\u2028\u2029y.txt'
+residual code points surviving raw in the affected-path cell: ['U+061C', 'U+200B', 'U+200C', 'U+200D', 'U+2060', 'U+FEFF', 'U+00AD', 'U+2028', 'U+2029']
+residual code points surviving raw in the command <pre>: ['U+061C', 'U+200B', 'U+200C', 'U+200D', 'U+2060', 'U+FEFF', 'U+00AD', 'U+2028', 'U+2029']
+
+== 3. cli._safe (terminal surface) on the same command ==
+cli._safe==web._shown(command)? True
+U+061C  escaped by cli._safe? False ; raw left? True
+U+200E  escaped by cli._safe? True ; raw left? False
+U+200F  escaped by cli._safe? True ; raw left? False
+U+202A  escaped by cli._safe? True ; raw left? False
+U+202E  escaped by cli._safe? True ; raw left? False
+U+2066  escaped by cli._safe? True ; raw left? False
+U+2067  escaped by cli._safe? True ; raw left? False
+U+2069  escaped by cli._safe? True ; raw left? False
+U+200B  escaped by cli._safe? False ; raw left? True
+U+200C  escaped by cli._safe? False ; raw left? True
+U+200D  escaped by cli._safe? False ; raw left? True
+U+2060  escaped by cli._safe? False ; raw left? True
+U+FEFF  escaped by cli._safe? False ; raw left? True
+U+00AD  escaped by cli._safe? False ; raw left? True
+U+2028  escaped by cli._safe? False ; raw left? True
+U+2029  escaped by cli._safe? False ; raw left? True
+cli._safe output repr head: "echo 'a' \u061c\\u200e\\u200f\\u202a\\u202e\\u2066\\u2067\\u2069\u200b\u200c\u200d\u2060\ufeff\xad\u2028\u2029"
+
+== 4. direct escape_controls on each char ==
+U+061C  escape_controls(keep_newlines=True)='\u061c'  keep_newlines=False='\u061c'
+U+200E  escape_controls(keep_newlines=True)='\\u200e'  keep_newlines=False='\\u200e'
+U+200F  escape_controls(keep_newlines=True)='\\u200f'  keep_newlines=False='\\u200f'
+U+202A  escape_controls(keep_newlines=True)='\\u202a'  keep_newlines=False='\\u202a'
+U+202E  escape_controls(keep_newlines=True)='\\u202e'  keep_newlines=False='\\u202e'
+U+2066  escape_controls(keep_newlines=True)='\\u2066'  keep_newlines=False='\\u2066'
+U+2067  escape_controls(keep_newlines=True)='\\u2067'  keep_newlines=False='\\u2067'
+U+2069  escape_controls(keep_newlines=True)='\\u2069'  keep_newlines=False='\\u2069'
+U+200B  escape_controls(keep_newlines=True)='\u200b'  keep_newlines=False='\u200b'
+U+200C  escape_controls(keep_newlines=True)='\u200c'  keep_newlines=False='\u200c'
+U+200D  escape_controls(keep_newlines=True)='\u200d'  keep_newlines=False='\u200d'
+U+2060  escape_controls(keep_newlines=True)='\u2060'  keep_newlines=False='\u2060'
+U+FEFF  escape_controls(keep_newlines=True)='\ufeff'  keep_newlines=False='\ufeff'
+U+00AD  escape_controls(keep_newlines=True)='\xad'  keep_newlines=False='\xad'
+U+2028  escape_controls(keep_newlines=True)='\u2028'  keep_newlines=False='\u2028'
+U+2029  escape_controls(keep_newlines=True)='\u2029'  keep_newlines=False='\u2029'
+
+== 5. does the card body rely on anything but finalize/autoescape for args? ==
+|safe or Markup in templates: 0 file(s)

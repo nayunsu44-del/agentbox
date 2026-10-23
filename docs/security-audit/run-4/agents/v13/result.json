@@ -1,0 +1,141 @@
+{
+ "decision": "confirmed",
+ "record": {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/web.py:unauthenticated-login-failure-audit-growth",
+  "title": "Unauthenticated failed POST /login writes one permanent hash-chained audit row per attempt, with no rate limit, aggregation or retention",
+  "description": "web.py:130-140 serves POST /login with no principal and no cookie requirement. On a token mismatch it calls box.log_human(\"ui_login_failed\", None, {}) at 136; service.py:590-594 forwards that to audit.append, which takes the single process-wide audit lock, runs BEGIN IMMEDIATE, reads the previous chain hash, inserts a row and commits (audit.py:162-185). Nothing rate-limits, deduplicates, aggregates, caps or prunes these rows: api.py:113 registers _NoFraming as the only middleware, deploy/Caddyfile:4-6 reverse-proxies /login with no rate or body limit, and audit.py contains no DELETE, VACUUM or retention code. Removal is not merely unimplemented but blocked: the audit_no_delete trigger (audit.py:37-38) rejects DELETE and verify() rejects any id gap (audit.py:233-234), so pruning rows later breaks the integrity check the operator relies on. The only precondition is same_origin (web.py:132), which returns True when the Origin header is absent (api.py:131-133), so a plain HTTP client reaches the write. Locally reproduced at the ASGI layer with the real AuditLog/AgentBox/handler: one wrong-token POST added exactly 1 ui_login_failed row, 250 such POSTs added 250 durable rows at ~11.5 ms each, and 6 concurrent clients sustained ~270 rows/s while raising the latency of an ordinary agent tool_request append from ~4.6-5.5 ms to ~36-40 ms. The same handler has the inverse defect: a non-ASCII token makes secrets.compare_digest raise TypeError at web.py:134, so the request returns a bare 500 with 0 rows recorded and the client also chooses which attempts enter the chain.",
+  "root_cause": "An unauthenticated, attacker-paced durable write into the append-only security record: the failed-login path uses the same serialized hash-chained append that gates tool executions, with no per-source or global rate limit, no aggregation, and no retention or compaction for the rows it creates - and the append-only triggers plus verify()'s contiguity check leave no legitimate way to remove them afterwards.",
+  "intended_behavior": "Anonymous authentication failures should be rate-limited and aggregated before they reach the audit chain (for example one \"N failures since T\" summary per source per interval), so one unauthenticated client cannot unilaterally grow the operator's security record or monopolize the audit lock every other append and read needs; the audit store should have a documented retention/compaction scheme that keeps chain verifiability (signed checkpoints plus archived segments). A malformed credential should be compared as bytes (or rejected on an ASCII check) so it becomes a recorded 401/400 instead of an unrecorded 500.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/web.py",
+    "line": 131,
+    "scope": "POST /login form handler",
+    "description": "def login(request: Request, token: str = Form(...)) has no principal, session or cookie requirement; the only precondition is the same_origin call at 132, and same_origin (api.py:131-133) returns True when the Origin header is absent."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/web.py",
+    "line": 136,
+    "scope": "token mismatch branch",
+    "description": "A wrong token falls through the compare_digest at 134 to box.log_human(\"ui_login_failed\", None, {}) and then renders the error page at 139; a non-ASCII token raises TypeError at 134 before this line and returns 500 with nothing recorded."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 590,
+    "scope": "log_human -> audit.append",
+    "description": "log_human forwards the event to self.audit.append(actor=\"human\", event=event, sandbox_id=sid, payload=payload) at 592; an AuditWriteError would become a 503, but on success the row is durable in SQLite."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/audit.py",
+    "line": 180,
+    "scope": "INSERT INTO audit under the process-wide lock",
+    "description": "append() takes self._lock at 162, BEGIN IMMEDIATE at 163, reads the last hash at 165, inserts the row at 179-184 and commits at 185; every other audit append (including tool_request/tool_result) and every human read or verify() waits on the same lock."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/audit.py",
+    "line": 126,
+    "description": "One process-wide threading.Lock (self._lock) serializes all appends, so unauthenticated login failures share one queue with tool-call records."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 129,
+    "description": "The database runs in WAL mode; nothing bounds rows, pages or file size, and agentbox/audit.py contains no DELETE, VACUUM, retention or compaction path (grep: 0 hits for DELETE FROM audit, VACUUM, retention)."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 37,
+    "description": "The audit_no_delete trigger (37-38) aborts every DELETE, so the rows an anonymous client creates cannot be removed at all, and verify() at 233-234 rejects any gap in ids, so trimming the table breaks the integrity check."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 132,
+    "description": "The failed-login path is gated only by same_origin; api.py:131-133 returns True when the Origin header is absent, so a direct HTTP client with no cookie or Origin reaches the audit write."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 113,
+    "description": "_NoFraming is the only middleware added (app.add_middleware(_NoFraming)); there is no rate limiter, body cap or connection throttle anywhere in the FastAPI app."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 5,
+    "description": "The shipped proxy is a bare reverse_proxy agentbox:8765 with no rate_limit and no request_body directive, so the deployment adds no bound in front of /login."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 86,
+    "description": "The audit database lives at AGENTBOX_HOME/agentbox.db, and deploy/docker-compose.yml:28 bind-mounts ${AGENTBOX_HOME_DIR} from the host, so growth consumes operator-owned disk that outlives the container."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 273,
+    "description": "The human audit page calls box.audit.verify() (and api.py:273 exposes it as GET /audit/verify), which loads the entire audit table under the same lock, so attacker-added rows directly lengthen the operator's integrity check."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "None - a wrong form token and no cookie; no Origin header required."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "The control plane is reachable through the shipped Caddy proxy, and AGENTBOX_HOME/agentbox.db persists across restarts with no pruning path."
+   },
+   {
+    "kind": "data_state",
+    "description": "The audit table is append-only at the database level (audit_no_update/audit_no_delete triggers) and verify() requires contiguous ids, so rows written by an anonymous client are permanent."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "The serialized append bounds the rate (~86 rows/s from one client, ~270 rows/s with 6 concurrent clients) but never the total number of rows."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "An unauthenticated client posts the login form with a wrong token as fast as the server answers, adding one durable audit row and one acquisition of the global audit lock per request, for as long as it likes.",
+   "payloads": [
+    "POST /login HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 10\r\n\r\ntoken=nope",
+    "POST /login ... token=%C3%BCn%C3%AFcode   (compare_digest raises TypeError -> 500, 0 rows recorded)"
+   ],
+   "instructions": [
+    "In the approved sandbox, set AGENTBOX_HOME to a scratch directory and instantiate the real AuditLog(settings.db_path), Policy.load, ApprovalStore, DesktopControl and AgentBox from the audited tree; register the real web.register handler on a FastAPI app with the same_origin predicate copied verbatim from api.py:131-133. The only stand-in is box.sandboxes (web.register reads box.sandboxes.runtime at registration time), because api.build() calls docker.from_env() at sandbox.py:162 and the sandbox has no Docker socket.",
+    "Drive POST /login through fastapi.testclient.TestClient with urlencoded bodies, no cookie and no Origin header, and count rows with event='ui_login_failed' in AGENTBOX_HOME/agentbox.db before and after each request.",
+    "Repeat with a non-ASCII token (token=%C3%BCn%C3%AFcode) and compare status code and row count; then hammer the handler from 6 threads while timing ordinary audit.append calls of the shape the tool path uses and audit.list() reads."
+   ],
+   "observed_result": "Independent reproduction matched and extended the candidate: 1 wrong-token POST added exactly 1 ui_login_failed row; 250 further wrong-token POSTs added 250 rows at ~11.5 ms per request (~86/s) with no rejection, cap or 429 at any point; 6 concurrent clients reached ~270 rows/s. Latency of a normal agent tool_request audit.append rose from a 4.6-5.5 ms baseline to 36-40 ms while the login flood ran, because both take audit.py's single lock. A non-ASCII token returned 500 (TypeError: comparing strings with non-ASCII characters is not supported) and added 0 rows, so the same client can also keep its attempts out of the chain."
+  },
+  "remediation": {
+   "strategy": "Rate-limit and aggregate failed logins before the audit append: a per-client-address token bucket plus a global cap, recording a compacted 'N failures since T' summary per window instead of one row per attempt (never dropping the fact that failures happened). Give the audit store a retention scheme that preserves chain verifiability (signed checkpoints plus archived segments) so operator disk growth is bounded and auditable. Compare credentials as bytes, or reject non-ASCII input explicitly, so a malformed credential is a recorded 400/401 rather than an unrecorded 500, and keep the 'audit before action' rule intact for tool paths.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/web.py",
+     "fixed_code": "    @app.post(\"/login\", include_in_schema=False)\n    def login(request: Request, token: str = Form(...)):\n        if not same_origin(request.headers):\n            raise HTTPException(403, \"다른 출처의 요청\")\n        # 바이트로 비교한다: 비ASCII 문자열은 compare_digest가 TypeError를 내서 500이 되고,\n        # 그 실패는 감사 로그에도 안 남아 공격자가 기록 여부를 고를 수 있게 된다.\n        given = token.strip().encode(\"utf-8\", \"replace\")\n        if not secrets.compare_digest(given, human_token.encode()):\n            # 주소별 초당 몇 건만 즉시 남기고, 나머지는 세었다가 다음 창에 요약 1건으로 남긴다\n            if _login_failures.record(request.client.host if request.client else \"unknown\"):\n                try:\n                    box.log_human(\"ui_login_failed\", None, {\"aggregated\": _login_failures.dropped()})\n                except ServiceError:\n                    pass\n            return render(request, \"login.html\", error=\"사람 토큰이 아님 (에이전트 토큰으로는 들어갈 수 없습니다)\")\n        return start_session(request, \"/ui\", \"token\")"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "high",
+    "reason": "A form POST with a wrong token from any client that can reach /login; no cookie, Origin header or token knowledge required, and the Caddy deployment in front of it has no rate limit."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "Permanent, unbounded growth of the append-only audit database on operator-owned host disk with no legitimate deletion path, plus measurable contention on the single audit lock that every tool-call append and every human verify() needs (4.6-5.5 ms baseline to 36-40 ms under a 6-client flood). Per-row cost is small (~200-250 bytes and ~11.5 ms serialized), so the effect is slow disk growth and degraded audit latency rather than immediate outage."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Every trace and evidence line was re-checked in the 9805d91 tree, and both the durable one-row-per-attempt growth and the non-ASCII unrecorded 500 were reproduced locally against the real handler, service and audit code with only the Docker-backed SandboxManager stubbed."
+  }
+ },
+ "artifacts_to_promote": [
+  "v13_evidence.txt"
+ ]
+}

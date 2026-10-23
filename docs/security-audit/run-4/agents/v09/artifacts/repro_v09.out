@@ -1,0 +1,26 @@
+=== v09 independent reproduction: uncapped agent input -> audit rows ===
+case1 payload path bytes = 131072
+[read_file] ServiceError status=400 message_len=131115
+  audit row: (1, 'agent', 'tool_request', 'read_file', 16543)
+  audit row: (2, 'system', 'policy_decision', 'read_file', 81)
+  audit row: (3, 'system', 'tool_error', 'read_file', 131142)
+  tool_error keeps raw path in payload.error: True len(error)= 131115
+  returned 400 message bytes = 131072
+case2 payload path bytes = 262144
+[delete_file] outcome status=202 body_keys=['approval_id', 'expires_in', 'message', 'status']
+  audit row: (1, 'agent', 'tool_request', 'delete_file', 16543)
+  audit row: (2, 'system', 'policy_decision', 'delete_file', 119)
+  audit row: (3, 'system', 'approval_requested', 'delete_file', 262342)
+  approval row (args,preview) bytes = [(262156, 262244)]
+  preview notes = 1  note[0] head = 미리보기 실패: 허용되지 않은 경로: /etc/AAAAAAAAAAAAAA
+case3 command bytes = 10003 segments = 2001
+[exec] outcome status=202 body_keys=['approval_id', 'expires_in', 'message', 'status']
+  audit row: (1, 'agent', 'tool_request', 'exec', 10028)
+  audit row: (2, 'system', 'policy_decision', 'exec', 140)
+  audit row: (3, 'system', 'approval_requested', 'exec', 96207)
+  preview.command bytes = 10003  notes = 2001  affected = 0
+  approval row (args,preview) bytes = [(10018, 96109)]
+DELETE blocked: audit log is append-only
+audit append at the page cap -> AuditWriteError: 감사 로그 기록 실패: database or disk is full
+next tool call fails closed: status 503 | 감사 로그 기록 실패: database or disk is full. 기록할 수 없어서 실행하지 않음.
+=== end ===

@@ -1,0 +1,4 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/service.py:_call_tool:needs-snapshot-gate-before-gui-lock-lets-burstless-gui-input-after-handback"
+}

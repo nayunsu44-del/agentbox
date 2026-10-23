@@ -1,0 +1,33 @@
+v04 local measurement, sbx.py v04 sandbox (uid 65534, no docker socket, no network)
+source: temp/agentbox-run4/src-audited @ 9805d91
+method: real agentbox.sandbox.SandboxManager.list_dir / outbox_list / _expand and
+agentbox.sandbox_desktop.DesktopTools.screenshot bound to a fake container whose
+exec_run() returns a pre-built ExecResult; tracemalloc peak measured around the call.
+The fake transport is the conservative case: in production the docker SDK additionally
+buffers the same bytes while reading the stream.
+
+LIST_DIR raw=1048608 B listing=65555 chars peak=0.189 MiB  (payload pre-allocated outside window)
+LIST_DIR raw=4194336 B listing=65556 chars peak=0.189 MiB
+LIST_DIR raw=16777248 B listing=65557 chars peak=0.189 MiB
+LIST_DIR_ALLOC_IN_WINDOW mib=1  listing=65555 peak=1.189 MiB cur=0.126 MiB
+LIST_DIR_ALLOC_IN_WINDOW mib=16 listing=65557 peak=16.189 MiB cur=0.126 MiB
+EXEC_HEAD mib=16 text=65557 peak=0.318 MiB        <-- same stream through the sanctioned reader
+EXEC_HEAD raw=16777248 B text=65557 chars total=16777248 peak=0.133 MiB
+LIST_DIR argv=['ls', '-la', '--', '/workspace'] kw=['demux', 'user', 'workdir']   (no timeout, no head -c)
+
+OUTBOX_LIST raw=1250000 B n=50000 entries=50000 retained=14.664 MiB peak=18.231 MiB ratio=12.3x
+OUTBOX_LIST raw=5000000 B n=200000 entries=200000 retained=58.581 MiB peak=72.554 MiB ratio=12.3x
+OUTBOX_LIST argv=['sh','-c',"[ -d /workspace/outbox ] && [ ! -L /workspace/outbox ] || exit 0; find /workspace/outbox -mindepth 1 -maxdepth 1 -type f -printf '%s\t%T@\t%f\0'"]
+
+EXPAND raw=4194300 B matches=209715 retained=13.743 MiB peak=19.486 MiB
+EXPAND argv=['sh','-c','cd /workspace; for p in $1; do if [ -e "$p" ] || [ -L "$p" ]; then printf "%s\\n" "$p"; fi; done','_','/workspace/*']
+
+SCREENSHOT raw=8388608 B png=8388608 wh=1920x1080 accepted unchanged, peak=0.002 MiB (payload pre-allocated)
+SCREENSHOT_BASE64 chars=11184812 peak=21.333 MiB        (what _run_tool adds before JSON encoding)
+SCREENSHOT argv=['timeout','-k','2','15','sh','-c','mkdir -p "$(dirname /home/desktop/.cache/agentbox-shot.png)" && scrot -o -z /home/desktop/.cache/agentbox-shot.png && cat /home/desktop/.cache/agentbox-shot.png; r=$?; rm -f /home/desktop/.cache/agentbox-shot.png; exit $r']
+
+OUT_LIMIT=65536 READ_TIMEOUT=30 X_TIMEOUT=15 SHOT=/home/desktop/.cache/agentbox-shot.png
+
+Reading: every one of the four readers hands the full stream to the control plane with no
+byte cap; list_dir/outbox_list/_expand also have no container-side timeout. _truncate
+(sandbox_common.py:24-32) and _parse_outbox run only after the whole buffer exists.

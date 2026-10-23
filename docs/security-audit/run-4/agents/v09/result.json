@@ -1,0 +1,182 @@
+{
+ "decision": "confirmed",
+ "record": {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap",
+  "title": "Agent tool input still reaches the append-only audit log uncapped through approval previews and tool error strings",
+  "description": "The new _logged_args cap (service.py:181-194) bounds only the two audit copies that pass through it (tool_request at 295-296, tool_execute at 413-414). The same agent-controlled strings still reach audit.append uncapped through two other sinks on the same request path. (1) For an approval-requiring call the payload appended at service.py:330-333 carries the preview dict verbatim (line 332); _preview returns sandbox.preview's preview_command, which copies the whole raw exec command (preview.py:131) and appends one note per command segment with no count cap (preview.py:125, only 'affected' is truncated at 126-128), and when _preview raises, the failure note embeds str(SandboxError) - that is the raw agent path from safe_path (service.py:319-320, sandbox.py:156). (2) For read_file, which the default policy allows without approval, the same SandboxError text is stored as tool_error payload.error (service.py:360-362). Neither the tool route (api.py:216; ToolCall.args is an unconstrained dict at api.py:51) nor the shipped reverse proxy (deploy/Caddyfile:5) bounds the body, and AuditLog.append inserts json.dumps(payload) with no size check (audit.py:183). Audit rows are append-only (audit.py:35-38), so every retained byte is permanent; at disk-full the audit-writing paths fail closed with 503.",
+  "root_cause": "_call_tool caps only the two _logged_args mirrors (service.py:295-296, 413-414). The approval_requested payload passes preview through unchanged (service.py:330-333) while _preview copies the raw command and one note per segment (service.py:213-226, preview.py:125,131), and the SandboxError handler at service.py:360-362 logs str(e) untruncated although safe_path (sandbox.py:156) embeds the agent raw path. audit.append imposes no length bound of its own.",
+  "intended_behavior": "Every payload that reaches the append-only audit log is bounded before the insert regardless of the producing call site: error strings, preview command, notes and affected paths are truncated to a fixed budget, the note count is capped, and the tool-args body is rejected above a small limit.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 216,
+    "scope": "POST /sandboxes/{sid}/tools/{tool}",
+    "description": "Agent-token route; ToolCall.args (api.py:51-52) is parsed from the JSON body with no size limit, so the argument size equals what the agent sends."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 295,
+    "scope": "tool_request record",
+    "description": "Records args through the capped _logged_args, then evaluates policy; the capped copy is not the only path the arguments take."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 318,
+    "scope": "_preview producer",
+    "description": "For exec, sandbox.preview returns preview_command's full raw command; for an invalid workspace path, safe_path raises with the raw path and the handler at 319-320 turns str(e) into a preview note; raw args also go to ApprovalStore.create at 324."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 330,
+    "scope": "approval_requested audit append",
+    "description": "The payload carries the preview dict minus the capture image with no truncation of command, notes or affected entries (line 332), written before any human is involved."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 361,
+    "scope": "SandboxError handler",
+    "description": "The untruncated str(e) is appended as payload.error; read_file and write_file need no approval, so this row is written on the first request."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/audit.py",
+    "line": 183,
+    "scope": "AuditLog.append INSERT",
+    "description": "json.dumps of the masked payload is inserted into the append-only audit table with no length or count bound."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 189,
+    "description": "The LOGGED_ARGS_MAX branch exists only inside _logged_args, whose two call sites are tool_request (295-296) and tool_execute (413-414); the preview/error sinks never pass through it."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 332,
+    "description": "approval_requested payload includes the preview dict verbatim."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 319,
+    "description": "A _preview failure is turned into a note containing the full exception text, i.e. the raw agent path from safe_path."
+   },
+   {
+    "file": "agentbox/preview.py",
+    "line": 131,
+    "description": "preview_command returns the full original command with no length cap."
+   },
+   {
+    "file": "agentbox/preview.py",
+    "line": 125,
+    "description": "One or more notes per command segment; the segment count is unbounded, only affected is truncated (126-128)."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 156,
+    "description": "safe_path raises SandboxError with the raw agent path in the message."
+   },
+   {
+    "file": "agentbox/sandbox_common.py",
+    "line": 15,
+    "description": "SandboxError is a plain RuntimeError, so nothing shortens the message before it is logged as tool_error."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 361,
+    "description": "tool_error payload stores str(e) without truncation."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 51,
+    "description": "ToolCall.args is an unbounded dict; no route-level body limit exists."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 5,
+    "description": "Shipped proxy is a bare reverse_proxy with no request_body limit."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 37,
+    "description": "The DELETE trigger makes audit rows undeletable."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 183,
+    "description": "No size or count check on the inserted payload."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 305,
+    "description": "AuditWriteError is mapped to ServiceError 503, so the audit-log failure mode is fail-closed for every tool call."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Any valid agent token for one sandbox; the human token is not needed."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "Default policy: delete_file always requires approval, non-allowlisted exec requires approval, while read_file and write_file are allowed, so the tool_error variant needs no approval at all."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "None: approval_requested rows are written before any human sees the request, and the read_file variant needs no approval."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent sends one oversized tool argument and picks whichever tool gives the largest uncapped echo into the audit log.",
+   "payloads": [
+    "POST /sandboxes/sb_x/tools/read_file with a 131072-byte invalid path",
+    "POST /sandboxes/sb_x/tools/delete_file with a 262145-byte invalid path",
+    "POST /sandboxes/sb_x/tools/exec with a command of 2001 segments (10003 bytes)"
+   ],
+   "instructions": [
+    "In the approved OS-enforced sandbox (sbx v09: /target read-only on sys.path, /scratch writable, uid 65534, 512 MiB, 1 CPU, 120 s, no network, no Docker), run /scratch/v09_repro.py with /usr/bin/python3.",
+    "The script builds a real AgentBox with real AuditLog, ApprovalStore, Policy(default_policy.yaml), safe_path, SandboxManager.read_file and preview_command, faking only the Docker- and SQLite-facing SandboxManager methods (get, template_of, _require_running, _container, _expand, _walk, exists).",
+    "Call box.call_tool with each payload and read back SELECT id,actor,event,tool,length(payload) FROM audit plus length(args),length(preview) from the approvals table.",
+    "Attempt DELETE FROM audit on an oversized row, then set PRAGMA max_page_count as a deterministic full-disk stand-in and observe the next append and the following tool call."
+   ],
+   "observed_result": "tool_request stayed capped at 16,543 B in all three cases, but the other sinks did not: read_file with a 131,072-byte path outside /workspace returned 400 with a 131,115-byte message and wrote a 131,142-byte tool_error row with no approval; delete_file with a 262,144-byte path wrote a 262,342-byte approval_requested row whose single preview note began '미리보기 실패: 허용되지 않은 경로: /etc/AAAA…' (approval row: 262,156 B args, 262,244 B preview); exec with a 10,003-byte, 2001-segment command wrote a 96,207-byte approval_requested row carrying the full 10,003-byte preview.command and 2,001 notes (approval row: 10,018 B args, 96,109 B preview). DELETE FROM audit raised 'audit log is append-only'. With the page cap as a full-disk stand-in the append raised AuditWriteError 'database or disk is full' and the following tool call failed closed with 503."
+  },
+  "remediation": {
+   "strategy": "Bound payloads at the sink and at the producers: one recursive bounder inside AuditLog.append (string truncation plus list/dict cap) applied before compute_hash so verify() stays consistent, truncate the preview command/notes/affected and the SandboxError text before they are appended, and reject oversized tool-args bodies at the route with a request_body limit in the shipped proxy as defense in depth.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/audit.py",
+     "fixed_code": "AUDIT_STR_MAX = 4096\nAUDIT_LIST_MAX = 200\n\ndef _bound(v):\n    if isinstance(v, str):\n        return v if len(v) <= AUDIT_STR_MAX else v[:AUDIT_STR_MAX] + f\"...({len(v)} bytes)\"\n    if isinstance(v, dict):\n        return {k: _bound(x) for k, x in list(v.items())[:AUDIT_LIST_MAX]}\n    if isinstance(v, list):\n        return [_bound(x) for x in v[:AUDIT_LIST_MAX]]\n    return v\n\n# in append(), before compute_hash(prev_hash, record):\npayload = _bound(self._mask(payload or {}))"
+    },
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "AUDIT_TEXT_MAX = 512\n\ndef _audit_text(s: Any) -> str:\n    t = str(s)\n    return t if len(t) <= AUDIT_TEXT_MAX else t[:AUDIT_TEXT_MAX] + f\"...({len(t)} bytes)\"\n\n# _preview failure note and exec command, before they are appended/created:\nnotes = [f\"미리보기 실패: {_audit_text(e)}\"]\npreview[\"command\"] = _audit_text(preview.get(\"command\"))\npreview[\"notes\"] = [_audit_text(n) for n in (preview.get(\"notes\") or [])][:200]\npreview[\"affected\"] = (preview.get(\"affected\") or [])[:200]\n\n# SandboxError handler:\nexcept SandboxError as e:\n    short = _audit_text(e)\n    self.log_best_effort(sid, tool, \"tool_error\", {\"request\": req_id, \"error\": short})\n    raise ServiceError(400, short) from e"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "high",
+    "reason": "One authenticated agent request per row; the read_file variant needs no approval, snapshot or concurrency, and the row size follows the request body size."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Permanent undeletable growth of the shared control-plane SQLite file; at disk-full the tool, approval and lifecycle paths fail closed with 503 and recovery needs an operator to rebuild the database and rebuild the hash chain. Not RCE or a guaranteed crash."
+   },
+   "overall_severity": "medium"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Every cited line was re-read in the audited tree (9805d91) and the minimum observed result was independently reproduced: 131,142 B and 262,342 B and 96,207 B rows against a 16,543 B capped tool_request, a real append-only DELETE rejection, and a fail-closed 503 after a page-capped append, with only the Docker-facing SandboxManager faked."
+  }
+ },
+ "artifacts_to_promote": [
+  "repro_v09.out"
+ ]
+}

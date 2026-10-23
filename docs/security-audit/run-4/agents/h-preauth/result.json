@@ -1,0 +1,582 @@
+{
+ "units": [
+  {
+   "coverage_id": "Unauthenticated%20network%20requests%20handled%20before%20any%20principal%20check%3A%20JSON%20and%20multipart%20bodies%20on%20POST%20%2Fsandboxes%2C%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%2C%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%2C%20%2Fapprovals%2F%7Baid%7D%20and%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Ffiles%3B%20the%20POST%20%2Flogin%20form%3B%20GET%20%2Fstatic%2Fnovnc%2F%7Bpath%7D%3B%20GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%3Fticket%3D%3B%20GET%20%2Fhealthz::Network%20attacker%20with%20no%20token%20-%3E%20control-plane%20memory%2C%20the%20%2Ftmp%20multipart%20spool%2C%20the%20Docker%20daemon%20and%20the%20audit%20chain.%20FastAPI%20reads%20and%20parses%20the%20body%20before%20it%20resolves%20the%20principal%20and%20screen_human%20dependencies%20%28agentbox%2Fapi.py%3A206-224%2C%20models%20at%2044-60%29.%20The%20tool-args%20body%20cap%20that%20critic%20checks%20only%20guard%20authenticated%20agent%20args.%20extract_novnc%20runs%20docker%20create%2C%20get_archive%20into%20memory%20and%20extractall%20per%20request%20%28agentbox%2Fsandbox.py%3A774-798%2C%20api.py%3A431-437%29.%20Each%20failed%20POST%20%2Flogin%20appends%20a%20ui_login_failed%20audit%20row%20%28agentbox%2Fweb.py%3A117-123%29.%20deploy%2FCaddyfile%20has%20no%20request_body%20limit.::agentbox%2Fapi.py%23build%20route%20and%20dependency%20ordering%20%28principal%2C%20screen_principal%2C%20put_files%2C%20novnc%29%3B%20agentbox%2Fsandbox.py%23extract_novnc%3B%20agentbox%2Fweb.py%23login%3B%20deploy%2FCaddyfile::Pre-authentication%20work%20imbalance%20%28unbounded%20body%20buffering%20and%20temp-file%20spooling%20before%20auth%2C%20unauthenticated%20Docker-daemon%20work%2C%20unauthenticated%20audit-row%20growth%29",
+   "disposition": "candidate",
+   "reviewed_paths": [
+    "agentbox/api.py",
+    "agentbox/cli.py",
+    "deploy/Caddyfile",
+    "agentbox/config.py",
+    "agentbox/service.py",
+    "deploy/docker-compose.yml",
+    "agentbox/sandbox_desktop.py",
+    "agentbox/web.py",
+    "agentbox/audit.py",
+    "agentbox/desktop.py"
+   ],
+   "checks": [
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/cli.py",
+      "deploy/Caddyfile",
+      "agentbox/config.py",
+      "agentbox/service.py",
+      "deploy/docker-compose.yml"
+     ],
+     "invariant": "No pre-authentication request-body bound anywhere in front of FastAPI's body parsing",
+     "method": "local",
+     "result": "Unauthenticated POSTs with a 16,777,220-byte JSON body were fully consumed and JSON-decoded before the 401 on /sandboxes, /sandboxes/{sid}/tools/exec, /sandboxes/{sid}/restore and /approvals/{id}; a 4 MiB multipart part was rolled onto disk in a SpooledTemporaryFile before the 401 on /sandboxes/{sid}/files. The only middleware is _NoFraming, uvicorn is started without size limits, and deploy/Caddyfile has no request_body directive.",
+     "artifact": "agents/h-preauth/artifacts/h.out"
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/sandbox_desktop.py"
+     ],
+     "invariant": "Unauthenticated static-asset route does not perform per-request Docker-daemon work",
+     "method": "local",
+     "result": "With home/novnc absent, six concurrent unauthenticated GET /static/novnc/core/rfb.js made six containers.create calls and five returned 500 (FileExistsError); the steady state made zero; three GETs for a non-existent asset each made another create call.",
+     "artifact": "agents/h-preauth/artifacts/h3.out"
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/web.py",
+      "agentbox/service.py",
+      "agentbox/audit.py"
+     ],
+     "invariant": "Unauthenticated requests cannot grow the persistent audit chain without bound",
+     "method": "local",
+     "result": "51 wrong-token POST /login requests produced 51 durable ui_login_failed rows in 0.498 s (~10 ms each, serialized on the audit lock), with no cap, rate limit or retention; a non-ASCII token produced 0 rows because compare_digest raises before the append.",
+     "artifact": "agents/h-preauth/artifacts/h.out"
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/desktop.py",
+      "agentbox/api.py"
+     ],
+     "invariant": "The remaining unauthenticated routes do bounded work",
+     "method": "source",
+     "result": "GET /healthz returns a constant JSON object without touching a principal or a body (api.py:368-371). Ticket redemption for /sandboxes/{sid}/desktop?ticket= does one hashed SELECT plus one DELETE in ui_tickets and returns 403 on mismatch (desktop.py:118-128); it parses no body, runs no docker call and creates no session row for a bad ticket.",
+     "artifact": null
+    }
+   ],
+   "candidate_fingerprints": [
+    "agentbox/api.py:preauth-request-body-read-before-principal",
+    "agentbox/sandbox_desktop.py:extract-novnc-unauthenticated-no-singleflight",
+    "agentbox/web.py:unauthenticated-login-failure-audit-growth"
+   ],
+   "unresolved": []
+  },
+  {
+   "coverage_id": "agentbox%2Fapi.py%23all%20JSON%20and%20browser%20routes::agentbox%2Fapi.py%23principal%20%2B%20human_only%20%2B%20screen_human%20%2B%20desktop_human::agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py::ATTACK-CLASSES.md%23Access%20control",
+   "disposition": "covered",
+   "reviewed_paths": [
+    "agentbox/api.py",
+    "agentbox/web.py",
+    "agentbox/desktop.py"
+   ],
+   "checks": [
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/web.py"
+     ],
+     "invariant": "Each route resolves the right principal kind for the right resource (human_only vs agent-token sandbox binding)",
+     "method": "source",
+     "result": "create/pause/resume/snapshots/restore/delete/audit/verify/desktop-ticket and every /ui mutation use human_only or browser_human; call_tool (217-218), get_sandbox (185-186), get_approval (236-240) and desktop_state (327-328) bind an agent token to its own sandbox_id and answer 403 otherwise; POST /approvals/{aid} rejects agent tokens at 252-259 and records the attempt; screen_human additionally requires scope '*' (153-155) and desktop_human requires scope in ('*', sid) (161-162).",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/web.py",
+      "agentbox/api.py",
+      "agentbox/desktop.py"
+     ],
+     "invariant": "A desktop-link session scoped to one sandbox cannot read or act on another sandbox through the browser routes",
+     "method": "local",
+     "result": "With a session cookie scoped to sb-A: /ui/sandboxes/sb-B, /ui/sandboxes/sb-A and /ui redirected to /login (session_of at web.py:96-97 accepts only scope '*'), /ui/sandboxes and /ui/audit answered 403 via browser_human, /sandboxes/sb-B/outbox answered 403, /sandboxes/sb-B/desktop answered 401 (session bound to sid at api.py:319) and /sandboxes/sb-B/desktop/state answered 403; no response body contained sb-B's record. The missing browser_human on /ui/sandboxes/{sid} (web.py:195-204) is therefore compensated by the scope-aware session lookup - defence in depth, not a boundary break.",
+     "artifact": "agents/h-preauth/artifacts/h.out"
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/desktop.py"
+     ],
+     "invariant": "Cookie-authenticated routes bind the sandbox from the URL, not only the session",
+     "method": "source",
+     "result": "desktop_page passes sid into desktop.session(cookie, sid), which requires the stored scope to be '*' or that sid (desktop.py:162-167); desktop_human (api.py:157-163) and desktop_state (325-330) re-check p.scope; put_files, outbox, outbox_file and approval_capture require screen_human, i.e. scope '*' only.",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/api.py"
+     ],
+     "invariant": "A malformed credential is rejected as an authentication error instead of an exception",
+     "method": "local",
+     "result": "A non-ASCII bearer token makes secrets.compare_digest raise TypeError (api.py:119) and GET /sandboxes, GET /approvals/{aid} and POST /approvals/{aid} all returned a bare 500 instead of 401/403; the agent attempt record at api.py:253-259 was skipped (0 approval_forbidden rows), so the failure mode also drops an audit record. Reported as hardening, not as a boundary break: no unauthorized state is reached.",
+     "artifact": "agents/h-preauth/artifacts/h.out"
+    }
+   ],
+   "candidate_fingerprints": [],
+   "unresolved": []
+  },
+  {
+   "coverage_id": "whole-repo%23basic%20exposures::whole-repo%23obvious%20controls%20%28secrets%2C%20debug%2C%20cookies%2C%20CORS%2C%20redirects%2C%20errors%29::whole-repo::ATTACK-CLASSES.md%23Obvious%20things",
+   "disposition": "covered",
+   "reviewed_paths": [
+    "agentbox/config.py",
+    "agentbox/audit.py",
+    "deploy/Caddyfile",
+    "deploy/docker-compose.yml",
+    ".gitignore",
+    "agentbox/api.py",
+    "agentbox/cli.py",
+    "agentbox/desktop.py",
+    "agentbox/web.py"
+   ],
+   "checks": [
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/config.py",
+      "agentbox/audit.py",
+      "deploy/Caddyfile",
+      "deploy/docker-compose.yml",
+      ".gitignore"
+     ],
+     "invariant": "No hardcoded or default credentials in source, deploy files or the repository tree",
+     "method": "source",
+     "result": "The human token is generated with secrets.token_urlsafe and stored 0600 (config.py:88-100), agent tokens are stored only as hashes (sandbox.py:58, 211-223), LLM keys come from the environment, the compose/Caddy files carry no secret values, .gitignore covers .env/.env.*/*.env/data/ and the tree contains no .env, .pem, .key or credentials file. The only key-shaped literals in source are audit.py's masking regexes (audit.py:59-69).",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/api.py",
+      "agentbox/cli.py"
+     ],
+     "invariant": "No debug mode, schema/introspection route or verbose error page is exposed in production",
+     "method": "local",
+     "result": "FastAPI() is built without debug and without docs_url/redoc_url/openapi_url overrides (api.py:111); with no credential, /healthz, /openapi.json, /docs, /redoc and /static/htmx.min.js all returned 200, and /healthz disclosed runtime, image name, template names and dev_only=true. Error responses are Starlette's generic 500 because debug is never enabled. The route inventory contains no /admin, /debug, /env, /metrics, /config or /status route.",
+     "artifact": "agents/h-preauth/artifacts/h.out"
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/desktop.py",
+      "agentbox/config.py",
+      "deploy/docker-compose.yml"
+     ],
+     "invariant": "Session cookies carry HttpOnly, SameSite and Secure where TLS is in play",
+     "method": "source",
+     "result": "desktop.py:58-60 sets httponly=True, samesite='strict' and secure from the caller; compose forces AGENTBOX_BEHIND_TLS_PROXY=1 (docker-compose.yml:22) and cmd_serve then sets s.secure_cookie (cli.py:102), so the shipped deployment marks the cookie Secure. Tickets are 60 s and one-time, sessions 12 h, and both carry the human-token generation fingerprint so rotation revokes them (desktop.py:148-160).",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/web.py",
+      "agentbox/api.py"
+     ],
+     "invariant": "No permissive CORS, no open redirect and no dynamic-code primitive on request data",
+     "method": "source",
+     "result": "There is no CORSMiddleware and no Access-Control-* header anywhere, so no wildcard/allow-credentials combination exists; every RedirectResponse target is a constant or a path built from its own route parameter (api.py:316, web.py:112, 120, 149, 167, 198) with no request-derived host or return URL, so there is no open redirect; no eval/exec/compile of request data, and the only subprocess call uses an argv list with no shell (desktop_ws.py:26-28).",
+     "artifact": null
+    },
+    {
+     "agent_id": "h-preauth",
+     "reviewed_paths": [
+      "agentbox/cli.py",
+      "deploy/Caddyfile"
+     ],
+     "invariant": "Plaintext HTTP is refused off-loopback and TLS terminates at the shipped proxy",
+     "method": "source",
+     "result": "bind_problem (cli.py:68-74) rejects any non-loopback host without TLS or --behind-tls-proxy, and the shipped Caddyfile terminates TLS and forwards to the container port that compose only exposes on the internal network (docker-compose.yml:29-30, 38-40). The gate itself belongs to the deployment unit (owner h-lifecycle); verified present only.",
+     "artifact": null
+    }
+   ],
+   "candidate_fingerprints": [],
+   "unresolved": []
+  }
+ ],
+ "candidates": [
+  {
+   "proposed_verdict": "confirmed",
+   "fingerprint": "agentbox/api.py:preauth-request-body-read-before-principal",
+   "title": "Unauthenticated request bodies are fully read, JSON-decoded and multipart-spooled before the principal dependency rejects the request",
+   "description": "agentbox's routes declare a request-body model (or a File(...) list) together with Depends(principal) / screen_human / human_only (api.py:174-177, 205-207, 215-221, 250-262, 276-286). FastAPI reads the whole body and JSON-decodes it - or calls request.form() for multipart - before it solves those dependencies, and agentbox installs no body-size gate at any layer: the only HTTP middleware is _NoFraming (api.py:63-80, 113), uvicorn is started without request-size or concurrency limits (cli.py:127), and deploy/Caddyfile forwards bodies without a request_body directive (Caddyfile:5). The per-file upload cap (settings.max_upload_bytes, 50 MiB) and the audit arg cap (LOGGED_ARGS_MAX) are enforced only after a principal exists (api.py:278-283, service.py:37-38). An unauthenticated client therefore makes the control plane read, decode and spool bodies of its choosing before it is told 401.",
+   "root_cause": "Authentication dependencies run after FastAPI's body-parsing stage, and nothing in front of the app - ASGI middleware, uvicorn options, or the bundled Caddy reverse proxy - enforces a maximum request-body size, so unauthenticated work scales with the attacker's body size instead of with the negligible work needed to reject an unauthenticated request.",
+   "intended_behavior": "Requests that cannot yet be authenticated should be rejected before their body is buffered, decoded or written to disk, and bodies above a documented cap should be refused with 413 regardless of credential state.",
+   "trace": [
+    {
+     "kind": "entrypoint",
+     "file": "agentbox/api.py",
+     "line": 215,
+     "scope": "POST /sandboxes/{sid}/tools/{tool} route (sibling body routes at 174, 205, 250, 276)",
+     "description": "The route declares body: ToolCall together with p: Principal = Depends(principal). FastAPI's handler stage reads request.body() and json-decodes the whole body before solve_dependencies runs, so the body is already in memory when the 401 is produced."
+    },
+    {
+     "kind": "propagation",
+     "file": "agentbox/api.py",
+     "line": 115,
+     "scope": "principal() bearer verification",
+     "description": "principal() is the first credential check (compare_digest at 119, sandbox_for_token at 121) and raises 401 at 117/124. It runs only after the body stage, so no principal exists while the body is read and decoded."
+    },
+    {
+     "kind": "propagation",
+     "file": "agentbox/api.py",
+     "line": 277,
+     "scope": "POST /sandboxes/{sid}/files multipart body",
+     "description": "files: list[UploadFile] = File(...) makes FastAPI call request.form(), which streams the whole multipart body and rolls every file part over the 1 MiB spool threshold into a SpooledTemporaryFile under the control plane's TMPDIR, all before screen_human runs."
+    },
+    {
+     "kind": "propagation",
+     "file": "agentbox/api.py",
+     "line": 278,
+     "scope": "per-file cap applied after parsing and after authentication",
+     "description": "limit = settings.max_upload_bytes with await f.read(limit + 1) at 281-283 executes only inside the endpoint, i.e. after the whole body has been spooled and after the principal check, so it cannot bound pre-auth work."
+    },
+    {
+     "kind": "sink",
+     "file": "agentbox/cli.py",
+     "line": 127,
+     "scope": "uvicorn.run without request-size limits",
+     "description": "The production entry point starts uvicorn with only host/port/log_level plus TLS/proxy extras: no limit_max_request_size and no limit_concurrency are passed, and uvicorn has no default body cap, so every byte the proxy forwards is accumulated in the control-plane process."
+    }
+   ],
+   "evidence": [
+    {
+     "file": "agentbox/api.py",
+     "line": 63,
+     "description": "_NoFraming (63-80), registered at 113, is the only HTTP middleware in the app; there is no body-limit middleware."
+    },
+    {
+     "file": "deploy/Caddyfile",
+     "line": 5,
+     "description": "reverse_proxy agentbox:8765 with no request_body directive: the shipped proxy does not bound request bodies either."
+    },
+    {
+     "file": "agentbox/config.py",
+     "line": 57,
+     "description": "The only upload bound is max_upload_bytes (50 MiB per file by default), consumed inside the endpoint after parsing."
+    },
+    {
+     "file": "agentbox/service.py",
+     "line": 37,
+     "description": "LOGGED_ARGS_MAX / LOGGED_ARGS_HEAD (37-38) cap only the audit copy of tool args, after a principal is established."
+    },
+    {
+     "file": "deploy/docker-compose.yml",
+     "line": 22,
+     "description": "The compose deployment runs behind Caddy with AGENTBOX_BEHIND_TLS_PROXY=1 and exposes 8765 only on the compose network; the service definition sets no mem_limit and no request-size limit."
+    }
+   ],
+   "conditions": [
+    {
+     "kind": "authentication_level",
+     "description": "None: no Authorization header and no session cookie are required for the buffering to happen."
+    },
+    {
+     "kind": "network_routing",
+     "description": "The client can reach the control plane through the shipped Caddy front end (compose publishes 443/80 and forwards bodies without a size directive), or directly when agentbox serve is used."
+    },
+    {
+     "kind": "environmental_dependency",
+     "description": "Impact scales with control-plane process memory: one uvicorn process serves the JSON API, the approval UI and the audit chain, and the compose service sets no mem_limit, so exhausting memory takes down the approval path rather than only the offending request."
+    }
+   ],
+   "execution": {
+    "attacker_perspective": "An unauthenticated network client that never holds a token sends oversized bodies to routes it knows will answer 401, or to the upload route, and lets the server do the reading, decoding and disk writing.",
+    "payloads": [
+     "POST /sandboxes HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: application/json\r\nContent-Length: 16777220\r\n\r\n{\"source_dir\": null, \"template\": \"cli\", \"pad\": \"AAAA...\"}",
+     "POST /sandboxes/sid1/files HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: multipart/form-data; boundary=X-BOUNDARY\r\n\r\n--X-BOUNDARY\r\nContent-Disposition: form-data; name=\"files\"; filename=\"a.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n<4 MiB of bytes>\r\n--X-BOUNDARY--"
+    ],
+    "instructions": [
+     "Inside the approved sandbox only (no network, no Docker socket), import the read-only audited tree from /target and build the real app with api.build(Settings()) using AGENTBOX_HOME=/scratch/..., replacing docker.from_env() with an in-process fake because the sandbox has no daemon.",
+     "Drive the app directly at the ASGI layer with a receive() that streams the declared body in 64 KiB chunks, and count how many bytes the app consumed before it emitted http.response.start.",
+     "Patch starlette.requests.Request.json and starlette.formparsers.SpooledTemporaryFile to record the decoded body length and the size of the rolled temp file."
+    ],
+    "observed_result": "POST /sandboxes with a 16,777,220-byte JSON body and no Authorization header returned 401, but the app had already consumed all 16,777,220 bytes and Request.json() had decoded 16,777,220 bytes (identical on /sandboxes/{sid}/tools/exec, /sandboxes/{sid}/restore and /approvals/{id}); peak RSS grew ~32 MiB per 16 MiB body and 8-12 MiB per 4 MiB body. POST /sandboxes/sid1/files with one 4 MiB part and no credentials returned 401 after consuming all 4,194,442 bytes, with a SpooledTemporaryFile (max_size 1 MiB) rolled to a real temp file that received all 4,194,304 part bytes; the endpoint's 50 MiB per-file cap never ran."
+   },
+   "remediation": {
+    "strategy": "Reject unauthenticated and oversized bodies before routing: add an ASGI middleware (installed like _NoFraming) that refuses a Content-Length above a small cap with 413 and counts streamed bytes for chunked bodies, aborting at the cap; raise the cap only for the authenticated upload path, after the principal check; and add request_body { max_size <cap> } to deploy/Caddyfile so the shipped proxy enforces the same bound.",
+    "code_changes": [
+     {
+      "file_name": "agentbox/api.py",
+      "fixed_code": "class _BodyLimit:\n    \"\"\"Reject oversized bodies before FastAPI parses them (pre-auth).\"\"\"\n    def __init__(self, app, max_bytes: int, upload_max_bytes: int):\n        self.app, self.max_bytes, self.upload_max_bytes = app, max_bytes, upload_max_bytes\n\n    async def __call__(self, scope, receive, send):\n        if scope[\"type\"] != \"http\":\n            return await self.app(scope, receive, send)\n        headers = dict(scope[\"headers\"])\n        try:\n            declared = int(headers.get(b\"content-length\") or 0)\n        except ValueError:\n            declared = 0\n        cap = self.upload_max_bytes if scope[\"path\"].endswith(\"/files\") else self.max_bytes\n        if declared > cap:\n            return await Response(\"요청 본문이 너무 큼\", status_code=413)(scope, receive, send)\n        sent = 0\n\n        async def limited():\n            nonlocal sent\n            message = await receive()\n            sent += len(message.get(\"body\", b\"\"))\n            if sent > cap:\n                raise ClientDisconnect()\n            return message\n\n        return await self.app(scope, limited, send)\n\napp.add_middleware(_BodyLimit, max_bytes=64 * 1024,\n                   upload_max_bytes=settings.max_upload_bytes + 4096)"
+     }
+    ]
+   },
+   "severity": {
+    "likelihood": {
+     "score": "high",
+     "reason": "No token, no interaction and no knowledge beyond the route list: a single ordinary HTTP request with a large declared body."
+    },
+    "impact": {
+     "score": "medium",
+     "reason": "Memory and temp-disk exhaustion of the single control-plane process that also serves the human approval queue and the audit chain; JSON decoding of the buffered body happens synchronously in the request task, so a large body also stalls unrelated requests, and recovery needs a restart while pending approvals age toward timeout. No confidentiality or integrity boundary is crossed."
+    },
+    "overall_severity": "medium"
+   },
+   "confidence": {
+    "score": "high",
+    "reason": "Complete source trace plus a local observation on the real app object: the full body was read and decoded before the 401, the multipart part was on disk before the 401, and no middleware, uvicorn option or Caddy directive in the tree bounds the body."
+   }
+  },
+  {
+   "proposed_verdict": "confirmed",
+   "fingerprint": "agentbox/sandbox_desktop.py:extract-novnc-unauthenticated-no-singleflight",
+   "title": "Unauthenticated GET /static/novnc/* runs docker create plus a full image tar extraction on every request while the marker file is missing, with no single-flight",
+   "description": "api.py:355-363 registers GET /static/novnc/{path:path} with no principal, session or ticket and calls box.sandboxes.extract_novnc(novnc_dir) on every request before it even validates the requested path. extract_novnc (sandbox_desktop.py:146-169) has one guard: it returns True if dest/core/rfb.js already exists. While that marker is absent, each request runs self.client.containers.create(desktop_image, ...), joins get_archive(\"/usr/share/novnc\") fully into memory and extractall()s it into the control plane's data directory, then removes the container. There is no lock, no in-flight marker and no negative cache, so concurrent requests all miss the guard, duplicate the daemon work and extract into the same destination; the losing extractions raise an uncaught FileExistsError/OSError, which extract_novnc does not handle because it catches only ImageNotFound, NotFound and APIError (153-159), and the request becomes a 500.",
+   "root_cause": "An unauthenticated static-asset route performs Docker-daemon work and an archive extraction behind a check-then-act test on a single marker file, with no lock or in-flight flag, and any non-docker exception escapes as a 500 that leaves the marker absent, so the work is repeatable by any anonymous client.",
+   "intended_behavior": "Static assets should not require per-request daemon work: the extraction should happen once (at startup or on the first authenticated desktop use) under a lock that lets one caller do it while others wait or observe the result, and a failed extraction should leave a bounded negative state instead of being retried by every request.",
+   "trace": [
+    {
+     "kind": "entrypoint",
+     "file": "agentbox/api.py",
+     "line": 355,
+     "scope": "GET /static/novnc/{path:path}",
+     "description": "The route has no Depends() at all and is exempt from the cookie/header principal used everywhere else, so it is reachable by any network client."
+    },
+    {
+     "kind": "propagation",
+     "file": "agentbox/api.py",
+     "line": 358,
+     "scope": "extract_novnc called on every request",
+     "description": "The handler calls box.sandboxes.extract_novnc(novnc_dir) before resolving or validating path, so the only thing that keeps a request cheap is the marker file the function itself is supposed to create."
+    },
+    {
+     "kind": "propagation",
+     "file": "agentbox/sandbox_desktop.py",
+     "line": 148,
+     "scope": "the sole guard is a marker-file existence check",
+     "description": "if (dest / \"core\" / \"rfb.js\").exists(): return True - a check-then-act test with no lock, no in-flight marker and no negative cache, so N concurrent callers all proceed."
+    },
+    {
+     "kind": "sink",
+     "file": "agentbox/sandbox_desktop.py",
+     "line": 152,
+     "scope": "containers.create + get_archive + extractall",
+     "description": "Each request that finds no marker creates a container from the desktop image (152), pulls the whole /usr/share/novnc tar into memory with b\"\".join(stream) (156-157) and extracts it into settings.home (166), then removes the container (161)."
+    }
+   ],
+   "evidence": [
+    {
+     "file": "agentbox/sandbox_desktop.py",
+     "line": 153,
+     "description": "Only ImageNotFound/APIError are caught around create and only NotFound/APIError around get_archive (158-159); the tarfile extraction at 163-166 is outside any handler, so FileExistsError/OSError from a concurrent or partial extraction escapes as a 500."
+    },
+    {
+     "file": "agentbox/sandbox_desktop.py",
+     "line": 167,
+     "description": "The final (dest.parent / \"novnc\").rename(dest) runs without checking whether the destination already exists."
+    },
+    {
+     "file": "agentbox/api.py",
+     "line": 361,
+     "description": "The path-safety check and the 404 for a missing asset happen only after the extraction attempt, so even a 404 can cost a container create."
+    },
+    {
+     "file": "agentbox/api.py",
+     "line": 100,
+     "description": "novnc_dir = settings.home / \"novnc\": the extraction writes into the control plane's persistent data directory."
+    }
+   ],
+   "conditions": [
+    {
+     "kind": "system_configuration",
+     "description": "The desktop image is present (otherwise create raises ImageNotFound and the route is cheap) and home/novnc/core/rfb.js is absent: a fresh install before anyone opened a desktop page, or a state left behind by a failed or partial extraction."
+    },
+    {
+     "kind": "timing_dependency",
+     "description": "Two or more requests must be in flight together to duplicate the daemon work and reach the destination race; a single request duplicates nothing."
+    },
+    {
+     "kind": "authentication_level",
+     "description": "None - the route requires no principal, cookie or ticket."
+    }
+   ],
+   "execution": {
+    "attacker_perspective": "An unauthenticated client issues GETs to /static/novnc/core/rfb.js (or any path under that prefix) instead of relying on a real user opening the desktop page, so the first-time extraction happens under its timing.",
+    "payloads": [
+     "GET /static/novnc/core/rfb.js  (no headers, no cookie) - six copies issued concurrently",
+     "GET /static/novnc/does-not-exist.js  (no headers, no cookie) after deleting the extracted tree"
+    ],
+    "instructions": [
+     "In the approved sandbox, build the app with the Docker client replaced by an in-process fake that counts containers.create calls and serves a fixed tar containing novnc/core/rfb.js (the sandbox has no daemon).",
+     "Delete home/novnc, issue one GET, then a second GET, then six GETs with asyncio.gather, recording status codes and the number of containers.create calls.",
+     "Delete home/novnc again and issue three sequential GETs for a non-existent asset, recording creates and status per request."
+    ],
+    "observed_result": "With home/novnc deleted, one unauthenticated GET returned 200 with 1 containers.create call and wrote novnc/core/rfb.js; the next GET made 0 create calls (marker hit). After deleting home/novnc again, six concurrent unauthenticated GETs made 6 containers.create calls: one returned 200 and five returned 500 with FileExistsError: [Errno 17] File exists: '<home>/novnc/core'. Three further unauthenticated GETs for a non-existent asset, each preceded by deleting the tree, made 3 more create calls and returned 404 each time while the marker stayed absent. In a separate consolidated run whose archive was deliberately truncated, every one of three unauthenticated GETs made another containers.create call and returned 500 OSError: unexpected end of data, showing that any extraction failure leaves the marker absent and the daemon work repeatable."
+   },
+   "remediation": {
+    "strategy": "Extract once, under a lock, outside the request path: do it at startup or on the first authenticated desktop route, guard it with a per-directory lock plus an in-flight event so concurrent callers wait, extract and only then publish the marker, and treat any failure as a bounded negative state. /static/novnc/* should answer 404/503 without creating containers when the marker is absent.",
+    "code_changes": [
+     {
+      "file_name": "agentbox/sandbox.py",
+      "fixed_code": "        self.client = docker.from_env()\n        self._lock = threading.Lock()\n        self._novnc_lock = threading.Lock()   # single-flight for extract_novnc"
+     },
+     {
+      "file_name": "agentbox/sandbox_desktop.py",
+      "fixed_code": "    def extract_novnc(self, dest: Path) -> bool:\n        marker = dest / \"core\" / \"rfb.js\"\n        if marker.exists():\n            return True\n        with self._novnc_lock:            # one extraction per process\n            if marker.exists():           # a waiter re-checks after the winner finished\n                return True\n            try:\n                c = self.client.containers.create(self.settings.desktop_image, [\"true\"], network_mode=\"none\")\n            except (ImageNotFound, APIError):\n                return False\n            try:\n                stream, _ = c.get_archive(\"/usr/share/novnc\")\n                out = b\"\".join(stream)\n            except (NotFound, APIError):\n                return False\n            finally:\n                c.remove(force=True)\n            dest.parent.mkdir(parents=True, exist_ok=True)\n            try:\n                with tarfile.open(fileobj=io.BytesIO(out)) as tf:\n                    members = [m for m in tf.getmembers() if m.isfile() or m.isdir()]\n                    tf.extractall(dest.parent, members=members, filter=\"data\")\n            except (OSError, tarfile.TarError):\n                shutil.rmtree(dest, ignore_errors=True)   # never serve a half tree\n                return False\n            return marker.exists()"
+     }
+    ]
+   },
+   "severity": {
+    "likelihood": {
+     "score": "medium",
+     "reason": "The expensive state is the missing marker, which exists on a fresh install and after any failed extraction; once the marker exists the cost drops to zero, so the attacker has to arrive before the first legitimate desktop use or exploit a broken state."
+    },
+    "impact": {
+     "score": "low",
+     "reason": "Unauthenticated Docker-daemon work, control-plane threads and data-directory writes, plus 500s and a possibly half-written asset tree; no data disclosure or privilege gain and the cost per request is bounded by one container create plus one asset-tree tar."
+    },
+    "overall_severity": "low"
+   },
+   "confidence": {
+    "score": "high",
+    "reason": "The source trace is complete and the duplication and race were reproduced locally with the Docker client stubbed; only the daemon-side wall time of one containers.create is deployment-specific."
+   }
+  },
+  {
+   "proposed_verdict": "confirmed",
+   "fingerprint": "agentbox/web.py:unauthenticated-login-failure-audit-growth",
+   "title": "Every unauthenticated failed POST /login appends a permanent hash-chained audit row, with no rate limit, cap or retention",
+   "description": "web.py:130-139 compares the submitted form token with secrets.compare_digest and, on mismatch, calls box.log_human(\"ui_login_failed\", None, {}) (service.py:590-594 -> audit.append). audit.append takes the single process-wide audit lock, opens BEGIN IMMEDIATE, reads the previous hash, inserts a masked row and commits (audit.py:162-185). Nothing rate-limits, deduplicates, caps or prunes these rows: audit.py contains no DELETE, no retention and no compaction, and the table is the append-only hash chain the operator uses as the security record. The only precondition is same_origin (web.py:132-133), which returns True when the Origin header is absent, so a plain HTTP client reaches the audit write. The same handler shows the inverse gap: a non-ASCII token makes compare_digest raise TypeError (web.py:134), so the request returns a bare 500 before the failure is recorded and the attacker also controls which attempts enter the chain.",
+   "root_cause": "An unauthenticated, attacker-paced write into the persistent audit chain: the failed-login path records every attempt through the same serialized append used by tool executions, without a per-source or global rate limit, without aggregation, and without any retention for the rows it creates.",
+   "intended_behavior": "Anonymous authentication failures should be rate-limited and aggregated before they reach the audit chain, and the audit store should have a documented retention/compaction scheme, so an unauthenticated client cannot unilaterally grow the security log or monopolize the lock that every other audit append needs.",
+   "trace": [
+    {
+     "kind": "entrypoint",
+     "file": "agentbox/web.py",
+     "line": 131,
+     "scope": "POST /login form handler",
+     "description": "def login(request: Request, token: str = Form(...)) has no principal and no cookie requirement; the only precondition is same_origin at 132, which passes when Origin is absent."
+    },
+    {
+     "kind": "propagation",
+     "file": "agentbox/web.py",
+     "line": 134,
+     "scope": "token mismatch branch",
+     "description": "A wrong token falls through to box.log_human(\"ui_login_failed\", None, {}) at 136 and then renders the error page at 139."
+    },
+    {
+     "kind": "propagation",
+     "file": "agentbox/service.py",
+     "line": 590,
+     "scope": "log_human -> audit.append",
+     "description": "log_human forwards the event to the audit log; an AuditWriteError would become a 503, but on success the row is durable in SQLite."
+    },
+    {
+     "kind": "sink",
+     "file": "agentbox/audit.py",
+     "line": 180,
+     "scope": "INSERT INTO audit under the global lock",
+     "description": "append() takes self._lock (162), BEGIN IMMEDIATE (163), reads the last hash (165), inserts the row (180) and commits (185); every other audit append and every human read waits on the same lock."
+    }
+   ],
+   "evidence": [
+    {
+     "file": "agentbox/audit.py",
+     "line": 126,
+     "description": "One process-wide threading.Lock serializes all appends."
+    },
+    {
+     "file": "agentbox/audit.py",
+     "line": 129,
+     "description": "The database runs in WAL mode with no row or page bound; audit.py has no retention, compaction or VACUUM call."
+    },
+    {
+     "file": "agentbox/web.py",
+     "line": 132,
+     "description": "same_origin returns True when the Origin header is missing, so it does not stop a direct HTTP client."
+    },
+    {
+     "file": "agentbox/config.py",
+     "line": 86,
+     "description": "The audit database lives at AGENTBOX_HOME/agentbox.db."
+    },
+    {
+     "file": "deploy/docker-compose.yml",
+     "line": 28,
+     "description": "compose mounts ${AGENTBOX_HOME_DIR} into the container, so audit growth consumes host disk owned by the operator."
+    }
+   ],
+   "conditions": [
+    {
+     "kind": "authentication_level",
+     "description": "None - a wrong form token and no cookie."
+    },
+    {
+     "kind": "system_configuration",
+     "description": "The control plane is reachable through the shipped proxy, and the audit table is persistent and never pruned."
+    },
+    {
+     "kind": "timing_dependency",
+     "description": "Rows serialize on the audit lock, which bounds the rate per second but never the total number of rows."
+    }
+   ],
+   "execution": {
+    "attacker_perspective": "An unauthenticated client posts the login form with a wrong token as fast as the server answers, adding one durable audit row and one global-lock acquisition per request.",
+    "payloads": [
+     "POST /login HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 10\r\n\r\ntoken=nope",
+     "POST /login  ...  token=%C3%BCn%C3%AFcode   (returns 500 and records nothing)"
+    ],
+    "instructions": [
+     "In the approved sandbox, build the real app and drive POST /login at the ASGI layer with urlencoded bodies, no cookie and no Origin header.",
+     "Count rows with event='ui_login_failed' before and after each request, and time 50 sequential wrong-token attempts.",
+     "Repeat once with a non-ASCII token and compare the row count."
+    ],
+    "observed_result": "One wrong-token POST added exactly 1 ui_login_failed row; 50 further wrong-token POSTs added 50 more (51 rows) in 0.498 s, about 10 ms per attempt serialized on the audit lock, with no rate limit, cap or rejection at any point. The non-ASCII token request returned 500 (TypeError: comparing strings with non-ASCII characters is not supported) and added 0 rows, so the same client can also keep attempts out of the chain."
+   },
+   "remediation": {
+    "strategy": "Rate-limit and aggregate failed logins before the audit append (a per-client-address token bucket plus a global cap), record a compacted 'N failures since T' summary instead of one row per attempt, and give the audit store a retention scheme that keeps chain verifiability (signed checkpoints plus archived segments). Validate that the token is ASCII (or compare bytes) before compare_digest so a malformed credential is a recorded 401 rather than a bare 500.",
+    "code_changes": [
+     {
+      "file_name": "agentbox/web.py",
+      "fixed_code": "    @app.post(\"/login\", include_in_schema=False)\n    def login(request: Request, token: str = Form(...)):\n        if not same_origin(request.headers):\n            raise HTTPException(403, \"다른 출처의 요청\")\n        if not token.isascii() or not secrets.compare_digest(token.strip(), human_token):\n            # 5마다 1건만 기록 + 주소별 초당 상한 (전체 상한은 _login_failures 쪽)\n            if _login_failures.allow(request.client.host if request.client else \"unknown\"):\n                try:\n                    box.log_human(\"ui_login_failed\", None, {})\n                except ServiceError:\n                    pass\n            return render(request, \"login.html\", error=\"사람 토큰이 아님 (에이전트 토큰으로는 들어갈 수 없습니다)\")\n        return start_session(request, \"/ui\", \"token\")"
+     }
+    ]
+   },
+   "severity": {
+    "likelihood": {
+     "score": "high",
+     "reason": "A form POST with a wrong token from any client that can reach /login; no cookie, Origin header or token knowledge required."
+    },
+    "impact": {
+     "score": "low",
+     "reason": "Unbounded persistent growth of the append-only audit database on the operator's data volume with no pruning path, plus contention on the single audit lock that every tool-call append and every human read needs; the entropy is low (~1 KB and ~10 ms per row), so the effect is slow disk growth rather than immediate outage."
+    },
+    "overall_severity": "low"
+   },
+   "confidence": {
+    "score": "high",
+    "reason": "Source trace is complete and the durable row growth and the non-ASCII bypass were both observed locally."
+   }
+  }
+ ],
+ "hardening": [
+  "GET /docs, /redoc, /openapi.json and /healthz are served without any credential (all four returned 200 in the local check); /healthz also discloses runtime, image name, template names and dev_only (api.py:368-371). Build the app with docs_url=None, redoc_url=None, openapi_url=None when not explicitly enabled, gate the schema routes, and reduce /healthz to {\"ok\": true} (api.py:111).",
+  "A non-ASCII credential turns secrets.compare_digest into a TypeError, so the JSON API answers a bare 500 instead of 401/403 (api.py:119) and both the agent approval attempt record (api.py:253-259) and the failed-login record (web.py:135-139) are skipped. Reject non-ASCII tokens before compare_digest, or compare bytes, so a malformed credential is a recorded 401.",
+  "Dependencies are declared as lower bounds only with no lockfile (pyproject.toml:8-18), so a rebuild can silently pick a different fastapi/uvicorn/starlette and with it different body-parsing and multipart defaults. Pin with hashes for reproducible deployments (the supply-chain block is out of scope for this run).",
+  "deploy/docker-compose.yml gives the control-plane container the Docker socket and sets no mem_limit/pids_limit, so both the body-buffering and the spool variants of the first candidate are bounded only by the host. Add container-level memory and pid limits and a sized tmpfs for /tmp as defence in depth.",
+  "The novnc extraction's success marker is a single file and the failure path is not recorded anywhere (sandbox_desktop.py:148-169), so an operator cannot tell a missing marker from a broken extraction. Log one audit row on extraction failure and expose the marker state on the desktop route instead of retrying silently."
+ ],
+ "uncovered": [],
+ "artifacts_to_promote": [
+  "h.out",
+  "h3.out",
+  "hfinal.py",
+  "h3.py"
+ ]
+}

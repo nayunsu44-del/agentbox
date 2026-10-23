@@ -11,6 +11,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+fence = chr(96) * 3
+
 from common import RUN, SRC, SBX, SK, block, schema_branch, ledger, make_scratch  # noqa: E402
 
 

@@ -218,7 +218,8 @@
     ],
     "invariant": "Read-side lock hold on the single audit lock is O(window), so monitoring reads cannot stall every agent append as the table grows.",
     "method": "source",
-    "result": "recent() performs COUNT(*) plus the sandbox-filtered ORDER BY id DESC LIMIT 400 inside 'with self._lock' (audit.py:212-217); verify() does fetchall of the whole table inside the same lock (audit.py:225-228); the SCHEMA creates no index besides the INTEGER PRIMARY KEY (audit.py:23-34), so the sandbox filter and status scan are full scans. audit.py:158-186 shows append needs that same lock. templates/sandbox.html:19 re-issues /ui/audit every 3 s and web.py:265-269 serves it, so each open sandbox page holds the append lock for a full-table COUNT(*) every 3 s; growth caused by the agent therefore lengthens a lock hold that blocks the agent's own fail-closed appends."
+    "result": "recent() performs COUNT(*) plus the sandbox-filtered ORDER BY id DESC LIMIT 400 inside 'with self._lock' (audit.py:212-217); verify() does fetchall of the whole table inside the same lock (audit.py:225-228); the SCHEMA creates no index besides the INTEGER PRIMARY KEY (audit.py:23-34), so the sandbox filter and status scan are full scans. audit.py:158-186 shows append needs that same lock. templates/sandbox.html:19 re-issues /ui/audit every 3 s and web.py:265-269 serves it, so each open sandbox page holds the append lock for a full-table COUNT(*) every 3 s; growth caused by the agent therefore lengthens a lock hold that blocks the agent's own fail-closed appends.",
+    "artifact": null
    },
    {
     "agent_id": "h-audit",
@@ -240,7 +241,8 @@
     ],
     "invariant": "Rejected agent requests cannot add uncapped rows to the audit log.",
     "method": "source",
-    "result": "api.py:252-259 appends an approval_forbidden row for every agent attempt to POST /approvals/{aid} and swallows only append errors, so this is one more agent-driven row source with no rate or count bound; it feeds the same unbounded table as tool calls."
+    "result": "api.py:252-259 appends an approval_forbidden row for every agent attempt to POST /approvals/{aid} and swallows only append errors, so this is one more agent-driven row source with no rate or count bound; it feeds the same unbounded table as tool calls.",
+    "artifact": null
    },
    {
     "agent_id": "h-audit",
@@ -250,7 +252,25 @@
     ],
     "invariant": "Approval state cannot remain in a non-terminal state after a partial failure (claim-then-execute is recoverable).",
     "method": "source",
-    "result": "decide() claims the row to 'approved' (approvals.py:82-89) before snapshot and execution (service.py:395-418). Every exception path calls finish(FAILED), but a control-plane crash or OOM between claim and finish leaves the row 'approved' forever: expire_stale only scans PENDING (service.py:375-388), so nothing ever revisits it and the agent's GET /approvals/{aid} reports an approval that never executed. No privilege effect; recovery gap only."
+    "result": "decide() claims the row to 'approved' (approvals.py:82-89) before snapshot and execution (service.py:395-418). Every exception path calls finish(FAILED), but a control-plane crash or OOM between claim and finish leaves the row 'approved' forever: expire_stale only scans PENDING (service.py:375-388), so nothing ever revisits it and the agent's GET /approvals/{aid} reports an approval that never executed. No privilege effect; recovery gap only.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v03",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/approvals.py",
+     "agentbox/audit.py",
+     "agentbox/gui_bursts.py",
+     "agentbox/service.py",
+     "agentbox/templates/sandbox.html",
+     "agentbox/web.py"
+    ],
+    "note": "phase3 decision needs_validation",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision needs_validation"
    }
   ],
   "result_fingerprints": [
@@ -271,7 +291,9 @@
    "_mask rewrites values only, never dict keys (audit.py:137-147); the local fixture kept {'password=hunter2': ...} verbatim. Only tool_request args have agent-chosen keys today, so no human secret reaches a key, but masking keys costs nothing.",
    "Approval rows are never deleted (not on decide, expire or sandbox delete; service.py:106-109, 471-475) although capture PNGs are, so the deleted-sandbox approval queue keeps raw args and previews forever in the same file.",
    "decide() claims a row to 'approved' before snapshot and execution (approvals.py:82-89, service.py:395-418); a crash between claim and finish leaves it 'approved' forever because expire_stale only scans PENDING (service.py:379), so an agent can read a status for an action that never ran."
-  ]
+  ],
+  "x_decision": "needs_validation",
+  "x_decided_by": "v03"
  },
  {
   "coverage_id": "Unauthenticated%20network%20requests%20handled%20before%20any%20principal%20check%3A%20JSON%20and%20multipart%20bodies%20on%20POST%20%2Fsandboxes%2C%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%2C%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%2C%20%2Fapprovals%2F%7Baid%7D%20and%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Ffiles%3B%20the%20POST%20%2Flogin%20form%3B%20GET%20%2Fstatic%2Fnovnc%2F%7Bpath%7D%3B%20GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%3Fticket%3D%3B%20GET%20%2Fhealthz::Network%20attacker%20with%20no%20token%20-%3E%20control-plane%20memory%2C%20the%20%2Ftmp%20multipart%20spool%2C%20the%20Docker%20daemon%20and%20the%20audit%20chain.%20FastAPI%20reads%20and%20parses%20the%20body%20before%20it%20resolves%20the%20principal%20and%20screen_human%20dependencies%20%28agentbox%2Fapi.py%3A206-224%2C%20models%20at%2044-60%29.%20The%20tool-args%20body%20cap%20that%20critic%20checks%20only%20guard%20authenticated%20agent%20args.%20extract_novnc%20runs%20docker%20create%2C%20get_archive%20into%20memory%20and%20extractall%20per%20request%20%28agentbox%2Fsandbox.py%3A774-798%2C%20api.py%3A431-437%29.%20Each%20failed%20POST%20%2Flogin%20appends%20a%20ui_login_failed%20audit%20row%20%28agentbox%2Fweb.py%3A117-123%29.%20deploy%2FCaddyfile%20has%20no%20request_body%20limit.::agentbox%2Fapi.py%23build%20route%20and%20dependency%20ordering%20%28principal%2C%20screen_principal%2C%20put_files%2C%20novnc%29%3B%20agentbox%2Fsandbox.py%23extract_novnc%3B%20agentbox%2Fweb.py%23login%3B%20deploy%2FCaddyfile::Pre-authentication%20work%20imbalance%20%28unbounded%20body%20buffering%20and%20temp-file%20spooling%20before%20auth%2C%20unauthenticated%20Docker-daemon%20work%2C%20unauthenticated%20audit-row%20growth%29",
@@ -316,15 +338,149 @@
   "prior_status": "prior_deferred",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-preauth",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/audit.py",
+   "agentbox/cli.py",
+   "agentbox/config.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox_desktop.py",
+   "agentbox/service.py",
+   "agentbox/web.py",
+   "deploy/Caddyfile",
+   "deploy/docker-compose.yml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/cli.py",
+     "deploy/Caddyfile",
+     "agentbox/config.py",
+     "agentbox/service.py",
+     "deploy/docker-compose.yml"
+    ],
+    "invariant": "No pre-authentication request-body bound anywhere in front of FastAPI's body parsing",
+    "method": "local",
+    "result": "Unauthenticated POSTs with a 16,777,220-byte JSON body were fully consumed and JSON-decoded before the 401 on /sandboxes, /sandboxes/{sid}/tools/exec, /sandboxes/{sid}/restore and /approvals/{id}; a 4 MiB multipart part was rolled onto disk in a SpooledTemporaryFile before the 401 on /sandboxes/{sid}/files. The only middleware is _NoFraming, uvicorn is started without size limits, and deploy/Caddyfile has no request_body directive.",
+    "artifact": "agents/h-preauth/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/sandbox_desktop.py"
+    ],
+    "invariant": "Unauthenticated static-asset route does not perform per-request Docker-daemon work",
+    "method": "local",
+    "result": "With home/novnc absent, six concurrent unauthenticated GET /static/novnc/core/rfb.js made six containers.create calls and five returned 500 (FileExistsError); the steady state made zero; three GETs for a non-existent asset each made another create call.",
+    "artifact": "agents/h-preauth/artifacts/h3.out"
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/service.py",
+     "agentbox/audit.py"
+    ],
+    "invariant": "Unauthenticated requests cannot grow the persistent audit chain without bound",
+    "method": "local",
+    "result": "51 wrong-token POST /login requests produced 51 durable ui_login_failed rows in 0.498 s (~10 ms each, serialized on the audit lock), with no cap, rate limit or retention; a non-ASCII token produced 0 rows because compare_digest raises before the append.",
+    "artifact": "agents/h-preauth/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/desktop.py",
+     "agentbox/api.py"
+    ],
+    "invariant": "The remaining unauthenticated routes do bounded work",
+    "method": "source",
+    "result": "GET /healthz returns a constant JSON object without touching a principal or a body (api.py:368-371). Ticket redemption for /sandboxes/{sid}/desktop?ticket= does one hashed SELECT plus one DELETE in ui_tickets and returns 403 on mismatch (desktop.py:118-128); it parses no body, runs no docker call and creates no session row for a bad ticket.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v01",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/audit.py",
+     "agentbox/cli.py",
+     "agentbox/config.py",
+     "agentbox/desktop.py",
+     "agentbox/sandbox_desktop.py",
+     "agentbox/service.py",
+     "agentbox/web.py",
+     "deploy/Caddyfile",
+     "deploy/docker-compose.yml"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
+   },
+   {
+    "agent_id": "v07",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/audit.py",
+     "agentbox/cli.py",
+     "agentbox/config.py",
+     "agentbox/desktop.py",
+     "agentbox/sandbox_desktop.py",
+     "agentbox/service.py",
+     "agentbox/web.py",
+     "deploy/Caddyfile",
+     "deploy/docker-compose.yml"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
+   },
+   {
+    "agent_id": "v13",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/audit.py",
+     "agentbox/cli.py",
+     "agentbox/config.py",
+     "agentbox/desktop.py",
+     "agentbox/sandbox_desktop.py",
+     "agentbox/service.py",
+     "agentbox/web.py",
+     "deploy/Caddyfile",
+     "deploy/docker-compose.yml"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/api.py:preauth-request-body-read-before-principal",
+   "agentbox/sandbox_desktop.py:extract-novnc-unauthenticated-no-singleflight",
+   "agentbox/web.py:unauthenticated-login-failure-audit-growth"
+  ],
   "unresolved": [],
   "x_prior_unit": "Unauthenticated%20network%20requests%20handled%20before%20any%20principal%20check%3A%20JSON%20and%20multipart%20bodies%20on%20POST%20%2Fsandboxes%2C%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Btool%7D%2C%20%2Fsandboxes%2F%7Bsid%7D%2Frestore%2C%20%2Fapprovals%2F%7Baid%7D%20and%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Ffiles%3B%20the%20POST%20%2Flogin%20form%3B%20GET%20%2Fstatic%2Fnovnc%2F%7Bpath%7D%3B%20GET%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%3Fticket%3D%3B%20GET%20%2Fhealthz::Network%20attacker%20with%20no%20token%20-%3E%20control-plane%20memory%2C%20the%20%2Ftmp%20multipart%20spool%2C%20the%20Docker%20daemon%20and%20the%20audit%20chain.%20FastAPI%20reads%20and%20parses%20the%20body%20before%20it%20resolves%20the%20principal%20and%20screen_human%20dependencies%20%28agentbox%2Fapi.py%3A206-224%2C%20models%20at%2044-60%29.%20The%20tool-args%20body%20cap%20that%20critic%20checks%20only%20guard%20authenticated%20agent%20args.%20extract_novnc%20runs%20docker%20create%2C%20get_archive%20into%20memory%20and%20extractall%20per%20request%20%28agentbox%2Fsandbox.py%3A774-798%2C%20api.py%3A431-437%29.%20Each%20failed%20POST%20%2Flogin%20appends%20a%20ui_login_failed%20audit%20row%20%28agentbox%2Fweb.py%3A117-123%29.%20deploy%2FCaddyfile%20has%20no%20request_body%20limit.::agentbox%2Fapi.py%23build%20route%20and%20dependency%20ordering%20%28principal%2C%20screen_principal%2C%20put_files%2C%20novnc%29%3B%20agentbox%2Fsandbox.py%23extract_novnc%3B%20agentbox%2Fweb.py%23login%3B%20deploy%2FCaddyfile::Pre-authentication%20work%20imbalance%20%28unbounded%20body%20buffering%20and%20temp-file%20spooling%20before%20auth%2C%20unauthenticated%20Docker-daemon%20work%2C%20unauthenticated%20audit-row%20growth%29",
   "x_prior_fingerprints": [],
-  "x_hunter": "h-preauth"
+  "x_hunter": "h-preauth",
+  "x_hardening": [
+   "GET /docs, /redoc, /openapi.json and /healthz are served without any credential (all four returned 200 in the local check); /healthz also discloses runtime, image name, template names and dev_only (api.py:368-371). Build the app with docs_url=None, redoc_url=None, openapi_url=None when not explicitly enabled, gate the schema routes, and reduce /healthz to {\"ok\": true} (api.py:111).",
+   "A non-ASCII credential turns secrets.compare_digest into a TypeError, so the JSON API answers a bare 500 instead of 401/403 (api.py:119) and both the agent approval attempt record (api.py:253-259) and the failed-login record (web.py:135-139) are skipped. Reject non-ASCII tokens before compare_digest, or compare bytes, so a malformed credential is a recorded 401.",
+   "Dependencies are declared as lower bounds only with no lockfile (pyproject.toml:8-18), so a rebuild can silently pick a different fastapi/uvicorn/starlette and with it different body-parsing and multipart defaults. Pin with hashes for reproducible deployments (the supply-chain block is out of scope for this run).",
+   "deploy/docker-compose.yml gives the control-plane container the Docker socket and sets no mem_limit/pids_limit, so both the body-buffering and the spool variants of the first candidate are bounded only by the host. Add container-level memory and pid limits and a sized tmpfs for /tmp as defence in depth.",
+   "The novnc extraction's success marker is a single file and the failure path is not recorded anywhere (sandbox_desktop.py:148-169), so an operator cannot tell a missing marker from a broken extraction. Log one audit row on extraction failure and expose the marker state on the desktop route instead of retrying silently."
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v13"
  },
  {
   "coverage_id": "agent-controlled%20audit%20content%20%28tool%20args%2C%20file%20names%2C%20process%20args%29%20and%20timeline%20readers%20%28GET%20%2Faudit%2C%20%2Fui%2Faudit%2C%20agentbox%20audit%29::agentbox%2Faudit.py%23hash%20chain%20%2B%20append-only%20triggers%20%2B%20list%20ordering%2Flimit::agentbox%2Faudit.py%20%2B%20agentbox%2Fweb.py%23audit%20%2B%20agentbox%2Fcli.py%23cmd_audit::ATTACK-CLASSES.md%23Business%20logic",
@@ -444,7 +600,8 @@
     ],
     "invariant": "CLI audit paging terminates and cannot livelock.",
     "method": "source",
-    "result": "after_id advances to the last id of each page and the loop breaks on an empty page (cli.py:255-260); ids are strictly increasing, so the loop terminates at the newest row. The remaining cost is client-side memory in the operator's own process (all pages accumulate in 'rows'), which is not a shared-service effect."
+    "result": "after_id advances to the last id of each page and the loop breaks on an empty page (cli.py:255-260); ids are strictly increasing, so the loop terminates at the newest row. The remaining cost is client-side memory in the operator's own process (all pages accumulate in 'rows'), which is not a shared-service effect.",
+    "artifact": null
    }
   ],
   "result_fingerprints": [],
@@ -561,7 +718,8 @@
     ],
     "invariant": "The LLM loop dispatches only the three declared tools, and injected content can reach no authority beyond the agent token's own tool calls: the only sinks are the escaped terminal log and the model context.",
     "method": "source",
-    "result": "agent.py:38-66 declares list_dir/read_file/exec only; run() rejects any other model-chosen name at 261-262 before dispatch, so no alias reaches the API. ToolClient (88-126) holds an agent token and issues only POST /sandboxes/{sid}/tools/{tool} and GET /approvals/{aid}; nothing in agent.py posts a decision to /approvals/{aid} or any other human-only route, so a prompt-injected model cannot approve its own pending exec. call_text handing file content to the model is by design (untrusted tool output) and the operator sees it only through the escaped log callback."
+    "result": "agent.py:38-66 declares list_dir/read_file/exec only; run() rejects any other model-chosen name at 261-262 before dispatch, so no alias reaches the API. ToolClient (88-126) holds an agent token and issues only POST /sandboxes/{sid}/tools/{tool} and GET /approvals/{aid}; nothing in agent.py posts a decision to /approvals/{aid} or any other human-only route, so a prompt-injected model cannot approve its own pending exec. call_text handing file content to the model is by design (untrusted tool output) and the operator sees it only through the escaped log callback.",
+    "artifact": null
    },
    {
     "agent_id": "h-wild",
@@ -570,7 +728,8 @@
     ],
     "invariant": "MCP tool identity and credential are bound to the process environment (one stdio client per server process) rather than to attacker-influenceable server/tool names, request ids or URIs, and no approval-mutating tool is exposed.",
     "method": "source",
-    "result": "URL/SID/TOKEN are read once at import (37-40) and each call builds a fresh AsyncClient with that Bearer token (52-55); the fixed tool set (107-165) maps 1:1 onto /sandboxes/{SID}/tools/{tool}, accepts no sandbox id or token argument, and contains no approve/deny tool. mcp.run() (168-169) is stdio-only, so two clients cannot share one server identity and one server's result cannot satisfy another connection's pending call. The 423 branch (92-95) only re-posts the same tool after a handback. No identity-confusion path found."
+    "result": "URL/SID/TOKEN are read once at import (37-40) and each call builds a fresh AsyncClient with that Bearer token (52-55); the fixed tool set (107-165) maps 1:1 onto /sandboxes/{SID}/tools/{tool}, accepts no sandbox id or token argument, and contains no approve/deny tool. mcp.run() (168-169) is stdio-only, so two clients cannot share one server identity and one server's result cannot satisfy another connection's pending call. The 423 branch (92-95) only re-posts the same tool after a handback. No identity-confusion path found.",
+    "artifact": null
    },
    {
     "agent_id": "h-wild",
@@ -580,7 +739,8 @@
     ],
     "invariant": "`agentbox agent` refuses to hand a human-authority credential to the model loop.",
     "method": "source",
-    "result": "cmd_agent exits when the token text starts with hum_ (cli.py:340-341) and the file-backed human token always carries that prefix (config.py:97-99), so the shipped configuration cannot give the loop human authority. The guard is string-shaped only: config.Settings.human_token() returns AGENTBOX_HUMAN_TOKEN verbatim with no format assertion (config.py:88-92), so an operator-chosen prefix-less token would pass the check. Recorded as hardening, not a candidate, because the loop still exposes no approval or lifecycle endpoint and the reachable authority stays the three tools."
+    "result": "cmd_agent exits when the token text starts with hum_ (cli.py:340-341) and the file-backed human token always carries that prefix (config.py:97-99), so the shipped configuration cannot give the loop human authority. The guard is string-shaped only: config.Settings.human_token() returns AGENTBOX_HUMAN_TOKEN verbatim with no format assertion (config.py:88-92), so an operator-chosen prefix-less token would pass the check. Recorded as hardening, not a candidate, because the loop still exposes no approval or lifecycle endpoint and the reachable authority stays the three tools.",
+    "artifact": null
    }
   ],
   "result_fingerprints": [],
@@ -1239,6 +1399,22 @@
     "method": "source",
     "result": "web.py:245-261 routes take_snapshot/restore/delete through browser_human (screen_human, scope '*') and pass p.session into the service call, so only a scope-'*' human session can drive them and the audit row carries the session. A desktop-link session (scope = one sid) is rejected before the service method.",
     "artifact": null
+   },
+   {
+    "agent_id": "v10",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/desktop.py",
+     "agentbox/gui_bursts.py",
+     "agentbox/sandbox.py",
+     "agentbox/service.py",
+     "agentbox/web.py"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
@@ -1258,7 +1434,9 @@
    "create_app (api.py:376-378) is a documented entrypoint that skips bind_problem and runtime_problem entirely; if it is ever used for a real deployment the TLS and runtime gates are absent. Either route the factory through the same checks or drop the --factory hint.",
    "Behind --behind-tls-proxy, forwarded_allow_ips defaults to '*' (cli.py:126). compose does not publish 8765, so no source-visible peer can forge X-Forwarded-Proto, but the setting should pin the proxy address; owner-observed check: confirm the control-plane port is unreachable except from the Caddy container.",
    "DELETE leaves snapshots rows in the SQLite database (and, when image removal fails, the image itself) plus the per-sandbox sources/{sid} directory for empty-source sandboxes; retention after delete rather than disk pressure, so no unit owns it."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v10"
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2F%7Bclick%2Ctype%2Ckey%2Cscreenshot%7D::agentbox%2Fgui_bursts.py%23GUI%20burst%20snapshot%20%2B%20fail-closed%20baseline%20%2B%20gui_changes%20%2B%20stray%20kill%20%28N-1%20partial%20mitigation%29::agentbox%2Fgui_bursts.py%20%2B%20agentbox%2Fservice.py%23_run_tool::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
@@ -2079,15 +2257,71 @@
   "prior_status": "prior_covered_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-preauth",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/desktop.py",
+   "agentbox/web.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/web.py"
+    ],
+    "invariant": "Each route resolves the right principal kind for the right resource (human_only vs agent-token sandbox binding)",
+    "method": "source",
+    "result": "create/pause/resume/snapshots/restore/delete/audit/verify/desktop-ticket and every /ui mutation use human_only or browser_human; call_tool (217-218), get_sandbox (185-186), get_approval (236-240) and desktop_state (327-328) bind an agent token to its own sandbox_id and answer 403 otherwise; POST /approvals/{aid} rejects agent tokens at 252-259 and records the attempt; screen_human additionally requires scope '*' (153-155) and desktop_human requires scope in ('*', sid) (161-162).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/api.py",
+     "agentbox/desktop.py"
+    ],
+    "invariant": "A desktop-link session scoped to one sandbox cannot read or act on another sandbox through the browser routes",
+    "method": "local",
+    "result": "With a session cookie scoped to sb-A: /ui/sandboxes/sb-B, /ui/sandboxes/sb-A and /ui redirected to /login (session_of at web.py:96-97 accepts only scope '*'), /ui/sandboxes and /ui/audit answered 403 via browser_human, /sandboxes/sb-B/outbox answered 403, /sandboxes/sb-B/desktop answered 401 (session bound to sid at api.py:319) and /sandboxes/sb-B/desktop/state answered 403; no response body contained sb-B's record. The missing browser_human on /ui/sandboxes/{sid} (web.py:195-204) is therefore compensated by the scope-aware session lookup - defence in depth, not a boundary break.",
+    "artifact": "agents/h-preauth/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/desktop.py"
+    ],
+    "invariant": "Cookie-authenticated routes bind the sandbox from the URL, not only the session",
+    "method": "source",
+    "result": "desktop_page passes sid into desktop.session(cookie, sid), which requires the stored scope to be '*' or that sid (desktop.py:162-167); desktop_human (api.py:157-163) and desktop_state (325-330) re-check p.scope; put_files, outbox, outbox_file and approval_capture require screen_human, i.e. scope '*' only.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/api.py"
+    ],
+    "invariant": "A malformed credential is rejected as an authentication error instead of an exception",
+    "method": "local",
+    "result": "A non-ASCII bearer token makes secrets.compare_digest raise TypeError (api.py:119) and GET /sandboxes, GET /approvals/{aid} and POST /approvals/{aid} all returned a bare 500 instead of 401/403; the agent attempt record at api.py:253-259 was skipped (0 approval_forbidden rows), so the failure mode also drops an audit record. Reported as hardening, not as a boundary break: no unauthorized state is reached.",
+    "artifact": "agents/h-preauth/artifacts/h.out"
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
   "x_prior_unit": "agentbox%2Fapi.py%23all%20JSON%20and%20browser%20routes::agentbox%2Fapi.py%23principal%20%2B%20human_only%20%2B%20screen_human%20%2B%20desktop_human::agentbox%2Fapi.py::ATTACK-CLASSES.md%23Access%20control",
   "x_prior_fingerprints": [],
-  "x_hunter": "h-preauth"
+  "x_hunter": "h-preauth",
+  "x_hardening": [
+   "GET /docs, /redoc, /openapi.json and /healthz are served without any credential (all four returned 200 in the local check); /healthz also discloses runtime, image name, template names and dev_only (api.py:368-371). Build the app with docs_url=None, redoc_url=None, openapi_url=None when not explicitly enabled, gate the schema routes, and reduce /healthz to {\"ok\": true} (api.py:111).",
+   "A non-ASCII credential turns secrets.compare_digest into a TypeError, so the JSON API answers a bare 500 instead of 401/403 (api.py:119) and both the agent approval attempt record (api.py:253-259) and the failed-login record (web.py:135-139) are skipped. Reject non-ASCII tokens before compare_digest, or compare bytes, so a malformed credential is a recorded 401.",
+   "Dependencies are declared as lower bounds only with no lockfile (pyproject.toml:8-18), so a rebuild can silently pick a different fastapi/uvicorn/starlette and with it different body-parsing and multipart defaults. Pin with hashes for reproducible deployments (the supply-chain block is out of scope for this run).",
+   "deploy/docker-compose.yml gives the control-plane container the Docker socket and sets no mem_limit/pids_limit, so both the body-buffering and the spool variants of the first candidate are bounded only by the host. Add container-level memory and pid limits and a sized tmpfs for /tmp as defence in depth.",
+   "The novnc extraction's success marker is a single file and the failure path is not recorded anywhere (sandbox_desktop.py:148-169), so an operator cannot tell a missing marker from a broken extraction. Log one audit row on extraction failure and expose the marker state on the desktop route instead of retrying silently."
+  ]
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23tools%20read_file%2Fwrite_file%2Fdelete_file%2Flist_dir%20%2B%20POST%20files%20%2B%20GET%20outbox::agentbox%2Fsandbox.py%23safe_path%20%2B%20_workspace_path%20%2B%20clean_name%20%2B%20FIFO%20guard::agentbox%2Fsandbox.py::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
@@ -2457,6 +2691,18 @@
     "method": "source",
     "result": "_call_tool decides the burst at service.py:343 before taking gui_lock in _run_tool (service.py:136); _check_control (152-161) re-checks only lease/pending. After a burstless input, mark_input (139) makes needs_snapshot False (gui_bursts.py:62) for every following input until gui_snapshot_interval (600 s). Other state leads settled as fail-safe or narrow: stale-lease path (takeover_idle 600 > gui_snapshot_idle 60), close_idle get(sid,0.0), decide-side open overwriting _gui_burst, graceful shutdown.",
     "artifact": null
+   },
+   {
+    "agent_id": "v08",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/gui_bursts.py",
+     "agentbox/service.py"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
@@ -2470,7 +2716,9 @@
    "GUI_LOCK_WAIT is 30 s (service.py:169-178) while type_text worst case is 115 s (sandbox_desktop.py:116), so a legitimate takeover can time out behind a long agent type and return 503.",
    "end_desktop swallows the handback 503 (service.py:583-586) and close_all then deletes the lease row (desktop.py:274-280), so recover_takeovers cannot repair an unpaired human_takeover.",
    "takeover runs bursts.close synchronously under gui_lock (service.py:514), holding it for the whole container-bounded close (~75 s)."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v08"
  },
  {
   "coverage_id": "agentbox%2Fweb.py%23%2Fui%20pages%20%2B%20agentbox%2Fdesktop.py%23page%20rendered%20in%20a%20frame::agentbox%2Fapi.py%23X-Frame-Options%20%2B%20CSP%20frame-ancestors%20%27self%27%20on%20cookie-authenticated%20pages%20%2B%20SameSite%3DStrict%20%2B%20same_origin::agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py%20%2B%20agentbox%2Fdesktop.py::CLIENT-SIDE.md%23Clickjacking",
@@ -2687,6 +2935,20 @@
     "method": "local",
     "result": "ASGI fixtures in sbx: POST /login with Origin http://agentbox.example + Host agentbox.example -> 200 (accepted; scheme never compared), Origin https://agentbox.example -> 200, Origin http://evil.example -> 403, Origin: null -> 403, Origin http://agentbox.example@evil.example -> 403, no Origin -> 200. With a real session cookie from desktop.new_session('*'): POST /ui/approvals/apr_000000000000/approve with the cross-scheme Origin -> 200 (handler ran; approval-not-found rendered) and with Origin https://evil.example -> 403; POST /ui/sandboxes with the cross-scheme Origin reached create_sandbox (the Docker stub raised); POST /logout with the cross-scheme Origin -> 303 carrying Set-Cookie agentbox_session empty with Max-Age=0 and Path=/, both with a valid cookie (server session then ended: GET /ui -> 303 /login) and with no cookie at all.",
     "artifact": "agents/h-webui/artifacts/h.out"
+   },
+   {
+    "agent_id": "v02",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/cli.py",
+     "agentbox/desktop.py",
+     "agentbox/web.py"
+    ],
+    "note": "phase3 decision needs_validation",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision needs_validation"
    }
   ],
   "result_fingerprints": [
@@ -2706,7 +2968,9 @@
    "same_origin accepts a missing Origin header (api.py:133). No current browser omits Origin on a cross-site POST, yet a Sec-Fetch-Site or Referer fallback would make the gate fail closed instead of open.",
    "POST /logout emits its cookie-clearing Set-Cookie even when the request carried no valid session, and the deletion cookie uses Starlette defaults (SameSite=lax, no HttpOnly/Secure) while the original is SameSite=strict, HttpOnly and Secure (web.py:149-150 versus desktop.py:60); emitting delete_cookie only on a real session end, with matching attributes, narrows the accepted-origin forced logout.",
    "_NoFraming appends content-security-policy: frame-ancestors 'self' to every response, including JSON, PNG captures and file downloads (api.py:63-80). Harmless today because no route sets its own CSP and multiple CSP headers intersect, but a future route-level CSP would silently be ANDed with it."
-  ]
+  ],
+  "x_decision": "needs_validation",
+  "x_decided_by": "v02"
  },
  {
   "coverage_id": "approval%20card%20impact%20table%20and%20request-time%20screen%20capture%20for%20gated%20exec%2FGUI%20calls::agentbox%2Fpreview.py%23preview%20%2B%20split_segments%20%2B%20expand%2Fwalk%20callbacks%3A%20system-computed%20%27affected%27%20list::agentbox%2Fpreview.py%20%2B%20agentbox%2Fsandbox.py%23preview%20%2B%20agentbox%2Fservice.py%23_preview%2F_capture::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
@@ -2751,7 +3015,7 @@
   "prior_status": "prior_confirmed_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "covered",
+  "status": "candidate",
   "agent_id": "h-policy",
   "reviewed_paths": [
    "agentbox/api.py",
@@ -2776,9 +3040,27 @@
     "method": "local",
     "result": "POST /approvals/{aid} rejects agent principals with 403 and audits approval_forbidden (api.py:250-262); the Decision body has only \"decision\" (api.py:55-56); decide() executes the stored row (service.py:391,398,421) and ApprovalStore cannot rewrite args after INSERT (approvals.py:49-96). 16 concurrent claims -> exactly 1 winner; expired and denied rows refuse a later approve; a failed approval_decision or snapshot audit marks the row FAILED before any execution (service.py:399-418). Browser decisions need scope \"*\" (api.py:365,149-155), so a desktop-link session cannot approve.",
     "artifact": "agents/h-policy/artifacts/h_bind.out"
+   },
+   {
+    "agent_id": "v06",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/approvals.py",
+     "agentbox/cli.py",
+     "agentbox/service.py",
+     "agentbox/templates/_approvals.html",
+     "agentbox/web.py"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
-  "result_fingerprints": [],
+  "result_fingerprints": [
+   "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets"
+  ],
   "unresolved": [],
   "x_prior_unit": "approval%20card%20impact%20table%20and%20request-time%20screen%20capture%20for%20gated%20exec%2FGUI%20calls%20%28agentbox%2Fsandbox.py%23preview%2C%20agentbox%2Fservice.py%23_preview%2F_capture%2C%20agentbox%2Ftemplates%2F_approvals.html%2C%20agentbox%2Fcli.py%23_show_approval%29::agentbox%2Fsandbox.py%23preview%20%2B%20_split_segments%20%2B%20_expand%20%2B%20_walk%3A%20the%20system-computed%20%27affected%27%20list%20and%20%27system-captured%27%20screenshot%20shown%20to%20the%20human%20must%20reflect%20what%20the%20stored%20args%20will%20actually%20do::agentbox%2Fsandbox.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
   "x_prior_fingerprints": [
@@ -2792,7 +3074,9 @@
    "The impact table is request-time only: decide() re-runs the stored command without recomputing the preview, so an rm glob can cover files created while the card was pending.",
    "The approval_requested audit payload embeds the whole preview (command, affected paths, every note) with no size bound, while tool args are capped by _logged_args.",
    "GUI approvals execute at decide time against the then-current screen while the card shows the request-time capture; a takeover lease blocks execution and each input burst is snapshotted."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v06"
  },
  {
   "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs%20%28sandbox.py%2C%20sandbox_desktop.py%29::agentbox%2Fsandbox.py%20%2B%20agentbox%2Fsandbox_desktop.py%20%2B%20images%2Fdesktop::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",
@@ -3032,6 +3316,42 @@
     "method": "source",
     "result": "Only exec/read_file/outbox_read/workspace_manifest are capped (sandbox.py:413-421,441,545,376-378). list_dir (428), outbox_list (534), preview _expand (560) and screenshot (sandbox_desktop.py:86-88) read the whole stream: locally an 8 MiB fake stream was accepted by screenshot (returned an 8388616-byte png, base64 11184824 B) and by list_dir (65556-char listing after truncation). ToolCall.args is an unbounded dict (api.py:51-52) and deploy/Caddyfile has no request_body limit. Real growth happens in the Docker SDK stream reader, which the sandbox cannot exercise.",
     "artifact": null
+   },
+   {
+    "agent_id": "v04",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/audit.py",
+     "agentbox/preview.py",
+     "agentbox/sandbox.py",
+     "agentbox/sandbox_common.py",
+     "agentbox/sandbox_desktop.py",
+     "agentbox/service.py",
+     "deploy/Caddyfile"
+    ],
+    "note": "phase3 decision needs_validation",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision needs_validation"
+   },
+   {
+    "agent_id": "v09",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/audit.py",
+     "agentbox/preview.py",
+     "agentbox/sandbox.py",
+     "agentbox/sandbox_common.py",
+     "agentbox/sandbox_desktop.py",
+     "agentbox/service.py",
+     "deploy/Caddyfile"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
@@ -3050,7 +3370,9 @@
    "expire_stale only runs from decide and the approval read routes, so a pending approval on a sandbox nobody polls keeps its capture PNG until someone looks.",
    "ApprovalStore.create stores raw args and preview, so 20 pending approvals can retain 20 x body-size rows in SQLite.",
    "audit._mask runs four regex scans over the whole payload while holding the process-wide audit lock; bounding the payload also protects the lock."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v09"
  },
  {
   "coverage_id": "container%20output%3A%20ps%2C%20xdotool%20getwindowpid%2C%20find%20-printf%20manifest::agentbox%2Fgui_state.py%23_parse_ps%20%2B%20gui_strays%20%2B%20_parse_manifest%20%2B%20diff_manifest::agentbox%2Fgui_state.py%20%2B%20agentbox%2Fsandbox_desktop.py%23desktop_processes%2Fkill_processes::ATTACK-CLASSES.md%23Business%20logic",
@@ -3170,6 +3492,19 @@
     "method": "source",
     "result": "_parse_manifest (gui_state.py:17-29) consumes NUL-separated 4-field records; a Linux filename cannot contain NUL, so a path cannot inject or shift fields, the incomplete tail record is dropped (21) and truncated is set at the 8 MiB cap (20). diff_manifest (32-35) compares only (size, mtime, ctime) equality. Residual hardening: workspace_manifest runs find ... | head -c through sh -c (sandbox.py:376-378), so the pipeline status is head's and a find failure returns 0 with a partial manifest and truncated=False; missing entries can only mislabel a change as added/deleted, never as unchanged, so no hiding path was found.",
     "artifact": null
+   },
+   {
+    "agent_id": "v05",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/gui_state.py",
+     "agentbox/sandbox.py",
+     "agentbox/sandbox_desktop.py"
+    ],
+    "note": "phase3 decision needs_validation",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision needs_validation"
    }
   ],
   "result_fingerprints": [
@@ -3187,7 +3522,9 @@
    "agentbox/gui_bursts.py:55-57 plus agentbox/config.py:51: AGENTBOX_GUI_SNAPSHOT_INTERVAL=0 silently disables the snapshot and the burst record for all GUI input; reject 0 at config load or log a startup warning so a GUI audit trail cannot be switched off unnoticed.",
    "agentbox/service.py:250-265 opens a burst without the gui_lock, so a takeover that closes the burst in between (service.py:514) leaves a baseline that predates the human's own changes and their edits are recorded as agent gui_changes. Same burst-open/close ordering family as the h-gui-race unit; noted for routing, not claimed here.",
    "agentbox/sandbox_desktop.py:138-139 runs x11vnc without -noremote and -safer; the only RFB peer is the authenticated control-plane relay over exec stdio and its uid-1001 authority is what a takeover already grants, so no boundary is crossed, but both flags are free."
-  ]
+  ],
+  "x_decision": "needs_validation",
+  "x_decided_by": "v05"
  },
  {
   "coverage_id": "container-controlled%20strings%20rendered%20to%20humans%20%28outbox%20names%2C%20gui_changes%20paths%2C%20ps%20args%2C%20exec%20output%2C%20errors%2C%20approval%20cards%29::agentbox%2Fdisplay.py%23escape_controls%20%2B%20agentbox%2Fweb.py%23describe%2F_shown%2Ffinalize%20%2B%20Jinja%20autoescape%20%2B%20agentbox%2Fcli.py%23_safe::agentbox%2Fdisplay.py%20%2B%20agentbox%2Fweb.py%20%2B%20agentbox%2Fcli.py%20%2B%20agentbox%2Ftemplates::AI-AND-LLM.md%23Insecure%20output%20rendering",
@@ -3330,6 +3667,28 @@
     "method": "source",
     "result": "desktop.page (desktop.py:356-358) substitutes __SID__/__RUNTIME__ into PAGE with no escaping, including inside a script block (desktop.py:309,317), but the id is always 'sb_' + secrets.token_hex(4) (sandbox.py:273), the page is only served for an existing sandbox row with a valid session scope (api.py:319-323), and runtime comes from Settings. No attacker-controlled string reaches that replacement.",
     "artifact": null
+   },
+   {
+    "agent_id": "v12",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/agent.py",
+     "agentbox/api.py",
+     "agentbox/audit.py",
+     "agentbox/cli.py",
+     "agentbox/desktop.py",
+     "agentbox/display.py",
+     "agentbox/sandbox.py",
+     "agentbox/templates/_approvals.html",
+     "agentbox/templates/_outbox.html",
+     "agentbox/templates/_verify.html",
+     "agentbox/templates/base.html",
+     "agentbox/web.py"
+    ],
+    "note": "phase3 decision needs_validation",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision needs_validation"
    }
   ],
   "result_fingerprints": [
@@ -3350,7 +3709,9 @@
    "same_origin accepts a missing Origin header (api.py:133). No current browser omits Origin on a cross-site POST, yet a Sec-Fetch-Site or Referer fallback would make the gate fail closed instead of open.",
    "POST /logout emits its cookie-clearing Set-Cookie even when the request carried no valid session, and the deletion cookie uses Starlette defaults (SameSite=lax, no HttpOnly/Secure) while the original is SameSite=strict, HttpOnly and Secure (web.py:149-150 versus desktop.py:60); emitting delete_cookie only on a real session end, with matching attributes, narrows the accepted-origin forced logout.",
    "_NoFraming appends content-security-policy: frame-ancestors 'self' to every response, including JSON, PNG captures and file downloads (api.py:63-80). Harmless today because no route sets its own CSP and multiple CSP headers intersect, but a future route-level CSP would silently be ANDed with it."
-  ]
+  ],
+  "x_decision": "needs_validation",
+  "x_decided_by": "v12"
  },
  {
   "coverage_id": "every%20audit%20append%20%28tool%20args%2C%20results%2C%20errors%2C%20GUI%20records%29::agentbox%2Faudit.py%23mask_text%20%2B%20_mask::agentbox%2Faudit.py::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
@@ -3465,7 +3826,8 @@
     ],
     "invariant": "Control-plane tokens are registered as secrets and never persist in the log in clear.",
     "method": "source",
-    "result": "The human token is registered before any append (api.py:86-88) and each sandbox token right after creation (service.py:436), and the token patterns in audit.py:58-70 additionally cover agt_/hum_ values of 16+ characters, so a token echoed into args, stdout_head or an error message is masked even if registration were missed."
+    "result": "The human token is registered before any append (api.py:86-88) and each sandbox token right after creation (service.py:436), and the token patterns in audit.py:58-70 additionally cover agt_/hum_ values of 16+ characters, so a token echoed into args, stdout_head or an error message is masked even if registration were missed.",
+    "artifact": null
    },
    {
     "agent_id": "h-audit",
@@ -3474,7 +3836,8 @@
     ],
     "invariant": "A failure inside the masking step cannot fall back to writing unmasked payloads or a broken chain.",
     "method": "source",
-    "result": "payload is masked at audit.py:160 before BEGIN IMMEDIATE and before the INSERT, and the hash is computed over the masked record (audit.py:169-184); an exception in masking aborts the append without a row, so there is no no-crypto fallback. The defect is only that such an exception is not converted to AuditWriteError (it escapes as a raw exception), which the unit-1 harness observed."
+    "result": "payload is masked at audit.py:160 before BEGIN IMMEDIATE and before the INSERT, and the hash is computed over the masked record (audit.py:169-184); an exception in masking aborts the append without a row, so there is no no-crypto fallback. The defect is only that such an exception is not converted to AuditWriteError (it escapes as a raw exception), which the unit-1 harness observed.",
+    "artifact": null
    }
   ],
   "result_fingerprints": [],
@@ -3557,15 +3920,92 @@
   "prior_status": "prior_covered_changed_source",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "covered",
   "agent_id": "h-preauth",
-  "reviewed_paths": [],
-  "local_checks": [],
+  "reviewed_paths": [
+   ".gitignore",
+   "agentbox/api.py",
+   "agentbox/audit.py",
+   "agentbox/cli.py",
+   "agentbox/config.py",
+   "agentbox/desktop.py",
+   "agentbox/web.py",
+   "deploy/Caddyfile",
+   "deploy/docker-compose.yml"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/config.py",
+     "agentbox/audit.py",
+     "deploy/Caddyfile",
+     "deploy/docker-compose.yml",
+     ".gitignore"
+    ],
+    "invariant": "No hardcoded or default credentials in source, deploy files or the repository tree",
+    "method": "source",
+    "result": "The human token is generated with secrets.token_urlsafe and stored 0600 (config.py:88-100), agent tokens are stored only as hashes (sandbox.py:58, 211-223), LLM keys come from the environment, the compose/Caddy files carry no secret values, .gitignore covers .env/.env.*/*.env/data/ and the tree contains no .env, .pem, .key or credentials file. The only key-shaped literals in source are audit.py's masking regexes (audit.py:59-69).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/cli.py"
+    ],
+    "invariant": "No debug mode, schema/introspection route or verbose error page is exposed in production",
+    "method": "local",
+    "result": "FastAPI() is built without debug and without docs_url/redoc_url/openapi_url overrides (api.py:111); with no credential, /healthz, /openapi.json, /docs, /redoc and /static/htmx.min.js all returned 200, and /healthz disclosed runtime, image name, template names and dev_only=true. Error responses are Starlette's generic 500 because debug is never enabled. The route inventory contains no /admin, /debug, /env, /metrics, /config or /status route.",
+    "artifact": "agents/h-preauth/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/desktop.py",
+     "agentbox/config.py",
+     "deploy/docker-compose.yml"
+    ],
+    "invariant": "Session cookies carry HttpOnly, SameSite and Secure where TLS is in play",
+    "method": "source",
+    "result": "desktop.py:58-60 sets httponly=True, samesite='strict' and secure from the caller; compose forces AGENTBOX_BEHIND_TLS_PROXY=1 (docker-compose.yml:22) and cmd_serve then sets s.secure_cookie (cli.py:102), so the shipped deployment marks the cookie Secure. Tickets are 60 s and one-time, sessions 12 h, and both carry the human-token generation fingerprint so rotation revokes them (desktop.py:148-160).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/web.py",
+     "agentbox/api.py"
+    ],
+    "invariant": "No permissive CORS, no open redirect and no dynamic-code primitive on request data",
+    "method": "source",
+    "result": "There is no CORSMiddleware and no Access-Control-* header anywhere, so no wildcard/allow-credentials combination exists; every RedirectResponse target is a constant or a path built from its own route parameter (api.py:316, web.py:112, 120, 149, 167, 198) with no request-derived host or return URL, so there is no open redirect; no eval/exec/compile of request data, and the only subprocess call uses an argv list with no shell (desktop_ws.py:26-28).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-preauth",
+    "reviewed_paths": [
+     "agentbox/cli.py",
+     "deploy/Caddyfile"
+    ],
+    "invariant": "Plaintext HTTP is refused off-loopback and TLS terminates at the shipped proxy",
+    "method": "source",
+    "result": "bind_problem (cli.py:68-74) rejects any non-loopback host without TLS or --behind-tls-proxy, and the shipped Caddyfile terminates TLS and forwards to the container port that compose only exposes on the internal network (docker-compose.yml:29-30, 38-40). The gate itself belongs to the deployment unit (owner h-lifecycle); verified present only.",
+    "artifact": null
+   }
+  ],
   "result_fingerprints": [],
   "unresolved": [],
   "x_prior_unit": "whole-repo%23basic%20exposures::whole-repo%23obvious%20controls%20%28secrets%2C%20debug%2C%20cookies%2C%20CORS%2C%20redirects%2C%20errors%29::whole-repo::ATTACK-CLASSES.md%23Obvious%20things",
   "x_prior_fingerprints": [],
-  "x_hunter": "h-preauth"
+  "x_hunter": "h-preauth",
+  "x_hardening": [
+   "GET /docs, /redoc, /openapi.json and /healthz are served without any credential (all four returned 200 in the local check); /healthz also discloses runtime, image name, template names and dev_only (api.py:368-371). Build the app with docs_url=None, redoc_url=None, openapi_url=None when not explicitly enabled, gate the schema routes, and reduce /healthz to {\"ok\": true} (api.py:111).",
+   "A non-ASCII credential turns secrets.compare_digest into a TypeError, so the JSON API answers a bare 500 instead of 401/403 (api.py:119) and both the agent approval attempt record (api.py:253-259) and the failed-login record (web.py:135-139) are skipped. Reject non-ASCII tokens before compare_digest, or compare bytes, so a malformed credential is a recorded 401.",
+   "Dependencies are declared as lower bounds only with no lockfile (pyproject.toml:8-18), so a rebuild can silently pick a different fastapi/uvicorn/starlette and with it different body-parsing and multipart defaults. Pin with hashes for reproducible deployments (the supply-chain block is out of scope for this run).",
+   "deploy/docker-compose.yml gives the control-plane container the Docker socket and sets no mem_limit/pids_limit, so both the body-buffering and the spool variants of the first candidate are bounded only by the host. Add container-level memory and pid limits and a sized tmpfs for /tmp as defence in depth.",
+   "The novnc extraction's success marker is a single file and the failure path is not recorded anywhere (sandbox_desktop.py:148-169), so an operator cannot tell a missing marker from a broken extraction. Log one audit row on extraction failure and expose the marker state on the desktop route instead of retrying silently."
+  ]
  },
  {
   "coverage_id": "whole-repo%23undocumented%2Fedge%20surfaces::whole-repo%23feature%20interactions%20not%20covered%20by%20other%20units::whole-repo::ATTACK-CLASSES.md%23Wildcard",
@@ -3674,7 +4114,8 @@
     ],
     "invariant": "Every lifecycle path closes the burst and clears burst state before the container is paused or replaced, and a failed close is recorded rather than silently dropped.",
     "method": "source",
-    "result": "pause_sandbox logs, then bursts.end, then pauses (service.py:444-448); resume_sandbox resets timers after resume (450-454); restore_sandbox calls end_desktop (462-469), which calls bursts.end before lease cleanup (579-587) and resets timers again after the swap; delete_sandbox does the same (471-475). api.py:189-212 routes all reach these methods. _finish writes gui_burst_close_failed on container mismatch or exec failure (gui_bursts.py:95-126) and _stop_strays failures are logged with the stray list (79-93), so the record's second half (burst popped before its enforcement steps and failures returning silently) is also closed."
+    "result": "pause_sandbox logs, then bursts.end, then pauses (service.py:444-448); resume_sandbox resets timers after resume (450-454); restore_sandbox calls end_desktop (462-469), which calls bursts.end before lease cleanup (579-587) and resets timers again after the swap; delete_sandbox does the same (471-475). api.py:189-212 routes all reach these methods. _finish writes gui_burst_close_failed on container mismatch or exec failure (gui_bursts.py:95-126) and _stop_strays failures are logged with the stray list (79-93), so the record's second half (burst popped before its enforcement steps and failures returning silently) is also closed.",
+    "artifact": null
    }
   ],
   "result_fingerprints": [],

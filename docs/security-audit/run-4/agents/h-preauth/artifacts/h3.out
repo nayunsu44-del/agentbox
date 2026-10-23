@@ -1,0 +1,163 @@
+{
+ "steps": [
+  {
+   "runtime": "runc",
+   "home": "/scratch/ab5",
+   "step": "build"
+  },
+  {
+   "status": 200,
+   "docker_containers_created": 1,
+   "extracted": [
+    "novnc/core",
+    "novnc/core/rfb.js"
+   ],
+   "step": "novnc_first"
+  },
+  {
+   "status": 200,
+   "docker_containers_created": 0,
+   "step": "novnc_steady_state"
+  },
+  {
+   "statuses": [
+    500,
+    200,
+    500,
+    500,
+    500,
+    500
+   ],
+   "errors": [
+    "FileExistsError: [Errno 17] File exists: '/scratch/ab5/novnc/core'",
+    null,
+    "FileExistsError: [Errno 17] File exists: '/scratch/ab5/novnc/core'",
+    "FileExistsError: [Errno 17] File exists: '/scratch/ab5/novnc/core'",
+    "FileExistsError: [Errno 17] File exists: '/scratch/ab5/novnc/core'",
+    "FileExistsError: [Errno 17] File exists: '/scratch/ab5/novnc/core'"
+   ],
+   "docker_containers_created": 6,
+   "step": "novnc_six_concurrent_unauth"
+  },
+  {
+   "i": 0,
+   "status": 404,
+   "creates_so_far": 1,
+   "step": "novnc_missing_path_request"
+  },
+  {
+   "i": 1,
+   "status": 404,
+   "creates_so_far": 2,
+   "step": "novnc_missing_path_request"
+  },
+  {
+   "i": 2,
+   "status": 404,
+   "creates_so_far": 3,
+   "step": "novnc_missing_path_request"
+  },
+  {
+   "path": "/ui/sandboxes/sb-B",
+   "status": 303,
+   "note": "other sandbox page (web.py:195-204)",
+   "err": null,
+   "leaked_other_sid": false,
+   "leaked_template": false,
+   "step": "scoped_probe"
+  },
+  {
+   "path": "/ui/sandboxes/sb-A",
+   "status": 303,
+   "note": "own sandbox page",
+   "err": null,
+   "leaked_other_sid": null,
+   "leaked_template": null,
+   "step": "scoped_probe"
+  },
+  {
+   "path": "/ui",
+   "status": 303,
+   "note": "index (web.py:164-168)",
+   "err": null,
+   "leaked_other_sid": null,
+   "leaked_template": null,
+   "step": "scoped_probe"
+  },
+  {
+   "path": "/ui/sandboxes",
+   "status": 403,
+   "note": "list fragment (browser_human)",
+   "err": null,
+   "leaked_other_sid": null,
+   "leaked_template": null,
+   "step": "scoped_probe"
+  },
+  {
+   "path": "/ui/audit",
+   "status": 403,
+   "note": "audit fragment (browser_human)",
+   "err": null,
+   "leaked_other_sid": null,
+   "leaked_template": null,
+   "step": "scoped_probe"
+  },
+  {
+   "path": "/sandboxes/sb-B/outbox",
+   "status": 403,
+   "note": "outbox (screen_human)",
+   "err": null,
+   "leaked_other_sid": null,
+   "leaked_template": null,
+   "step": "scoped_probe"
+  },
+  {
+   "path": "/sandboxes/sb-B/desktop",
+   "status": 401,
+   "note": "desktop page (session bound to sid)",
+   "err": null,
+   "leaked_other_sid": null,
+   "leaked_template": null,
+   "step": "scoped_probe"
+  },
+  {
+   "path": "/sandboxes/sb-B/desktop/state",
+   "status": 403,
+   "note": "desktop state (desktop_human)",
+   "err": null,
+   "leaked_other_sid": null,
+   "leaked_template": null,
+   "step": "scoped_probe"
+  },
+  {
+   "public": "hs_9cf88403",
+   "scope": "sb-A",
+   "cookie_len": 43,
+   "step": "scoped_session"
+  },
+  {
+   "path": "/sandboxes",
+   "status": 500,
+   "error": "TypeError: comparing strings with non-ASCII characters is not supported",
+   "step": "nonascii_bearer"
+  },
+  {
+   "path": "/approvals/apr1",
+   "status": 500,
+   "error": "TypeError: comparing strings with non-ASCII characters is not supported",
+   "step": "nonascii_bearer"
+  },
+  {
+   "path": "/sandboxes/sb-A",
+   "status": 500,
+   "error": "TypeError: comparing strings with non-ASCII characters is not supported",
+   "step": "nonascii_bearer"
+  },
+  {
+   "status": 500,
+   "error": "TypeError: comparing strings with non-ASCII characters is not supported",
+   "approval_forbidden_rows": 0,
+   "step": "nonascii_bearer_approval_post"
+  }
+ ]
+}

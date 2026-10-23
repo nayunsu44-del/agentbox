@@ -1,0 +1,117 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/service.py:snapshot-quota:toctou-between-quota-gate-and-pre-exec-snapshot",
+ "title": "Snapshot quota is decided from one container probe but the docker commit is triggered by a second, unguarded probe",
+ "description": "An agent holding only its sandbox's agent token can keep its sandbox over snapshot_quota (default 50) yet still obtain unapproved docker commits. _call_tool asks _over_snapshot_quota (service.py:298) only when the policy decision is ALLOW; that function returns False whenever _needs_snapshot is False, and for write_file _needs_snapshot runs sandboxes.exists() inside the agent's own container (service.py:236 -> sandbox.py:458-461). Execution then re-evaluates _needs_snapshot at service.py:343 and takes the commit unconditionally. Any state change between the two probes therefore turns an over-quota ALLOW into a commit: an ALLOW exec 'touch /workspace/p' (touch is in the read-only allowlist, default_policy.yaml:27) is not in SNAPSHOT_TOOLS, so it is not serialized by _snap_locks (service.py:35,278-284), and a process the agent started through the approval-free GUI tools works too. Repeating with fresh paths keeps producing commits past the quota with no human in the loop, and each commit copies the container's entire writable layer (config.py:44-45, sandbox.py:355-356) and keeps that image until the sandbox is deleted (sandbox.py:327-332).",
+ "claimed_root_cause": "The quota decision and the snapshot trigger read the same mutable container state twice (service.py:298 via _needs_snapshot/sandboxes.exists, then service.py:343 again) instead of binding one computed 'snapshot needed' decision to the commit, so the quota gate covers only the first probe.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 216,
+   "scope": "call_tool route",
+   "description": "Agent-token POST /sandboxes/{sid}/tools/write_file is dispatched to the 32-worker tool_pool (api.py:219-221)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 298,
+   "scope": "AgentBox._call_tool",
+   "description": "Quota gate runs only for an ALLOW decision and only reports a bool; the ALLOW decision itself is kept."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 248,
+   "scope": "AgentBox._over_snapshot_quota",
+   "description": "Over-quota is returned as False when _needs_snapshot is False (first probe of container state)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 461,
+   "scope": "SandboxManager.exists",
+   "description": "First probe: docker exec 'test -e <path>' in the agent-controlled container."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 343,
+   "scope": "AgentBox._call_tool",
+   "description": "Second, unguarded _needs_snapshot evaluation immediately before execution; it now sees the path and returns True."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox.py",
+   "line": 355,
+   "scope": "SandboxManager.snapshot",
+   "description": "docker commit of the whole container with pause=True; the image is kept until delete."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/service.py",
+   "line": 243,
+   "description": "_over_snapshot_quota: quota compare plus _needs_snapshot; the result only rewrites the decision, nothing binds it to the later commit."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 236,
+   "description": "write_file needs_snapshot = sandboxes.exists(path); a SandboxError is swallowed as False, so probe failure also skips the gate."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 345,
+   "description": "ALLOW path calls _snapshot on the second evaluation, with no re-check of the quota."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 250,
+   "description": "_snapshot performs the commit and writes the snapshot audit row, then returns to the caller."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 35,
+   "description": "SNAPSHOT_TOOLS = {write_file, delete_file} | GUI_INPUT - exec is excluded, so exec is neither snap-locked nor quota-gated."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 383,
+   "description": "snapshot_count is COUNT(*) of snapshot rows for the sandbox - the only quantity the quota measures."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 458,
+   "description": "exists() is an untimed 'test -e' exec in the sandbox the agent controls."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 327,
+   "description": "Snapshot images are freed only when the sandbox is deleted; nothing prunes them earlier."
+  },
+  {
+   "file": "agentbox/default_policy.yaml",
+   "line": 27,
+   "description": "touch and mkdir are in the read-only exec allowlist, so the agent can create the path between the probes without approval."
+  },
+  {
+   "file": "agentbox/default_policy.yaml",
+   "line": 10,
+   "description": "default allow: write_file (non-destructive create) is an unapproved tool."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 44,
+   "description": "Design intent recorded in source: docker commit copies the whole write layer each time and snapshot_quota exists so the agent cannot fill the host disk without a human."
+  }
+ ],
+ "blockers": [
+  "No Docker daemon in the hunter sandbox: the two untimed 'test -e' execs (sandbox.py:458-461) cannot be interleaved by a real container or by a concurrent ALLOW exec 'touch', so the practical win rate of this check-then-act is unmeasured.",
+  "Per-commit host-disk cost (writable-layer size, free space, whether disk_limit is configured) is a deployment fact; source bounds it only by an item count (service.py:243-248, sandbox.py:383-385) and by the optional storage_opt that is skipped by default (config.py:41-42, sandbox.py:263-264)."
+ ],
+ "validation_plan": {
+  "local": "Already performed with a fake SandboxManager and the real Policy/AuditLog/ApprovalStore (no Docker): snapshot_quota=2, snapshot_count()==2, exists() False at the gate and True at the pre-execution re-check -> three write_file calls each logged policy_decision allow, returned 200 and called snapshot(); with exists() stable the same call returned 202 with rule snapshot-quota and no commit. Rerun with: python tools/sbx.py h-pool /usr/bin/python3 /scratch/quota_probe.py (artifact agents/h-pool/artifacts/quota.out).",
+  "deployment": "Owner-observed on a disposable CLI sandbox: start the control plane with AGENTBOX_SNAPSHOT_QUOTA=2, make two ALLOW commits (write_file over an existing file), then loop an ALLOW exec {'command': 'touch /workspace/p<N>'} concurrently with write_file /workspace/p<N> and watch GET /sandboxes/{sid}/snapshots plus the audit rows. Reproduced if a 'snapshot' row appears while snapshot_count >= quota with no 'approval_requested' row for that call. Record docker image inspect size per snapshot and host free space to size the disk effect; AGENTBOX_DISK is empty by default so the writable layer is otherwise unbounded."
+ },
+ "x_proposed_by": "h-pool"
+}

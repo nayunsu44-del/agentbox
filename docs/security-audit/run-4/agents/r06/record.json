@@ -1,0 +1,190 @@
+{
+ "verdict": "confirmed",
+ "fingerprint": "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets",
+ "title": "Approval impact table misreports rm targets whose paths contain whitespace or newlines (an existing file is shown as nonexistent)",
+ "description": "For a gated exec the \"system-computed impact\" table is produced by SandboxManager._expand / _walk and preview_command. _expand hands the already-unquoted rm operand to sh as $1 and iterates over $1 unquoted, so the operand is word-split on IFS and each fragment is pathname-expanded before the [ -e ] existence test; results are newline-framed and re-split in Python, and _walk frames find output the same way. preview_command turns an empty match list into \"삭제 시도 (현재 존재하지 않음)\" and every returned line into a \"삭제\" row. The rm itself later runs through bash -c with the original quoting, so the computed path set and the executed path set differ: an agent whose workspace target contains a space obtains approval for a deletion the card describes as an apparent no-op, or for a card that lists unrelated decoy files, while the real file is deleted. Reproduced with the verbatim scripts: the card for a lone rm of an existing \"final report.docx\" showed exactly one row, \"삭제 시도 (현재 존재하지 않음)\", and no note.",
+ "root_cause": "The preview path transport is not a lossless representation of a filesystem path. sandbox.py:559 iterates $1 unquoted under the default IFS, so an operand that shlex already unquoted (preview.py:33-44) is re-split into words and each word is expanded again before the existence test; matches are framed with printf \"%s\\n\" and re-split by splitlines() (sandbox.py:562), and _walk's find | head output is split the same way (sandbox.py:565-569). preview.py:90-91 maps an empty expansion to the \"does not currently exist\" row and preview.py:96-98 maps each returned line to a deletion row, so a split operand both hides the real target and can manufacture paths the command will never touch. The executed command keeps its quoting (sandbox.py:411), so the card and the effect diverge.",
+ "intended_behavior": "The affected list shown beside the approval must name exactly the paths the stored command will act on, so approving the card is equivalent to approving the effect: a path that exists must never be reported as nonexistent, and a path must never be listed as deleted unless the command deletes it.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 215,
+   "scope": "POST /sandboxes/{sid}/tools/{tool}",
+   "description": "The agent posts tool=exec with body.args.command under its own sandbox token."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 318,
+   "scope": "AgentBox._call_tool",
+   "description": "For a REQUIRE_APPROVAL decision (default_policy.yaml:12-16 routes rm to require_approval) the preview is computed while the approval is created, before any human sees it."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 215,
+   "scope": "AgentBox._preview",
+   "description": "exec previews delegate to SandboxManager.preview with the raw command string."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 573,
+   "scope": "SandboxManager.preview",
+   "description": "preview_command runs with expand=_expand and walk=_walk bound to the running container."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/preview.py",
+   "line": 89,
+   "scope": "preview_command rm branch",
+   "description": "Each rm operand (quotes already consumed by _split_segments, preview.py:33-44) is expanded once through the container callback."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 559,
+   "scope": "SandboxManager._expand",
+   "description": "The operand is passed as $1 and iterated unquoted, so the shell word-splits it on IFS and globs the fragments before [ -e \"$p\" ]; the surviving words are what get tested."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 562,
+   "scope": "SandboxManager._expand return",
+   "description": "Matches are framed one per line and re-split with splitlines(), so a name containing a newline arrives as two or more fake paths."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/preview.py",
+   "line": 90,
+   "scope": "preview_command affected rows",
+   "description": "An empty expansion becomes the \"삭제 시도 (현재 존재하지 않음)\" row and each returned line becomes a deletion row; the result is stored with the approval and rendered as the system-computed impact."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox.py",
+   "line": 411,
+   "scope": "SandboxManager.exec after approval",
+   "description": "After the human approves, decide() snapshots (service.py:412) and _run_tool passes the stored command unchanged (service.py:126) to exec, which runs it verbatim through bash -c; the quoting is intact there, so the file the table called nonexistent is actually deleted."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 559,
+   "description": "for p in $1 - the operand is expanded without quotes under the default IFS, so a space splits it and each fragment is globbed; reproduced with only the cd target retargeted."
+  },
+  {
+   "file": "agentbox/preview.py",
+   "line": 91,
+   "description": "An empty match list becomes the \"삭제 시도 (현재 존재하지 않음)\" row - the false no-op statement for an existing but split path, produced with notes=[]."
+  },
+  {
+   "file": "agentbox/preview.py",
+   "line": 97,
+   "description": "Matched paths become \"삭제\" rows, so split words (decoy names that exist) are presented as the deletion set."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 562,
+   "description": "out.splitlines() turns one filename containing a newline into several rows; expand(\"*\") over fixtures \"a\\nb\" and ok.txt returned [a, b, ok.txt]."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 565,
+   "description": "_walk frames find output line by line (splitlines at 569), so a recursive rm over \"dir with space/inner\\nname.txt\" reports \"dir with space/inner\" and \"name.txt\" instead of the real path."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 411,
+   "description": "The approved command runs as a single bash -c argument, so shell quoting is honoured and the computed set diverges from the executed set."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 412,
+   "description": "decide() snapshots before execution, which bounds the impact to low."
+  },
+  {
+   "file": "agentbox/preview.py",
+   "line": 125,
+   "description": "The per-segment note added for run-3 v17 shows the module already treats \"the table may be incomplete\" as security-relevant; the split-path case produces no note at all."
+  },
+  {
+   "file": "agentbox/templates/_approvals.html",
+   "line": 14,
+   "description": "The table renders the not-existing row without the deletion highlight (only effect == 삭제 gets class del), so the sole row on the card looks like a failed no-op; the raw command is shown above it at line 8."
+  },
+  {
+   "file": "agentbox/display.py",
+   "line": 18,
+   "description": "Control characters are escaped for display, so the defect is in the computed path set, not in the rendering."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "A sandbox agent token (or prompt-injected code running as uid 1000 inside that sandbox) submits the rm; the default policy routes rm to require_approval, so the approval card is the only control between it and the deletion."
+  },
+  {
+   "kind": "user_interaction",
+   "description": "A human opens the pending approval in the /ui/approvals card or agentbox approve and presses approve, relying on the system-computed impact table rather than re-reading the raw command."
+  },
+  {
+   "kind": "data_state",
+   "description": "The rm operand names an existing /workspace path containing whitespace (space or tab) or a newline; the agent can produce that state itself, since creating a new file with write_file needs no approval."
+  },
+  {
+   "kind": "system_configuration",
+   "description": "Stock default_policy.yaml, where exec commands containing rm route to require_approval (default_policy.yaml:12-16)."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "The sandbox agent wants to delete /workspace/final report.docx but wants the card not to say so, so it submits exec rm \"final report.docx\". The card describes the target as \"삭제 시도 (현재 존재하지 않음)\" - an apparently already-failed no-op - and with decoy names present it lists files that will not be touched, while the approved command deletes the real file.",
+  "payloads": [
+   "rm \"final report.docx\"",
+   "decoy fixtures final and report.docx in the same directory",
+   "rm over a workspace containing a file named \"a\\nb\"",
+   "rm -r over \"dir with space\"/\"inner\\nname.txt\"",
+   "rm notes.txt; mv important /tmp/important (run-3 v17 revalidation)"
+  ],
+  "instructions": [
+   "Create fixtures in the approved sandbox (tools/sbx.py v06, no network, read-only /target, writes only /scratch): a directory holding one file literally named final report.docx plus notes.txt.",
+   "Copy the sandbox.py:559 and sandbox.py:565 scripts verbatim, changing only cd /workspace to the fixture directory (the sandbox has no /workspace and uid 65534 cannot create one), and wrap them exactly as sandbox.py:560-562 / 567-569 do (decode, splitlines) to build the expand and walk callbacks.",
+   "Import agentbox.preview from /target (PYTHONPATH) and call preview_command('rm \"final report.docx\"', 200, expand, walk); compare the affected rows and notes with os.path.exists on the real file.",
+   "Repeat with decoy files final and report.docx present, and with fixtures named \"a\\nb\" and \"a\\tb.txt\" for the expand path and \"dir with space/inner\\nname.txt\" for the walk path.",
+   "Re-run the run-3 v17 case rm notes.txt; mv important /tmp/important and check that its per-segment note still appears.",
+   "Show the sink: run sh -c 'rm \"final report.docx\"' in the fixture directory (the quoting sandbox.py:411 hands to bash) and confirm the file the table called nonexistent is gone."
+  ],
+  "observed_result": "Case B: affected=[{path: \"final report.docx\", effect: \"삭제 시도 (현재 존재하지 않음)\"}], notes=[], real target exists: true. Case C (decoys present): affected=[{path: \"final\", effect: \"삭제\"}, {path: \"report.docx\", effect: \"삭제\"}] while the real target still exists and is never listed. Newline case: expand(\"*\") -> [\"a\", \"b\", \"ok.txt\"] for files \"a\\nb\" and ok.txt, and the old find framing returned [\"dir with space\", \"dir with space/inner\", \"name.txt\"]. Sink: sh -c 'rm \"final report.docx\"' exited 0 and the directory went from [final report.docx, notes.txt] to [notes.txt]. Case A (revalidation): \"rm notes.txt; mv important /tmp/important\" produced the rm row AND the per-segment note, so the run-3 omission defect is fixed. The proposed fix was also executed against the same fixtures: with IFS= and NUL framing expand returned [\"final report.docx\"] and a single \"a\\nb\", and find -print0 | head -z kept \"dir with space/inner\\nname.txt\" whole. Everything ran inside tools/sbx.py v06."
+ },
+ "remediation": {
+  "strategy": "Make both preview transports lossless. In _expand, disable IFS word splitting (IFS=) so the operand is tested as one word while pathname expansion still happens, and frame results with NUL instead of newline; in _walk, use find -print0 with head -z and split on NUL. Then one match is one path: the \"does not currently exist\" row is emitted only when the path really is absent, and no row names a path the command will not touch. Add a regression test that pushes names containing a space, a tab and a newline through both the non-recursive and the recursive branch and asserts the returned list equals the fixture paths.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/sandbox.py",
+    "fixed_code": "def _expand(self, c, pattern: str) -> list[str]:\n    \"\"\"컨테이너 안에서 glob만 펼친다. 명령 치환은 일어나지 않는다.\"\"\"\n    script = ('cd /workspace; IFS=; for p in $1; do if [ -e \"$p\" ] || [ -L \"$p\" ]; then printf \"%s\\\\0\" \"$p\"; fi; done')\n    res = c.exec_run([\"sh\", \"-c\", script, \"_\", pattern], user=AGENT_UID, demux=True)\n    out = (res.output[0] or b\"\").decode(\"utf-8\", errors=\"replace\")\n    return [p for p in out.split(\"\\0\") if p]"
+   },
+   {
+    "file_name": "agentbox/sandbox.py",
+    "fixed_code": "def _walk(self, c, path: str, limit: int) -> list[str]:\n    res = c.exec_run([\"sh\", \"-c\", 'cd /workspace; case \"$1\" in -*) set -- \"./$1\" \"$2\";; esac; find \"$1\" -print0 2>/dev/null | head -z -n \"$2\"',\n                      \"_\", path, str(limit)],\n                     user=AGENT_UID, demux=True)\n    out = (res.output[0] or b\"\").decode(\"utf-8\", errors=\"replace\")\n    return [p for p in out.split(\"\\0\") if p]"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "medium",
+   "reason": "The mechanics are deterministic for any rm operand naming a /workspace path with whitespace or a newline, and the agent can create such a name itself with an ungated write_file before requesting the rm, so the condition is attacker-chosen rather than accidental; exploitation still needs the approver to rely on the table instead of the raw command displayed immediately above it, and only rm and curl reach this preview."
+  },
+  "impact": {
+   "score": "low",
+   "reason": "What is lost is informed consent on the card, not a boundary: the effect is a deletion inside the requesting agent's own /workspace, the resource class the rm approval governs, decide() snapshots immediately before execution so the files are recoverable, and the decoy rows are misleading text rather than an additional capability."
+  },
+  "overall_severity": "low"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "Every cited line was re-read in 9805d91, the divergence was reproduced inside the approved sandbox with the verbatim _expand/_walk scripts (only the cd target substituted) and the verbatim preview_command, the sink step confirms the stored command keeps its quoting and really deletes the file, and the proposed fix was executed against the same fixtures."
+ }
+}

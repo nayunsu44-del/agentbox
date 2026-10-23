@@ -1,0 +1,117 @@
+{
+ "proposed_verdict": "confirmed",
+ "fingerprint": "agentbox/web.py:unauthenticated-login-failure-audit-growth",
+ "title": "Every unauthenticated failed POST /login appends a permanent hash-chained audit row, with no rate limit, cap or retention",
+ "description": "web.py:130-139 compares the submitted form token with secrets.compare_digest and, on mismatch, calls box.log_human(\"ui_login_failed\", None, {}) (service.py:590-594 -> audit.append). audit.append takes the single process-wide audit lock, opens BEGIN IMMEDIATE, reads the previous hash, inserts a masked row and commits (audit.py:162-185). Nothing rate-limits, deduplicates, caps or prunes these rows: audit.py contains no DELETE, no retention and no compaction, and the table is the append-only hash chain the operator uses as the security record. The only precondition is same_origin (web.py:132-133), which returns True when the Origin header is absent, so a plain HTTP client reaches the audit write. The same handler shows the inverse gap: a non-ASCII token makes compare_digest raise TypeError (web.py:134), so the request returns a bare 500 before the failure is recorded and the attacker also controls which attempts enter the chain.",
+ "root_cause": "An unauthenticated, attacker-paced write into the persistent audit chain: the failed-login path records every attempt through the same serialized append used by tool executions, without a per-source or global rate limit, without aggregation, and without any retention for the rows it creates.",
+ "intended_behavior": "Anonymous authentication failures should be rate-limited and aggregated before they reach the audit chain, and the audit store should have a documented retention/compaction scheme, so an unauthenticated client cannot unilaterally grow the security log or monopolize the lock that every other audit append needs.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/web.py",
+   "line": 131,
+   "scope": "POST /login form handler",
+   "description": "def login(request: Request, token: str = Form(...)) has no principal and no cookie requirement; the only precondition is same_origin at 132, which passes when Origin is absent."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/web.py",
+   "line": 134,
+   "scope": "token mismatch branch",
+   "description": "A wrong token falls through to box.log_human(\"ui_login_failed\", None, {}) at 136 and then renders the error page at 139."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 590,
+   "scope": "log_human -> audit.append",
+   "description": "log_human forwards the event to the audit log; an AuditWriteError would become a 503, but on success the row is durable in SQLite."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/audit.py",
+   "line": 180,
+   "scope": "INSERT INTO audit under the global lock",
+   "description": "append() takes self._lock (162), BEGIN IMMEDIATE (163), reads the last hash (165), inserts the row (180) and commits (185); every other audit append and every human read waits on the same lock."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/audit.py",
+   "line": 126,
+   "description": "One process-wide threading.Lock serializes all appends."
+  },
+  {
+   "file": "agentbox/audit.py",
+   "line": 129,
+   "description": "The database runs in WAL mode with no row or page bound; audit.py has no retention, compaction or VACUUM call."
+  },
+  {
+   "file": "agentbox/web.py",
+   "line": 132,
+   "description": "same_origin returns True when the Origin header is missing, so it does not stop a direct HTTP client."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 86,
+   "description": "The audit database lives at AGENTBOX_HOME/agentbox.db."
+  },
+  {
+   "file": "deploy/docker-compose.yml",
+   "line": 28,
+   "description": "compose mounts ${AGENTBOX_HOME_DIR} into the container, so audit growth consumes host disk owned by the operator."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "None - a wrong form token and no cookie."
+  },
+  {
+   "kind": "system_configuration",
+   "description": "The control plane is reachable through the shipped proxy, and the audit table is persistent and never pruned."
+  },
+  {
+   "kind": "timing_dependency",
+   "description": "Rows serialize on the audit lock, which bounds the rate per second but never the total number of rows."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "An unauthenticated client posts the login form with a wrong token as fast as the server answers, adding one durable audit row and one global-lock acquisition per request.",
+  "payloads": [
+   "POST /login HTTP/1.1\r\nHost: agentbox.example.com\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: 10\r\n\r\ntoken=nope",
+   "POST /login  ...  token=%C3%BCn%C3%AFcode   (returns 500 and records nothing)"
+  ],
+  "instructions": [
+   "In the approved sandbox, build the real app and drive POST /login at the ASGI layer with urlencoded bodies, no cookie and no Origin header.",
+   "Count rows with event='ui_login_failed' before and after each request, and time 50 sequential wrong-token attempts.",
+   "Repeat once with a non-ASCII token and compare the row count."
+  ],
+  "observed_result": "One wrong-token POST added exactly 1 ui_login_failed row; 50 further wrong-token POSTs added 50 more (51 rows) in 0.498 s, about 10 ms per attempt serialized on the audit lock, with no rate limit, cap or rejection at any point. The non-ASCII token request returned 500 (TypeError: comparing strings with non-ASCII characters is not supported) and added 0 rows, so the same client can also keep attempts out of the chain."
+ },
+ "remediation": {
+  "strategy": "Rate-limit and aggregate failed logins before the audit append (a per-client-address token bucket plus a global cap), record a compacted 'N failures since T' summary instead of one row per attempt, and give the audit store a retention scheme that keeps chain verifiability (signed checkpoints plus archived segments). Validate that the token is ASCII (or compare bytes) before compare_digest so a malformed credential is a recorded 401 rather than a bare 500.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/web.py",
+    "fixed_code": "    @app.post(\"/login\", include_in_schema=False)\n    def login(request: Request, token: str = Form(...)):\n        if not same_origin(request.headers):\n            raise HTTPException(403, \"다른 출처의 요청\")\n        if not token.isascii() or not secrets.compare_digest(token.strip(), human_token):\n            # 5마다 1건만 기록 + 주소별 초당 상한 (전체 상한은 _login_failures 쪽)\n            if _login_failures.allow(request.client.host if request.client else \"unknown\"):\n                try:\n                    box.log_human(\"ui_login_failed\", None, {})\n                except ServiceError:\n                    pass\n            return render(request, \"login.html\", error=\"사람 토큰이 아님 (에이전트 토큰으로는 들어갈 수 없습니다)\")\n        return start_session(request, \"/ui\", \"token\")"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "high",
+   "reason": "A form POST with a wrong token from any client that can reach /login; no cookie, Origin header or token knowledge required."
+  },
+  "impact": {
+   "score": "low",
+   "reason": "Unbounded persistent growth of the append-only audit database on the operator's data volume with no pruning path, plus contention on the single audit lock that every tool-call append and every human read needs; the entropy is low (~1 KB and ~10 ms per row), so the effect is slow disk growth rather than immediate outage."
+  },
+  "overall_severity": "low"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "Source trace is complete and the durable row growth and the non-ASCII bypass were both observed locally."
+ },
+ "x_proposed_by": "h-preauth"
+}
