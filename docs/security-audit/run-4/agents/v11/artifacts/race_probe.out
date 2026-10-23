@@ -1,0 +1,124 @@
+{
+ "probe_latency_s": 0.02,
+ "policy": {
+  "write_file": {
+   "action": "allow",
+   "rule_id": null,
+   "reason": null,
+   "matched": []
+  },
+  "exec_touch": {
+   "action": "allow",
+   "rule_id": "read-only-exec",
+   "reason": "\uc77d\uae30 \uc804\uc6a9 \uba85\ub839",
+   "matched": [
+    "touch"
+   ]
+  }
+ },
+ "control_existing": {
+  "status": 202,
+  "rule": "pending",
+  "statuses": {
+   "202": 1
+  },
+  "commits_while_over_quota": 0,
+  "pending_approvals": 1,
+  "snapshot_rows_after": 2,
+  "audit_events": {
+   "tool_request": 1,
+   "policy_decision": 1,
+   "approval_requested": 1
+  }
+ },
+ "A_background_toggler_40_calls": {
+  "statuses": {
+   "202": 20,
+   "200": 19,
+   "ServiceError:429": 1
+  },
+  "commits_while_over_quota": 9,
+  "pending_approvals": 20,
+  "snapshot_rows_after": 11,
+  "audit_events": {
+   "tool_request": 40,
+   "policy_decision": 40,
+   "approval_requested": 20,
+   "tool_result": 19,
+   "snapshot": 9,
+   "tool_blocked": 1
+  }
+ },
+ "B_exec_touch_offset_-15ms_20_pairs": {
+  "statuses": {
+   "202": 20
+  },
+  "commits_while_over_quota": 0,
+  "pending_approvals": 20,
+  "snapshot_rows_after": 2,
+  "audit_events": {
+   "tool_request": 40,
+   "policy_decision": 40,
+   "tool_result": 20,
+   "approval_requested": 20
+  }
+ },
+ "B_exec_touch_offset_-10ms_20_pairs": {
+  "statuses": {
+   "200": 18,
+   "202": 2
+  },
+  "commits_while_over_quota": 18,
+  "pending_approvals": 2,
+  "snapshot_rows_after": 20,
+  "audit_events": {
+   "tool_request": 40,
+   "policy_decision": 40,
+   "tool_result": 38,
+   "snapshot": 18,
+   "approval_requested": 2
+  }
+ },
+ "B_exec_touch_offset_-5ms_20_pairs": {
+  "statuses": {
+   "200": 20
+  },
+  "commits_while_over_quota": 20,
+  "pending_approvals": 0,
+  "snapshot_rows_after": 22,
+  "audit_events": {
+   "tool_request": 40,
+   "policy_decision": 40,
+   "tool_result": 40,
+   "snapshot": 20
+  }
+ },
+ "B_exec_touch_offset_0ms_20_pairs": {
+  "statuses": {
+   "200": 20
+  },
+  "commits_while_over_quota": 20,
+  "pending_approvals": 0,
+  "snapshot_rows_after": 22,
+  "audit_events": {
+   "tool_request": 40,
+   "policy_decision": 40,
+   "tool_result": 40,
+   "snapshot": 20
+  }
+ },
+ "B_exec_touch_offset_5ms_20_pairs": {
+  "statuses": {
+   "200": 20
+  },
+  "commits_while_over_quota": 20,
+  "pending_approvals": 0,
+  "snapshot_rows_after": 22,
+  "audit_events": {
+   "tool_request": 40,
+   "policy_decision": 40,
+   "tool_result": 40,
+   "snapshot": 20
+  }
+ }
+}

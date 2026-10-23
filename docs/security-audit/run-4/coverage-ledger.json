@@ -1891,6 +1891,7 @@
   "status": "candidate",
   "agent_id": "h-pool",
   "reviewed_paths": [
+   "agentbox/api.py",
    "agentbox/config.py",
    "agentbox/default_policy.yaml",
    "agentbox/gui_bursts.py",
@@ -1933,6 +1934,21 @@
     "method": "source",
     "result": "decide commits unconditionally for any approved tool (service.py:412); import_file (485-489) and snapshot_sandbox (458) commit with no quota check and no _snap_locks - all three are human-only routes (api.py:197-199,250-262,276-285). The GUI_INPUT half of _needs_snapshot is bursts.needs_snapshot (gui_bursts.py:52-63) reading timestamps that mark_input/mark_snapshot/forget_input write without the snap lock (43-50), but its interleavers are human actions (handback/restore), so only the write_file variant is agent-only. The quota counts snapshot rows (sandbox.py:383-385) while each commit copies the container's whole writable layer (sandbox.py:355-356; config.py:44-45) and no storage limit is applied by default (config.py:41-42 -> sandbox.py:263-264 skipped). Default policy leaves write_file allowed (default_policy.yaml:10) and exec touch/mkdir allowlisted (22-29).",
     "artifact": null
+   },
+   {
+    "agent_id": "v11",
+    "method": "local",
+    "artifact": "agents/v11/artifacts/race_probe.out",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/config.py",
+     "agentbox/default_policy.yaml",
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
+    ],
+    "note": "phase3 decision needs_validation",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision needs_validation: real _call_tool with a fake SandboxManager (modelled 20 ms probes) gave unapproved over-quota commits (20/20 at -5..+5 ms offsets, 9/40 with a background toggler); real Docker interleaving not observed"
    }
   ],
   "result_fingerprints": [
@@ -1948,7 +1964,9 @@
    "A human takeover/pause/restore/logout thread runs the same burst-close execs synchronously while holding gui_lock (service.py:508-521,579-587 -> gui_bursts.py:113-135): bounded at ~15 s ps + 15 s xdotool + 15 s kill + 30 s find, so takeover can hold gui_lock for ~75 s after its 30 s acquire bound (service.py:169-178) and delay that same sandbox's agent GUI calls, which acquire gui_lock without a timeout at service.py:136.",
    "The burst pool is one process-wide 4-worker executor (gui_bursts.py:38-40), so slow closes on a few sandboxes delay other sandboxes' idle-burst records; every close is container-side bounded, so this is record latency rather than starvation, and GET /audit waits at most AUDIT_BURST_WAIT=5 s over all of them (api.py:268).",
    "_burst_locks, _closing, _snap_locks and _busy entries are never removed (gui_bursts.py:37,41; service.py:85,282); growth is bounded by the number of sandboxes and tool calls seen."
-  ]
+  ],
+  "x_decision": "needs_validation",
+  "x_decided_by": "v11"
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23POST%20%2Fsandboxes%2F%7Bsid%7D%2Ftools%2Fexec::agentbox%2Fpolicy.py%23Policy.decide%20read-only-exec%20allowlist::agentbox%2Fpolicy.py%20%2B%20agentbox%2Fsandbox.py%23exec::ATTACK-CLASSES.md%23Injection",
@@ -2191,6 +2209,50 @@
    "Ticket URLs carry the credential in the query string (api.py:306, web.py:156). uvicorn access logging is off (cli.py:127), but any front proxy or CDN access log will retain a 60 s full-admin or sandbox-scoped credential; strip the query at the proxy or accept this as documented.",
    "The takeover lease key is the 32-bit public session id ('hs_' + token_hex(4), desktop.py:133) and ui_sessions.public has no UNIQUE constraint, so a collision would let one session satisfy lease.session == session for another; not reachable by a lower-trust principal today (sessions are minted only from the human token or a human-issued ticket), but a UNIQUE index removes the class."
   ]
+ },
+ {
+  "surface": "agentbox/api.py#WebSocket /sandboxes/{sid}/desktop/ws upgrade before ws.accept()",
+  "boundary": "agentbox/api.py#desktop_ws async handler: synchronous SQLite (session, lease) and Docker SDK calls on the event loop before accept + agentbox/desktop_ws.py#relay setup",
+  "subsystem": "agentbox/api.py + agentbox/desktop_ws.py + agentbox/desktop.py",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+  "starting_paths": [
+   "agentbox/api.py",
+   "agentbox/desktop_ws.py",
+   "agentbox/desktop.py",
+   "agentbox/sandbox_desktop.py"
+  ],
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "CLIENT-SIDE.md#Cross-site WebSocket request use",
+    "reason": "Owned by the existing WebSocket session/same_origin unit (h-session)."
+   }
+  ],
+  "coverage_id": "agentbox%2Fapi.py%23WebSocket%20%2Fsandboxes%2F%7Bsid%7D%2Fdesktop%2Fws%20upgrade%20before%20ws.accept%28%29::agentbox%2Fapi.py%23desktop_ws%20async%20handler%3A%20synchronous%20SQLite%20%28session%2C%20lease%29%20and%20Docker%20SDK%20calls%20on%20the%20event%20loop%20before%20accept%20%2B%20agentbox%2Fdesktop_ws.py%23relay%20setup::agentbox%2Fapi.py%20%2B%20agentbox%2Fdesktop_ws.py%20%2B%20agentbox%2Fdesktop.py::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+  "canonical_refs": {
+   "surface": "agentbox/api.py#WebSocket /sandboxes/{sid}/desktop/ws upgrade before ws.accept()",
+   "boundary": "agentbox/api.py#desktop_ws async handler: synchronous SQLite (session, lease) and Docker SDK calls on the event loop before accept + agentbox/desktop_ws.py#relay setup",
+   "subsystem": "agentbox/api.py + agentbox/desktop_ws.py + agentbox/desktop.py",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation"
+  },
+  "ordinary_attack_class_block": null,
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 2,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "Deferred: proposed by post-wave critic critic-1; the run's remaining budget went to Phase 3/5 validation and the final-clean critic, so no hunter was assigned (budget_cannot_reserve_critics_and_validation)."
+  ],
+  "x_hunter": null,
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "Proposed by the post-wave coverage critic critic-1 (DeepSeek, Windows continuation). Its raw result was not retained; this unit is reconstructed by the parent from the critic summary in REPORT.md section 6 and checked against the source paths below."
  },
  {
   "coverage_id": "agentbox%2Fapi.py%23all%20JSON%20and%20browser%20routes::agentbox%2Fapi.py%23principal%20%2B%20human_only%20%2B%20screen_human%20%2B%20desktop_human::agentbox%2Fapi.py%20%2B%20agentbox%2Fweb.py::ATTACK-CLASSES.md%23Access%20control",
@@ -3021,6 +3083,8 @@
    "agentbox/api.py",
    "agentbox/approvals.py",
    "agentbox/cli.py",
+   "agentbox/preview.py",
+   "agentbox/sandbox.py",
    "agentbox/service.py",
    "agentbox/templates/_approvals.html",
    "agentbox/web.py"
@@ -3029,17 +3093,14 @@
    {
     "agent_id": "h-policy",
     "reviewed_paths": [
-     "agentbox/api.py",
-     "agentbox/service.py",
-     "agentbox/approvals.py",
-     "agentbox/web.py",
-     "agentbox/cli.py",
-     "agentbox/templates/_approvals.html"
+     "agentbox/preview.py",
+     "agentbox/sandbox.py",
+     "agentbox/service.py"
     ],
-    "invariant": "Only a human can decide an approval, the approver cannot alter the executing args, and the displayed object is the stored object.",
+    "invariant": "The approval card's system-computed affected list must not omit or misstate what the approved command will change, and segments it cannot compute must carry a visible note.",
     "method": "local",
-    "result": "POST /approvals/{aid} rejects agent principals with 403 and audits approval_forbidden (api.py:250-262); the Decision body has only \"decision\" (api.py:55-56); decide() executes the stored row (service.py:391,398,421) and ApprovalStore cannot rewrite args after INSERT (approvals.py:49-96). 16 concurrent claims -> exactly 1 winner; expired and denied rows refuse a later approve; a failed approval_decision or snapshot audit marks the row FAILED before any execution (service.py:399-418). Browser decisions need scope \"*\" (api.py:365,149-155), so a desktop-link session cannot approve.",
-    "artifact": "agents/h-policy/artifacts/h_bind.out"
+    "artifact": "agents/h-policy/artifacts/h_prev.out",
+    "result": "Parent reconstruction (the hunter's own unit entry for this unit was lost when tools/oneoff/_fix.py rewrote raw.txt and remapped units by position). From the hunter's retained artifact h_prev.out: run-3 v17 per-segment note now appears for an unrecognised segment after an rm row (A); a quoted rm operand with a space is shown as nonexistent although it exists (B) or as decoy single-word deletions (C); a newline in a filename splits into several rows (E); deep sh -c nesting falls back to the 'cannot compute' note (F). Candidate fingerprint agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets."
    },
    {
     "agent_id": "v06",
@@ -3076,7 +3137,53 @@
    "GUI approvals execute at decide time against the then-current screen while the card shows the request-time capture; a takeover lease blocks execution and each input burst is snapshotted."
   ],
   "x_decision": "confirmed",
-  "x_decided_by": "v06"
+  "x_decided_by": "v06",
+  "x_parent_note": "local_checks[0] reconstructed by the parent from h_prev.out on review; the original mapping put the approval-binding unit's check here (tools/oneoff/_fix.py, _fix_card_unit.py)."
+ },
+ {
+  "surface": "approvals table rows (args, preview, result) written for every REQUIRE_APPROVAL tool call",
+  "boundary": "agentbox/approvals.py#create/finish store raw agent args and preview without audit masking or size cap, and rows outlive sandbox deletion",
+  "subsystem": "agentbox/approvals.py + agentbox/service.py#_call_tool/decide/delete_sandbox + agentbox/api.py#GET /approvals",
+  "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun",
+  "starting_paths": [
+   "agentbox/approvals.py",
+   "agentbox/service.py",
+   "agentbox/api.py",
+   "agentbox/audit.py"
+  ],
+  "selected_companion_blocks": [
+   "ATTACK-CLASSES.md#Cryptography and secrets",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps",
+    "reason": "Pending-approval count cap is owned by the existing approval-queue unit (h-queue)."
+   }
+  ],
+  "coverage_id": "approvals%20table%20rows%20%28args%2C%20preview%2C%20result%29%20written%20for%20every%20REQUIRE_APPROVAL%20tool%20call::agentbox%2Fapprovals.py%23create%2Ffinish%20store%20raw%20agent%20args%20and%20preview%20without%20audit%20masking%20or%20size%20cap%2C%20and%20rows%20outlive%20sandbox%20deletion::agentbox%2Fapprovals.py%20%2B%20agentbox%2Fservice.py%23_call_tool%2Fdecide%2Fdelete_sandbox%20%2B%20agentbox%2Fapi.py%23GET%20%2Fapprovals::DATA-ISOLATION-AND-LIFECYCLE.md%23Retention%20and%20queued-work%20overrun",
+  "canonical_refs": {
+   "surface": "approvals table rows (args, preview, result) written for every REQUIRE_APPROVAL tool call",
+   "boundary": "agentbox/approvals.py#create/finish store raw agent args and preview without audit masking or size cap, and rows outlive sandbox deletion",
+   "subsystem": "agentbox/approvals.py + agentbox/service.py#_call_tool/decide/delete_sandbox + agentbox/api.py#GET /approvals",
+   "attack_class": "DATA-ISOLATION-AND-LIFECYCLE.md#Retention and queued-work overrun"
+  },
+  "ordinary_attack_class_block": null,
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 2,
+  "status": "deferred",
+  "agent_id": null,
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [
+   "Deferred: proposed by post-wave critic critic-1; the run's remaining budget went to Phase 3/5 validation and the final-clean critic, so no hunter was assigned (budget_cannot_reserve_critics_and_validation)."
+  ],
+  "x_hunter": null,
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "Proposed by the post-wave coverage critic critic-1 (DeepSeek, Windows continuation). Its raw result was not retained; this unit is reconstructed by the parent from the critic summary in REPORT.md section 6 and checked against the source paths below."
  },
  {
   "coverage_id": "code%20running%20inside%20the%20sandbox%20container%20%28uid%201000%20agent%2C%20uid%201001%20desktop%29::agentbox%2Fsandbox.py%23container%20hardening%20flags%20%2B%20root-run%20docker%20execs%20%28sandbox.py%2C%20sandbox_desktop.py%29::agentbox%2Fsandbox.py%20%2B%20agentbox%2Fsandbox_desktop.py%20%2B%20images%2Fdesktop::CLOUD-AND-DEPLOYMENT.md%23Host%20or%20control-plane%20capability%20exposure",

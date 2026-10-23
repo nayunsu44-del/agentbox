@@ -4,11 +4,20 @@ import os
 import re
 import subprocess
 
-RUN = "<WINDOWS_HOST_ROOT>/projects/agentbox/docs/security-audit/run-4"
-SP = os.environ.get("AUDIT_SCRATCHPAD", "<WINDOWS_HOST_ROOT>/temp/agentbox-run4")
+if os.name == "nt":  # Windows continuation host (phases 2-6 of the first pass)
+    RUN = "<WINDOWS_HOST_ROOT>/projects/agentbox/docs/security-audit/run-4"
+    SP = os.environ.get("AUDIT_SCRATCHPAD", "<WINDOWS_HOST_ROOT>/temp/agentbox-run4")
+    SBX = f"{RUN}/tools/sbx.py"  # Windows host: bash sbx cannot run; sbx.py keeps the same container boundary
+    SBX_CMD = f"python {SBX}"
+    PY = "/usr/bin/python3"  # agentbox-audit-sbx:1 image, Python 3.12
+else:  # Linux cloud container (recon and the follow-up verifier/critic)
+    RUN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    SP = os.environ.get("AUDIT_SCRATCHPAD", "/tmp/claude-0/-home-user-agentbox/fcd2f048-3e17-52e2-9d78-d39b755653f3/scratchpad")
+    SBX = f"{RUN}/tools/sbx"  # bash sbx: host /usr read-only, 256 MiB loop scratch
+    SBX_CMD = SBX
+    PY = "/usr/bin/python3.13"
 SK = f"{SP}/skill/skills/security-audit"
 SRC = f"{SP}/src-audited"
-SBX = f"{RUN}/tools/sbx.py"  # Windows host: bash sbx cannot run; sbx.py keeps the same container boundary
 
 
 def block(ref):
@@ -63,16 +72,27 @@ def save_ledger(L):
 
 
 def make_scratch(aid):
-    """Per-agent scratch. Windows host: a plain directory instead of a 256 MiB loop mount.
+    """Per-agent scratch.
 
-    Dropping the loop mount loses the hard byte cap; the retained limits are promote.py's
-    per-file (256 KiB) and per-agent (1 MiB) artifact caps plus cap_scratch(), which the
-    parent calls after each agent and refuses anything above SCRATCH_CAP.
+    Linux: a 256 MiB loop-mounted ext4 owned by uid 65534 (bash sbx refuses anything else).
+    Windows: a plain directory; the byte cap is replaced by promote.py's per-file (256 KiB) and
+    per-agent (1 MiB) artifact caps plus cap_scratch(), which the parent calls after each agent.
     """
     assert re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", aid)
     scratch = f"{RUN}/agents/{aid}/scratch"
     os.makedirs(scratch, exist_ok=True)
     os.makedirs(f"{RUN}/agents/{aid}/artifacts", exist_ok=True)
+    if os.name != "nt":
+        if not os.path.ismount(scratch):
+            img = f"{SP}/scratch-img/{aid}.img"
+            os.makedirs(os.path.dirname(img), exist_ok=True)
+            subprocess.run(["truncate", "-s", "256M", img], check=True)
+            subprocess.run(["mkfs.ext4", "-q", "-F", img], check=True)
+            subprocess.run(["mount", "-o", "loop,nosuid,nodev", img, scratch], check=True)
+            lf = f"{scratch}/lost+found"
+            if os.path.isdir(lf):
+                os.rmdir(lf)
+        os.chown(scratch, 65534, 65534)
     return scratch
 
 

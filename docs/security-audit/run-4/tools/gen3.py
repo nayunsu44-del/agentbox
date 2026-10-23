@@ -19,7 +19,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 fence = chr(96) * 3
 
-from common import RUN, SRC, SBX, SK, block, fenced, schema_branch, ledger, save_ledger, make_scratch  # noqa: E402
+from common import RUN, SRC, SBX, SBX_CMD, PY, SK, block, fenced, schema_branch, ledger, save_ledger, make_scratch  # noqa: E402
 
 PRIOR = json.load(open(f"{RUN}/../run-3/findings.json", encoding="utf-8"))
 PRIOR_BY_FP = {r["fingerprint"]: r for r in PRIOR}
@@ -112,8 +112,8 @@ Read-only audited source: `{SRC}/` — a git worktree of `main` at commit `9805d
 # Execution boundary and paths
 
 - Agent ID `{vid}`. Write ONLY in `{scratch}/`. Never edit target files, the ledger, findings, architecture or another agent's directory.
-- Run target-controlled code only through `python {SBX} {vid} <cmd...>`. Inside: the audited source is /target (read-only, on PYTHONPATH), your scratch is /scratch (cwd, writable), there is no network and no Docker socket, uid 65534, 512 MiB, 1 CPU, 64 pids, 32 MiB files, 120 s wall clock, empty allowlisted environment. Use `/usr/bin/python3` (Python 3.12; fastapi, docker SDK, jinja2, pyyaml, mcp, pyte importable).
-- Unit tests need cwd=/target: `python {SBX} {vid} /usr/bin/sh -c "cd /target && python3 -m pytest -p no:cacheprovider --capture=sys -q tests/test_unit.py"`.
+- Run target-controlled code only through `{SBX_CMD} {vid} <cmd...>`. Inside: the audited source is /target (read-only, on PYTHONPATH), your scratch is /scratch (cwd, writable), there is no network and no Docker socket, uid 65534, 512 MiB, 1 CPU, 64 pids, 32 MiB files, 120 s wall clock, empty allowlisted environment. Use `{PY}` (fastapi, docker SDK, jinja2, pyyaml, mcp, pyte importable).
+- Unit tests need cwd=/target: `{SBX_CMD} {vid} /usr/bin/sh -c "cd /target && {PY} -m pytest -p no:cacheprovider --capture=sys -q tests/test_unit.py"`.
 - A fact that needs the real Docker-backed control plane, the desktop image at runtime, or a deployment the audit does not own stays a `needs_validation` blocker with an exact plan. Do not contact deployed endpoints.
 - If you produce a local artifact, list it in a top-level `"artifacts_to_promote": [...]` field beside `decision` and `record` (scratch-relative, <=256 KiB each, 1 MiB total). The parent promotes it after you finish.
 - Your final message must be ONLY the JSON object `{{"decision": ..., "record": {{...}}}}` plus that optional field. No prose, no code fence.

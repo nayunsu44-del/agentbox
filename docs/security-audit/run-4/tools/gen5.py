@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 fence = chr(96) * 3
 
-from common import RUN, SRC, SBX, SK, block, schema_branch, ledger, make_scratch  # noqa: E402
+from common import RUN, SRC, SBX, SBX_CMD, PY, SK, block, schema_branch, ledger, make_scratch  # noqa: E402
 
 
 def phase5_block():
@@ -68,8 +68,8 @@ Read-only audited source: `{SRC}/` — a git worktree of `main` at commit `9805d
 # Execution boundary and paths
 
 - Agent ID `{vid}`. Write ONLY in `{scratch}/`. Never edit target files, the ledger, findings, architecture or another agent's directory.
-- Run target-controlled code only through `python {SBX} {vid} <cmd...>`: audited source read-only at /target (on PYTHONPATH), scratch at /scratch, no network, no Docker socket, uid 65534, 512 MiB, 1 CPU, 64 pids, 32 MiB files, 120 s. Use `/usr/bin/python3`.
-- Unit tests need cwd=/target: `python {SBX} {vid} /usr/bin/sh -c "cd /target && python3 -m pytest -p no:cacheprovider --capture=sys -q tests/test_unit.py"`.
+- Run target-controlled code only through `{SBX_CMD} {vid} <cmd...>`: audited source read-only at /target (on PYTHONPATH), scratch at /scratch, no network, no Docker socket, uid 65534, 512 MiB, 1 CPU, 64 pids, 32 MiB files, 120 s. Use `{PY}`.
+- Unit tests need cwd=/target: `{SBX_CMD} {vid} /usr/bin/sh -c "cd /target && {PY} -m pytest -p no:cacheprovider --capture=sys -q tests/test_unit.py"`.
 - If you produce a local artifact, list it in a top-level `"artifacts_to_promote": [...]` field (scratch-relative, <=256 KiB each). The parent promotes it after you finish.
 - Your final message must be ONLY one JSON object: `{{"decision":"verified","fingerprint":"{fp}"}}` or `{{"decision":"replace","reason":"...","record":{{...}}}}`. No prose, no code fence.
 

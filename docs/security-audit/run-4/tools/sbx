@@ -8,9 +8,9 @@
 #   empty environment populated from an explicit allowlist.
 # Parent-side tool: agents never get the docker CLI through this script, only the command's output.
 set -u
-TARGET=/tmp/claude-0/-home-user-agentbox/bc796aa2-37b4-5f3d-a870-3de255943f83/scratchpad/src-audited
+TARGET=/tmp/claude-0/-home-user-agentbox/fcd2f048-3e17-52e2-9d78-d39b755653f3/scratchpad/src-audited
 RUN=/home/user/agentbox/docs/security-audit/run-4
-LOG=/tmp/claude-0/-home-user-agentbox/bc796aa2-37b4-5f3d-a870-3de255943f83/scratchpad/sbx.log
+LOG=/tmp/claude-0/-home-user-agentbox/fcd2f048-3e17-52e2-9d78-d39b755653f3/scratchpad/sbx.log
 IMAGE=ubuntu:24.04
 
 id="${1:-}"; shift || true

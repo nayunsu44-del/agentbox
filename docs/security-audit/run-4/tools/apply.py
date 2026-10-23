@@ -20,7 +20,8 @@ import json
 import os
 import sys
 
-RUN = "<WINDOWS_HOST_ROOT>/projects/agentbox/docs/security-audit/run-4"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import RUN  # noqa: E402
 MATERIAL = ("root_cause", "claimed_root_cause", "trace", "execution", "intended_behavior", "conditions")
 
 
@@ -62,7 +63,9 @@ def mark_ledger(fp, vid, decision, reviewed):
             u["reviewed_paths"] = paths
             u["local_checks"] = u.get("local_checks", []) + [
                 {"agent_id": vid, "method": "source", "artifact": None,
-                 "reviewed_paths": reviewed or paths, "note": f"phase3 decision {decision}"}]
+                 "reviewed_paths": reviewed or paths, "note": f"phase3 decision {decision}",
+                 "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+                 "result": f"phase3 decision {decision}"}]
             touched += 1
     with open(p, "w", encoding="utf-8") as f:
         json.dump(L, f, ensure_ascii=False, indent=1)
@@ -74,8 +77,8 @@ def trace_paths(rec):
     out = set()
     for key in ("trace", "evidence"):
         for item in rec.get(key, []) or []:
-            if isinstance(item, dict) and item.get("path"):
-                out.add(item["path"])
+            if isinstance(item, dict) and (item.get("file") or item.get("path")):
+                out.add(item.get("file") or item["path"])
     return out
 
 
