@@ -53,6 +53,7 @@
    "agentbox/templates/base.html",
    "agentbox/templates/sandbox.html",
    "agentbox/web.py",
+   "agents/parent-live/artifacts/gui_lease_a.json",
    "tests/test_m2_unit.py"
   ],
   "local_checks": [
@@ -100,6 +101,22 @@
     "method": "local",
     "result": "Control (burst finished before takeover): killed []. (b) agent click blocks in fake snapshot(), human takeover succeeds (lease True), agent gets 423, burst still open with baseline [1,100,101]; human adds terminal 200 (windowed), bash 201 and job 202 in new session 201 and file human_notes.txt; agent list_dir (200) while lease still held -> killed [201,202], gui_processes_stopped reason idle, gui_processes_kept [200], gui_changes added [human_notes.txt] snapshot_id snap_1. (b') same race, no close during lease, handback, agent click -> killed [201,202] reason next_burst, gui_changes charged to snap_1. (a) policy rule click=require_approval, takeover, agent click -> 202 pending, human decide approve -> failed (HumanControl) after snapshot, burst left open with baseline [1,100,101]; expire_stale -> lease still held, killed [201,202]. Command: tools/sbx h-gui-lease /usr/bin/python3.13 /scratch/h.py (no network, uid 65534, 512 MiB, 64 pids, 120 s), rc=0.",
     "artifact": "agents/h-gui-lease/artifacts/h.out"
+   },
+   {
+    "agent_id": "v-gui-lease",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/gui_bursts.py",
+     "agentbox/gui_state.py",
+     "agentbox/sandbox_desktop.py",
+     "agentbox/service.py",
+     "agents/parent-live/artifacts/gui_lease_a.json"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
@@ -114,7 +131,9 @@
    "close_idle treats a missing _gui_input_at as 0.0 (gui_bursts.py:161), so after handback (forget_input, service.py:611) any burst left open is closed at once by the next poll or tool call. Correct for normal bursts, but it makes a mid-lease burst close at a time the agent can choose.",
    "decide and call_tool commit a docker snapshot for a GUI input even when _run_tool will refuse it with HumanControl (service.py:467, 367), which uses up snapshot quota and host disk with no input executed. Checking the lease before committing would avoid both the commit and the burst.",
    "Suggested fix: in _snapshot, for GUI_INPUT, do the burst close/open while holding desktop.gui_lock(sid), and skip it (raising HumanControl) when desktop.lease(sid) or _takeover_pending(sid) is set. Or open the burst inside _run_tool after _check_control. In the HumanControl handlers of call_tool and decide, discard (pop without _stop_strays, log gui_burst_discarded) any burst opened after the lease started."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v-gui-lease"
  },
  {
   "coverage_id": "Every%20HTTP%20request%20before%20routing%20and%20authentication%3A%20_BodyLimit%20ASGI%20middleware%20%28Content-Length%20and%20streamed%20bodies%2C%20upload%20path%20selection%29%20%2B%20POST%20%2Fsandboxes%2F%7Bsid%7D%2Ffiles%20multipart%20form%20%2B%20the%20%2Fui%20upload%20form%20%2B%20deploy%2FCaddyfile%20request_body::Pre-authentication%20and%20per-request%20body%20caps%20%28F1%20fix%2C%20PR%20%2316%29%3A%20JSON%2Fform%20bodies%20capped%20at%20AGENTBOX_MAX_BODY%2C%20uploads%20at%20AGENTBOX_MAX_UPLOAD_BODY%20selected%20by%20method%20and%20path%20regex%2C%20multipart%20parsed%20only%20after%20screen_human.%20Invariant%3A%20an%20unauthenticated%20or%20agent%20client%20cannot%20make%20the%20server%20buffer%2C%20parse%20or%20spool%20more%20than%20the%20cap%20%28or%20hang%20a%20worker%29%20before%20auth%2C%20through%20any%20HTTP%20framing%20%28chunked%2C%20missing%20or%20duplicate%20Content-Length%2C%20path%20variants%2C%20HEAD%2Fother%20methods%2C%20root_path%29.::agentbox%2Fapi.py%23_BodyLimit%2F_UPLOAD_PATH%2Fput_files%2Fbuild%20%2B%20agentbox%2Fweb.py%23upload%20form%20%2B%20agentbox%2Fconfig.py%23max_body_bytes%2Fmax_upload_body_bytes%20%2B%20deploy%2FCaddyfile::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Pre-authentication%20work%20imbalance",
@@ -162,7 +181,10 @@
    "agentbox/config.py",
    "agentbox/templates/sandbox.html",
    "agentbox/web.py",
+   "agents/h-bodylimit/artifacts/h.out",
+   "agents/parent-live/artifacts/preauth_json.json",
    "deploy/Caddyfile",
+   "deploy/docker-compose.yml",
    "tests/test_m4_unit.py"
   ],
   "local_checks": [
@@ -209,6 +231,23 @@
     "method": "source",
     "result": "Caddyfile request_body max_size defaults to 256MB for every route (no per-route JSON cap). uvicorn.run (cli.py:127) passes no limit_concurrency, h11_max_incomplete_event_size or body-read timeout, so connections that trickle a body are not timed out. That is uvicorn's general behavior and holds no thread. httptools is not installed in this environment, so h11 0.16 is used, and h11 rejects conflicting duplicate Content-Length values before the app runs.",
     "artifact": null
+   },
+   {
+    "agent_id": "v-preauth",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/cli.py",
+     "agentbox/config.py",
+     "agents/h-bodylimit/artifacts/h.out",
+     "agents/parent-live/artifacts/preauth_json.json",
+     "deploy/Caddyfile",
+     "deploy/docker-compose.yml"
+    ],
+    "note": "phase3 decision needs_validation",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision needs_validation"
    }
   ],
   "result_fingerprints": [
@@ -229,7 +268,9 @@
    "Unauthenticated /login also accepts multipart/form-data and spools up to max_files=1000 file parts (at most 8 MiB in total) into SpooledTemporaryFile before the token check. This is bounded by the cap, but a 64 KiB pre-auth cap would also remove it.",
    "Login-failure logging uses one global 5-per-minute window, so an attacker's failures crowd out per-attempt rows for real failures (they show up only in the suppressed_before count). This is an audit-detail gap, not a growth issue.",
    "uvicorn is run without limit_concurrency and has no request header/body read timeout. A client that trickles a body holds a socket and up to the cap in bytes indefinitely (generic slowloris, no thread held). The bundled Caddy front end is the only place to set read timeouts."
-  ]
+  ],
+  "x_decision": "needs_validation",
+  "x_decided_by": "v-preauth"
  },
  {
   "coverage_id": "Every%20agent-reachable%20write%20to%20the%20shared%20control-plane%20SQLite%20file%20and%20host%20disk%20while%20AgentBox.disk_low%28%29%20is%20true%20or%20near%20the%20threshold%20%28tool%20calls%2C%20approval%20creation%2Fexpiry%2C%20GUI%20burst%20records%2C%20desktop%20and%20file%20routes%29%2C%20plus%20finished-approval%20row%20compaction::Disk-pressure%20guard%20and%20approval%20compaction%20%28PR%20%2320%29%3A%20call_tool%20refuses%20agent%20calls%20with%20507%20when%20free%20space%20on%20db_path.parent%20is%20below%20AGENTBOX_MIN_FREE%2C%20api.py%20skips%20the%20agent%20approval_forbidden%20row%2C%20_finish%20rewrites%20finished%20rows%27%20args%2Fpreview%20to%20the%20bounded%20audit%20shape%2C%20decide%20maps%20claim%20sqlite3.Error%20to%20503%20and%20expire_stale%20stops%20on%20sqlite3.Error.%20Invariant%3A%20an%20agent%20cannot%20keep%20growing%20the%20database%20or%20host%20disk%20past%20the%20guard%20through%20another%20route%2C%20and%20the%20human%20can%20still%20decide%2C%20delete%20and%20verify%20while%20low%3B%20compaction%20keeps%20what%20the%20approval%20card%20and%20audit%20need.::agentbox%2Fservice.py%23call_tool%2Fdisk_low%2F_finish%2Fdecide%2Fexpire_stale%2Flog_best_effort%20%2B%20agentbox%2Fapprovals.py%23finish%20%2B%20agentbox%2Fapi.py%23call_tool%20route%20%2B%20agentbox%2Fgui_bursts.py%23_finish%20%2B%20agentbox%2Fconfig.py%23min_free_bytes::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Quota-accounting%20scope%20and%20reset%20gaps",
@@ -271,17 +312,106 @@
   "prior_status": "new",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-approvals",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/approvals.py",
+   "agentbox/audit.py",
+   "agentbox/config.py",
+   "agentbox/default_policy.yaml",
+   "agentbox/desktop.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/policy.py",
+   "agentbox/preview.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agentbox/templates/_approvals.html",
+   "agentbox/web.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-approvals",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/api.py",
+     "agentbox/preview.py",
+     "agentbox/approvals.py",
+     "agentbox/policy.py",
+     "agentbox/default_policy.yaml",
+     "agentbox/audit.py"
+    ],
+    "invariant": "disk_low() (service.py:282, 388-404) keeps an agent from growing the shared SQLite file past AGENTBOX_MIN_FREE: once the guard admits a call, the call's own writes must be small relative to the margin.",
+    "method": "local",
+    "result": "Fails. The guard is a single pre-check; the REQUIRE_APPROVAL branch then writes a pending approvals row whose preview is unbounded and amplified. preview_command (preview.py:122-125) appends one ~90-byte Korean note per unrecognised segment, so the 2-byte segment 'x;' yields a 45x larger preview, and approvals.create (approvals.py:53-57) stores args and preview raw. In the sandbox, with min_free_bytes set to free-1MiB (disk_low False), ONE agent call_tool('exec', {'command': 'x;'*65536}) (131097-byte JSON body, default policy exec-needs-approval) returned 202, grew agentbox.db from 4096 to 6004736 bytes plus a 6089392-byte -wal file (WAL mode set at audit.py:260), and disk_low() was True afterwards. The pending row held args 131087 bytes and preview 5832767 bytes (65536 notes). The audit approval_requested row was capped at 83141 bytes by bound_payload, so the growth is in the approvals table only. The ratio is linear, so a body at the 8 MiB AGENTBOX_MAX_BODY cap gives about 366 MiB of DB plus a similar WAL in one admitted call. That one call already exceeds the 256 MiB default margin, and 4 concurrent calls per sandbox (tool_concurrency) all pass the pre-check.",
+    "artifact": "agents/h-approvals/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-approvals",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/gui_bursts.py",
+     "agentbox/service.py",
+     "agentbox/desktop.py"
+    ],
+    "invariant": "No other agent-token route or background path writes agent-sized data to SQLite while disk_low is true.",
+    "method": "source",
+    "result": "Holds apart from the candidate above. Agent-token routes: POST /sandboxes/{sid}/tools goes through call_tool and is refused with 507 before close_idle (service.py:282-285). POST /approvals/{aid} skips the approval_forbidden row while low (api.py:312-317). GET /approvals/{aid} (api.py:288-299) runs expire_stale, which only expires or compacts existing rows (at most 20 pending per sandbox) and runs close_idle. close_idle writes one gui_changes or close record per open burst through log_best_effort, and AuditLog.append bounds each payload to 128 KiB (audit.py bound_payload). No new bursts open while low, because agent GUI input is refused. GET /sandboxes/{sid} and GET /sandboxes/{sid}/desktop/state (desktop.py:210) are reads. Unauthenticated or invalid agent tokens do not write audit rows (api.py:173-182).",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-approvals",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/approvals.py",
+     "agentbox/templates/_approvals.html",
+     "agentbox/web.py"
+    ],
+    "invariant": "Finished-row compaction keeps what the approval card and audit need, and the human can still decide while low.",
+    "method": "source",
+    "result": "Compaction keeps what the card needs. _finish (service.py:406-411) stores _logged_args (size, sha256, 16 KiB args_head) and bound_payload(preview), and the done list in _approvals.html:26 reads args.command, args.path or args.args_head. The audit row carries the same _logged_args shape. Compaction does not reclaim space: in the local run, expiring the 5.8 MB row raised agentbox.db from 6004736 to 12054528 bytes with 2890 free pages, and nothing in agentbox/ runs VACUUM. Recovery under real pressure therefore needs more free space first. In decide, only claim is wrapped for sqlite3.Error (service.py:446-449). A sqlite3.Error from _finish on the deny path (service.py:462) or after a successful run (service.py:481) propagates as a 500 after the tool has already run, and can leave the row in 'approved'. retention._DONE never prunes 'approved' rows and expire_stale never expires them. Recorded as hardening. While a pending row from the candidate exists, the human approval fragment renders every note (_approvals.html:16, web.py:233). One 128 KiB-body request produced a 7472223-byte HTML fragment, so the UI decision path degrades in proportion. The JSON decide API stays usable.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-approvals",
+    "reviewed_paths": [
+     "agentbox/config.py",
+     "agentbox/service.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "The guard measures the filesystem that agent-driven writes land on.",
+    "method": "source",
+    "result": "disk_low checks shutil.disk_usage(db_path.parent) (service.py:395), and AGENTBOX_DB may differ from AGENTBOX_HOME (config.py:29, 95-96). Approval capture PNGs go to home/captures (api.py:154), which is bounded by the pending cap. docker commit snapshots and the container writable layer land on the Docker data root. They are bounded only by snapshot_quota and the optional AGENTBOX_DISK storage_opt (sandbox.py:263-264), which README:286,360 documents as a partial SB-5 control. While low, every agent call is refused, so no new agent-triggered commits occur. A filesystem mismatch weakens the guard but does not open a separate agent route; recorded as hardening.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-approvals",
+    "reviewed_paths": [
+     "agentbox/audit.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "Prior run-4 record agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap: agent input reaches the append-only audit log only in bounded form.",
+    "method": "local",
+    "result": "No longer holds; the root cause is fixed. AuditLog.append applies bound_payload(self._mask(payload)) to every record, so approval previews and str(e) error strings are bounded too. Locally, the approval_requested payload for a 5832767-byte preview was stored as 83141 bytes, and tool_request as 16543 bytes. The masking pass runs before bounding (linear: about 1.0 s for 65536 notes), which is CPU only.",
+    "artifact": "agents/h-approvals/artifacts/h.out"
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention"
+  ],
   "unresolved": [],
   "x_hunter": "h-approvals",
   "x_prior_unit": null,
   "x_prior_fingerprints": [
    "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention",
    "agentbox/service.py:_logged_args:tool-args-persisted-to-audit-without-size-cap"
+  ],
+  "x_hardening": [
+   "decide wraps only claim in sqlite3.Error handling. A sqlite3.Error from _finish on the deny path (service.py:462) or after a successful run (service.py:481) returns 500 and can leave a row in 'approved'. retention._DONE never prunes that status and expire_stale never expires it. Catch sqlite3.Error around _finish and retry compaction later.",
+   "Approval compaction and prune do not return space: there is no VACUUM or wal_checkpoint(TRUNCATE) anywhere in agentbox/. Expiring a 5.8 MB row grew agentbox.db from 6.0 to 12.1 MB locally.",
+   "disk_low measures db_path.parent only. When AGENTBOX_DB is on a different filesystem from AGENTBOX_HOME (captures) or the Docker data root (snapshots, writable layers), agent-driven growth there is not part of the guard.",
+   "approvals rows (args head, preview, result) bypass AuditLog._mask, and retention._write_archive copies them unmasked into the prune archive next to masked audit rows. Readers are human or operator only, but archives may be handed on; mask before compaction or archiving.",
+   "AuditLog.append runs _mask over the full unbounded payload before bound_payload (linear, about 1 s for 65536 notes). Bounding first would cap that CPU."
   ]
  },
  {
@@ -489,6 +619,21 @@
     "method": "source",
     "result": "Long holders found: retention.prune keeps the SQLite write lock for its whole BEGIN IMMEDIATE transaction (retention.py:91,106-129; timeout=30), started by the host operator. AuditLog.verify fetches the whole table under _lock (audit.py:338-340), reached from human /audit/verify and /ui/verify. AuditLog.recent runs COUNT(*) WHERE sandbox_id under _lock with no index on sandbox_id (audit.py:26-37,311-316); the sandbox page polls it every 3 s (templates/sandbox.html:19, web.py:290-293). The agent cannot hold these locks itself. It can only grow the audit table, which makes the human-run reads take longer (measured 0.034 s for recent and 0.84 s for verify per 100k rows). The trigger is a desktop WS connect, disconnect or auto-reconnect from a human or desktop-link session.",
     "artifact": null
+   },
+   {
+    "agent_id": "v-ws",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/audit.py",
+     "agentbox/desktop.py",
+     "agentbox/desktop_ws.py",
+     "agentbox/retention.py"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
@@ -502,7 +647,9 @@
   "x_hardening": [
    "No cap on concurrent desktop WS relays per session or per sandbox (desktop_ws.py:26): each view connection spawns a host-side docker exec CLI process plus x11vnc+socat in the container, bounded only by the desktop container pids limit (AGENTBOX_DESKTOP_PIDS 1024). A desktop-link holder can open hundreds. Add a small per-session/per-sandbox connection cap.",
    "sqlite3.connect without an explicit timeout (audit.py:259, desktop.py:92, sandbox.py:164, approvals.py:46) means the default 5 s busy wait applies to every write while retention.prune (timeout=30) holds the write lock. Consider documenting that prune should run with the server stopped, or keep its transaction short (batch the DELETEs)."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v-ws"
  },
  {
   "coverage_id": "agentbox%2Fcli.py%23agentbox%20prune%20--before%20--archive%20%5B--dry-run%5D%20%2B%20agentbox%20verify%20--archive%20%28host%20CLI%2C%20direct%20SQLite%29%20and%20every%20later%20AuditLog.verify%28%29%2Fappend%20over%20a%20pruned%20database::Audit-log%20tamper%20evidence%20across%20pruning%3A%20retention.prune%20drops%20and%20recreates%20the%20audit_no_delete%20trigger%20inside%20BEGIN%20IMMEDIATE%2C%20records%20an%20audit_anchor%20%28last%20id%2Fhash%2C%20archive%20sha256%29%20and%20an%20audit_pruned%20row%3B%20verify%28%29%20starts%20at%20the%20latest%20anchor%20and%20verify_archives%28%29%20chains%20GENESIS%20-%3E%20archives%20-%3E%20live%20table.%20Invariant%3A%20a%20deletion%20or%20edit%20of%20audit%20history%20that%20the%20prune%20command%20did%20not%20perform%20is%20still%20detected%2C%20prune%20never%20removes%20pending%2Fapproved%20approvals%20or%20rows%20at%2Fafter%20the%20cutoff%2C%20and%20a%20failed%20prune%20leaves%20the%20database%20and%20archive%20consistent.::agentbox%2Fretention.py%20%2B%20agentbox%2Faudit.py%23SCHEMA%2Faudit_anchor%2Flatest_anchor%2Fcheck_chain%2Fread_archive%2Finsert_record%2Fappend%2Fverify%2Fverify_archives%20%2B%20agentbox%2Fcli.py%23cmd_prune%2Fcmd_verify::ATTACK-CLASSES.md%23Cryptography%20and%20secrets",
@@ -633,6 +780,19 @@
     "method": "source",
     "result": "The retention half no longer holds. A host-only prune now exists (retention.py:87, cli.py:319) and keeps the chain verifiable through the anchor and archive (audit.py:336-379, verified locally in check3), so capacity recovery is no longer exclusive with integrity. Pruning frees pages for reuse, and file shrink needs an offline VACUUM per README.md:194. The aggregate-bound half (disk_low guard service.py:388-404, compaction service.py:406-411) belongs to the peer unit owned by h-approvals and was not re-hunted here. No candidate with that fingerprint.",
     "artifact": null
+   },
+   {
+    "agent_id": "v-prune",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/audit.py",
+     "agentbox/cli.py",
+     "agentbox/retention.py"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
@@ -651,7 +811,9 @@
    "The archive is created with the default umask (open 'xb', retention.py:70) and carries full finished approval rows, including the unmasked result column and any args left raw when _finish failed. Create it 0600, since README tells operators to store it elsewhere.",
    "AuditLog.verify (audit.py:338-340) and verify_archives (audit.py:354-357) read the anchor and rows as separate autocommit statements. A prune committing between them gives a false 'id gap' alarm. This fails closed; wrapping both reads in one read transaction removes the false positive.",
    "Capture PNGs are indexed only through approval rows (service.py:114-116 drop_captures). An orphan capture from the create-then-write window (service.py:337-341) or a failed unlink is no longer reachable by sandbox-delete cleanup once prune removes its approval row. Prune could also unlink captures/<aid>.png for pruned approvals."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v-prune"
  },
  {
   "coverage_id": "approvals%20table%20rows%20%28args%2C%20preview%2C%20result%29%20written%20for%20every%20REQUIRE_APPROVAL%20tool%20call::agentbox%2Fapprovals.py%23create%20stores%20raw%20agent%20args%20and%20preview%20for%20pending%20rows%20without%20audit%20masking%20or%20a%20size%20cap%20%28finish%20compacts%20them%20since%20PR%20%2320%29%2C%20rows%20outlive%20sandbox%20deletion%2C%20and%20only%20the%20host%20prune%20command%20removes%20finished%20rows::agentbox%2Fapprovals.py%20%2B%20agentbox%2Fservice.py%23_call_tool%2Fdecide%2Fdelete_sandbox%20%2B%20agentbox%2Fapi.py%23GET%20%2Fapprovals::DATA-ISOLATION-AND-LIFECYCLE.md%23Retention%20and%20queued-work%20overrun",
@@ -686,17 +848,72 @@
   "prior_status": "prior_deferred",
   "attempts": [],
   "wave": 1,
-  "status": "in_progress",
+  "status": "candidate",
   "agent_id": "h-approvals",
-  "reviewed_paths": [],
-  "local_checks": [],
-  "result_fingerprints": [],
+  "reviewed_paths": [
+   "agentbox/api.py",
+   "agentbox/approvals.py",
+   "agentbox/audit.py",
+   "agentbox/preview.py",
+   "agentbox/retention.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-approvals",
+    "reviewed_paths": [
+     "agentbox/approvals.py",
+     "agentbox/service.py",
+     "agentbox/preview.py"
+    ],
+    "invariant": "Pending approvals rows have a per-row size bound in proportion to the request.",
+    "method": "local",
+    "result": "Fails; this is the same root cause as the disk-guard candidate. approvals.create (approvals.py:49-59) json.dumps raw args and preview, and _call_tool (service.py:332-339) passes the uncapped preview. The 'preview failed' fallback (service.py:334) also copies the raw command. Measured: a 131097-byte request produced a pending row with a 5832767-byte preview (65536 notes). Compaction happens only at finish (service.py:406-411).",
+    "artifact": "agents/h-approvals/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-approvals",
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/approvals.py",
+     "agentbox/audit.py",
+     "agentbox/retention.py"
+    ],
+    "invariant": "Unmasked approvals data reaches no principal lower than the human.",
+    "method": "source",
+    "result": "Holds. GET /approvals is human_only (api.py:282-286). GET /approvals/{aid} returns only id, status, result and decided_at to an agent, and only for its own sandbox (api.py:294-298). result is the agent's own tool output. The UI routes need a full-scope human session. approvals rows (args head, preview, result) are not passed through AuditLog._mask, and retention._write_archive (retention.py:67-84) copies them unmasked into the prune archive next to the masked audit rows. The only readers are the human and the host operator, who already hold those values, so this is recorded as hardening rather than a finding.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-approvals",
+    "reviewed_paths": [
+     "agentbox/service.py",
+     "agentbox/retention.py",
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "Approval rows and side artifacts of a deleted sandbox cannot be acted on or re-executed after deletion, and retention removes finished rows.",
+    "method": "source",
+    "result": "Holds. delete_sandbox (service.py:538-543) drops capture PNGs, and SandboxManager.delete marks the sandbox deleted (sandbox.py:320-326). Leftover pending rows expire through expire_stale and are compacted. Approving one reaches _snapshot, and sandboxes._container raises SandboxError for a deleted sandbox (sandbox.py:225-228), so decide records FAILED and runs nothing. Finished rows (denied, executed, failed, expired) are removed only by the host prune command (retention.py:41, 54-64), which matches the documented design. The one exception is a row stuck in 'approved' after a _finish storage error (see the unit-1 hardening note).",
+    "artifact": null
+   }
+  ],
+  "result_fingerprints": [
+   "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention"
+  ],
   "unresolved": [],
   "x_hunter": "h-approvals",
   "x_prior_unit": "approvals%20table%20rows%20%28args%2C%20preview%2C%20result%29%20written%20for%20every%20REQUIRE_APPROVAL%20tool%20call::agentbox%2Fapprovals.py%23create%2Ffinish%20store%20raw%20agent%20args%20and%20preview%20without%20audit%20masking%20or%20size%20cap%2C%20and%20rows%20outlive%20sandbox%20deletion::agentbox%2Fapprovals.py%20%2B%20agentbox%2Fservice.py%23_call_tool%2Fdecide%2Fdelete_sandbox%20%2B%20agentbox%2Fapi.py%23GET%20%2Fapprovals::DATA-ISOLATION-AND-LIFECYCLE.md%23Retention%20and%20queued-work%20overrun",
   "x_prior_fingerprints": [
    "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention"
   ],
-  "x_source": "run-4 critic-1 deferred unit; boundary updated for the PR #20 compaction."
+  "x_source": "run-4 critic-1 deferred unit; boundary updated for the PR #20 compaction.",
+  "x_hardening": [
+   "decide wraps only claim in sqlite3.Error handling. A sqlite3.Error from _finish on the deny path (service.py:462) or after a successful run (service.py:481) returns 500 and can leave a row in 'approved'. retention._DONE never prunes that status and expire_stale never expires it. Catch sqlite3.Error around _finish and retry compaction later.",
+   "Approval compaction and prune do not return space: there is no VACUUM or wal_checkpoint(TRUNCATE) anywhere in agentbox/. Expiring a 5.8 MB row grew agentbox.db from 6.0 to 12.1 MB locally.",
+   "disk_low measures db_path.parent only. When AGENTBOX_DB is on a different filesystem from AGENTBOX_HOME (captures) or the Docker data root (snapshots, writable layers), agent-driven growth there is not part of the guard.",
+   "approvals rows (args head, preview, result) bypass AuditLog._mask, and retention._write_archive copies them unmasked into the prune archive next to masked audit rows. Readers are human or operator only, but archives may be handed on; mask before compaction or archiving.",
+   "AuditLog.append runs _mask over the full unbounded payload before bound_payload (linear, about 1 s for 65536 notes). Bounding first would cap that CPU."
+  ]
  }
 ]

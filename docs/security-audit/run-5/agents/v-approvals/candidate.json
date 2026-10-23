@@ -1,0 +1,143 @@
+{
+ "proposed_verdict": "confirmed",
+ "fingerprint": "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention",
+ "title": "One agent exec call writes a pending approval row about 45x its body size, getting past the PR #20 disk guard in a single step",
+ "description": "PR #20 added AgentBox.disk_low(), a free-space pre-check at the top of call_tool, and compaction of finished approval rows. Pending approval rows are still written raw and without a size bound, and the preview the system computes is amplified from the agent's command. preview_command emits one fixed ~90-byte Korean note for every shell segment it cannot classify, so a command made of 2-byte 'x;' segments (default policy: exec-needs-approval) gives a preview about 45x the request. approvals.create stores that preview plus the raw args in the shared SQLite file, which is in WAL mode, so the data is written twice on disk. The guard was evaluated once before the call and admitted it. Locally, one 131097-byte agent request, made with 1 MiB of headroom above min_free_bytes, added 6.0 MB to agentbox.db and 6.1 MB to the -wal file, and disk_low() flipped to True afterwards. At the 8 MiB body cap the same call writes about 366 MiB of row data plus WAL, which exceeds the 256 MiB default margin on its own. Each sandbox can run 4 such calls concurrently and keep up to 20 pending. Expiry compaction does not shrink the file: it grew from 6.0 to 12.1 MB. Once the volume fills, human writes fail closed (log_human 503, decide claim 503, expire_stale stops), and the human approval UI renders every note of every pending row. This is the part of the run-4 N2 root cause (agent-grown approval rows without an effective aggregate bound) that the PR #20 fix did not cover.",
+ "root_cause": "The disk guard is only a threshold check at call entry (service.py:282). The REQUIRE_APPROVAL branch then calls _preview, and preview_command appends one note per unrecognised segment with no count bound (preview.py:122-125); the 200-item cap at preview.py:126 applies only to 'affected'. approvals.create (approvals.py:53-57) stores json.dumps(args) and json.dumps(preview) unbounded. bound_payload is applied only to the audit copy (audit.py append) and to finished rows (_finish, service.py:406-411), never at creation.",
+ "intended_behavior": "No single agent request can make the control plane persist more than a small, fixed bound of approval data. Pending rows hold the same bounded shape as the audit log (capped args and capped preview with a bounded notes list), so the 256 MiB guard margin cannot be crossed by an admitted call.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 274,
+   "scope": "call_tool route",
+   "description": "An agent token posts {\"args\": {\"command\": \"x;x;...\"}}. _BodyLimit allows up to AGENTBOX_MAX_BODY (8 MiB)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 282,
+   "scope": "AgentBox.call_tool",
+   "description": "disk_low() is evaluated once. Free space is still above min_free_bytes, so the call is admitted."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 311,
+   "scope": "AgentBox._call_tool",
+   "description": "policy.decide returns exec-needs-approval because 'x' is not in the read-only allowlist (default_policy.yaml)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 332,
+   "scope": "AgentBox._call_tool",
+   "description": "_preview calls sandboxes.preview, which calls preview_command, for the raw command."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/preview.py",
+   "line": 125,
+   "scope": "preview_command",
+   "description": "One note per segment is appended without a bound: 65536 notes for 65536 'x;' segments."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/approvals.py",
+   "line": 56,
+   "scope": "ApprovalStore.create",
+   "description": "json.dumps(args) and json.dumps(preview) are inserted raw into the shared SQLite file (WAL)."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/preview.py",
+   "line": 125,
+   "description": "notes.append(f\"'{_short_seg(seg)}' 부분의 영향은 ...\") runs once per segment. Only 'affected' is truncated, at line 126."
+  },
+  {
+   "file": "agentbox/approvals.py",
+   "line": 56,
+   "description": "create stores args and preview with json.dumps and no size check."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 282,
+   "description": "The only disk guard is a pre-check at call entry."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 338,
+   "description": "approvals.create is called with the uncapped preview after the guard."
+  },
+  {
+   "file": "agentbox/audit.py",
+   "line": 260,
+   "description": "The shared DB is put in WAL mode, so the large insert is also written to agentbox.db-wal."
+  },
+  {
+   "file": "agentbox/templates/_approvals.html",
+   "line": 16,
+   "description": "The human approval card renders every note of every pending row."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 57,
+   "description": "Default min_free_bytes margin is 256 MiB."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "Requires an agent token for a running sandbox. This is the lowest-trust principal, and the threat model assumes it may be prompt-injected."
+  },
+  {
+   "kind": "system_configuration",
+   "description": "Default policy (or any policy that sends an exec to require_approval) and AGENTBOX_MIN_FREE > 0. The body must fit AGENTBOX_MAX_BODY (8 MiB default)."
+  },
+  {
+   "kind": "data_state",
+   "description": "Fewer than PENDING_APPROVALS_MAX (20) pending approvals for the sandbox, and free space above min_free_bytes when the call starts."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "A prompt-injected agent holding only its own sandbox's agent token calls the exec tool with a long command made of trivial unrecognised segments.",
+  "payloads": [
+   "POST /sandboxes/{sid}/tools/exec  {\"args\": {\"command\": \"x;\" * 65536}}  (131097-byte JSON body; scale to ~8 MiB for the deployed cap)"
+  ],
+  "instructions": [
+   "In tools/sbx (no network, no Docker, 512 MiB, 120 s), build AgentBox with the real AuditLog, ApprovalStore, DesktopControl and default_policy.yaml, plus a fake SandboxManager whose preview() calls the real preview_command with empty glob/walk callbacks (scratch/h.py).",
+   "Set settings.min_free_bytes = shutil.disk_usage(home).free - 1 MiB so that disk_low() is False.",
+   "Call box.call_tool('sb_x', 'exec', {'command': 'x;'*65536}, actor='agent') once, then measure agentbox.db and agentbox.db-wal, the approvals row lengths, disk_low(), the audit row sizes, the rendered _approvals.html size, and the file size after expire_stale compaction."
+  ],
+  "observed_result": "decision=exec-needs-approval; call_tool status=202; disk_low before=False, after=True; agentbox.db 4096 -> 6004736 bytes (45.8x the body), -wal 6089392 bytes; pending row args 131087 bytes, preview 5832767 bytes, 65536 notes; audit approval_requested payload only 83141 bytes; _approvals.html fragment 7472223 bytes for this one row; after expiry, row compacted to 16533/83045 bytes but agentbox.db grew to 12054528 bytes (2890 free pages); audit verify ok. (agents/h-approvals/artifacts/h.out)"
+ },
+ "remediation": {
+  "strategy": "Bound pending rows at creation. (1) Reject agent exec commands, and other string args, above a fixed size (for example LOGGED_ARGS_MAX) with 413 before policy and preview. (2) In preview_command, cap the notes (for example, keep the first 50 plus one 'and N more segments' summary). (3) Store bound_payload(preview) in approvals.create. (4) Re-check disk_low() immediately before approvals.create, and treat a sqlite3.Error from create or _finish as 503. (5) Optionally run 'PRAGMA wal_checkpoint(TRUNCATE)' and VACUUM after prune, so that compaction and prune actually return space.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/preview.py",
+    "fixed_code": "NOTES_MAX = 50\n...\n    if len(notes) > NOTES_MAX:\n        extra = len(notes) - NOTES_MAX\n        notes = notes[:NOTES_MAX] + [f\"... 외 {extra}개 조각의 영향도 자동 계산하지 못함. 명령 원문을 확인할 것.\"]\n    return {\"command\": command, \"cwd\": WORKSPACE, \"affected\": affected, \"notes\": notes}"
+   },
+   {
+    "file_name": "agentbox/service.py",
+    "fixed_code": "            preview = bound_payload(preview)\n            if actor == \"agent\" and self.disk_low():\n                raise ServiceError(507, \"컨트롤 플레인 디스크의 남은 공간이 부족해 승인 요청을 만들지 않음.\")\n            apr = self.approvals.create(sandbox_id=sid, tool=tool, args=args, ...)"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "medium",
+   "reason": "Any agent token can do it with one ordinary-looking request under the default policy. The threat model assumes a prompt-injected agent."
+  },
+  "impact": {
+   "score": "medium",
+   "reason": "Shared control-plane disk and availability: a few requests fill the DB volume past the guard, after which human audit-logged actions (decide, delete, pause) fail closed with 503 and the approval UI bloats. Recovery needs the operator to free disk out of band. No integrity or confidentiality loss."
+  },
+  "overall_severity": "medium"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "The full call_tool path ran with the real policy, preview, store and audit code and the observed byte counts. Scaling to the 8 MiB cap is linear arithmetic from the measured 45.8x ratio; filling a real disk was deliberately not tested."
+ }
+}

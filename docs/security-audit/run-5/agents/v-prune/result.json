@@ -1,0 +1,132 @@
+{
+ "decision": "confirmed",
+ "record": {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/retention.py:prune:archive-unlinked-after-committed-prune-on-interrupt",
+  "title": "Interrupted prune deletes the only archive of audit rows it has already committed as pruned",
+  "description": "retention.prune writes the archive, then deletes the audit and approval rows and records an audit_anchor holding the archive's sha256, all in one transaction. The inner handler issues ROLLBACK on any exception, and the outer handler unlinks the archive on any BaseException. Neither handler checks whether COMMIT already succeeded. If a KeyboardInterrupt surfaces right after COMMIT returns (Ctrl-C during the fsync-bound COMMIT), the inner ROLLBACK raises OperationalError('cannot rollback - no transaction is active'). The outer handler then deletes the archive. The database says rows 1..N were pruned into an archive with a recorded sha256, and that archive no longer exists. verify() still reports ok with 'pruned through #N'. verify_archives can no longer pass, and a re-run finds nothing to prune. The pruned audit history and its tamper evidence are lost, which contradicts the invariant that a failed prune leaves the database and archive consistent.",
+  "root_cause": "The archive cleanup at retention.py:130-131 runs on any exception rather than only when the prune transaction did not commit. The inner handler (retention.py:127-129) runs ROLLBACK unconditionally, even when the transaction has already committed at retention.py:126. Any exception that surfaces after COMMIT therefore both masks itself with a ROLLBACK error and triggers the unlink of the archive that the durable anchor row refers to.",
+  "intended_behavior": "The archive is removed only if the prune transaction did not commit. Once the anchor row referencing the archive's sha256 is durable, the archive must be kept whatever exception follows. The failure should be reported as 'pruned; archive kept at <path>'. ROLLBACK should be issued only while a transaction is active.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/cli.py",
+    "line": 319,
+    "scope": "cmd_prune",
+    "description": "Host operator runs `agentbox prune --before ... --archive ...`. It calls retention.prune on Settings().db_path and catches only ValueError, FileExistsError and RuntimeError (cli.py:322-324)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/retention.py",
+    "line": 104,
+    "scope": "prune",
+    "description": "The archive is written, fsynced and hashed before the transaction starts."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/retention.py",
+    "line": 118,
+    "scope": "prune",
+    "description": "Inside BEGIN IMMEDIATE, audit rows are deleted and an audit_anchor row with the archive name and sha256 is inserted."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/retention.py",
+    "line": 126,
+    "scope": "prune",
+    "description": "COMMIT makes the deletion and anchor durable. A SIGINT arriving during this call is raised as KeyboardInterrupt right after it returns, still inside the inner try."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/retention.py",
+    "line": 128,
+    "scope": "prune inner except",
+    "description": "Unconditional ROLLBACK raises OperationalError('cannot rollback - no transaction is active'), chained on the KeyboardInterrupt."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/retention.py",
+    "line": 131,
+    "scope": "prune outer except",
+    "description": "archive.unlink deletes the only copy of the rows the committed anchor says were archived."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/retention.py",
+    "line": 131,
+    "description": "The archive is unlinked on any BaseException with no check of commit state."
+   },
+   {
+    "file": "agentbox/retention.py",
+    "line": 128,
+    "description": "ROLLBACK is issued without checking conn.in_transaction, so it raises after a successful COMMIT."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 341,
+    "description": "verify() starts at the latest anchor, so it keeps passing after the archive is lost and hides the loss."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 362,
+    "description": "verify_archives reads the archive and compares its sha256 to the anchor. With the archive deleted it raises FileNotFoundError, and with an empty archive list it fails on the anchor/archive count mismatch (audit.py:353-354)."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 322,
+    "description": "cmd_prune catches only ValueError, FileExistsError and RuntimeError. The OperationalError surfaces as a traceback."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Host operator running the prune CLI with direct DB file access. No remote or agent principal is involved."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "SIGINT (Ctrl-C or a supervisor sending SIGINT) must arrive while COMMIT executes or in the few bytecodes after it inside the inner try. COMMIT of a large prune is fsync-bound, so the window is real for the large prunes the command is meant for."
+   },
+   {
+    "kind": "data_state",
+    "description": "At least one audit or terminal approval row is older than the cutoff, so prune reaches the transaction."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "No adversary is needed. This is an operator interrupt of a command whose interrupted-prune handling is supposed to be safe. The effect is permanent loss of the archived audit rows and their tamper evidence for the pruned range.",
+   "payloads": [
+    "v-prune p.py: AuditLog fixture with 5 rows before the cutoff and 2 after. retention.sqlite3 is shimmed with a Connection subclass whose execute('COMMIT') performs the real COMMIT and then calls signal.raise_signal(SIGINT). Then prune(db, cut, archive) is called and verify() and verify_archives([archive]) are run."
+   ],
+   "instructions": [
+    "Run tools/sbx v-prune /usr/bin/python3.13 /scratch/p.py (no network, read-only /target, uid 65534).",
+    "Read the exception, whether the archive exists, the audit/anchor rows, and the verify() and verify_archives() results.",
+    "The hunter's artifacts agents/h-retention/artifacts/h.out and h2.out show the same with the full harness. h2 uses a real asynchronous SIGINT during a real 20k-row COMMIT and hit the inner except in 5 of 5 attempts."
+   ],
+   "observed_result": "Independent run: prune raised OperationalError('cannot rollback - no transaction is active') with __context__ KeyboardInterrupt. The archive no longer exists. The audit table holds 3 rows starting at id 6, with anchor (seq 1, last_id 5, 'x.jsonl.gz'). verify() returned ok=True, pruned_through=5. verify_archives([archive]) raised FileNotFoundError. Hunter's h2.out confirms a real asynchronous SIGINT during a real COMMIT reaches the inner except with the 20000 rows committed."
+  },
+  "remediation": {
+   "strategy": "Make archive cleanup depend on commit state, not on whether an exception was raised. Roll back only while conn.in_transaction is true. In the outer handler, check whether an audit_anchor row with this archive's name and sha256 exists, and unlink only if it does not. If the check itself fails, keep the archive. Report a post-commit interruption as 'pruned; archive kept at <path>' rather than a raw OperationalError. Optionally fsync the archive's parent directory after creating it. Add a regression test where a Connection factory raises KeyboardInterrupt after a successful COMMIT, and assert the archive remains and verify_archives([archive]) passes.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/retention.py",
+     "fixed_code": "        try:\n            conn.execute(\"BEGIN IMMEDIATE\")\n            try:\n                ...  # unchanged body\n                conn.execute(\"COMMIT\")\n            except BaseException:\n                if conn.in_transaction:\n                    conn.execute(\"ROLLBACK\")\n                raise\n        except BaseException:\n            committed = True   # unknown state: never destroy a possibly referenced archive\n            try:\n                committed = conn.execute(\"SELECT 1 FROM audit_anchor WHERE archive_sha256 = ? AND archive = ?\",\n                                         (sha, archive.name)).fetchone() is not None\n            except sqlite3.Error:\n                pass\n            if not committed:\n                archive.unlink(missing_ok=True)\n            raise"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Needs a SIGINT to land during or just after COMMIT of a host-only CLI command run by the operator. The window is short but real for large, fsync-bound prunes, and Ctrl-C on a slow-looking command is a common operator action."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "The only remaining copy of the pruned audit rows and finished approvals is permanently destroyed, while the in-DB anchor and verify() report the history as cleanly archived. Full-history verification becomes impossible from then on. There is no confidentiality impact and no remote attacker."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "The source lines match. I reproduced the outcome independently in the sandbox with a COMMIT-then-SIGINT shim. The hunter's real-timing harness produced the same behaviour in 5 of 5 attempts. The synthetic shim models the timing: a signal delivered during COMMIT is raised as KeyboardInterrupt on return from the C call."
+  }
+ }
+}
