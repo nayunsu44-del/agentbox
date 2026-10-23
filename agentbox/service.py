@@ -44,6 +44,9 @@ GUI_LOCK_WAIT = 30
 AUDIT_BURST_WAIT = 5   # 감사 로그 조회가 방금 닫기 시작한 구간 기록을 기다리는 최대 시간(초)
 # 샌드박스 하나가 동시에 걸어 둘 수 있는 승인 요청 수. 요청마다 화면 캡처 PNG가 호스트에 남는다 (보안 검수 run-3 v18).
 PENDING_APPROVALS_MAX = 20
+# write_file 본문을 뺀 문자열 인자 하나(exec 명령 등)의 최대 길이. 사람이 읽고 승인할 수 있는 명령보다 길고,
+# 정책 판단이 가장 느린 모양에서도 0.2초 안에 끝나는 크기 (보안 검수 run-5). 큰 내용은 write_file로 보낸다.
+TOOL_ARG_MAX = 16 * 1024
 
 
 _NO_SESSION: Any = ...   # "session을 넘기지 않음". None(세션 없는 사람 토큰)과 다르다
@@ -305,6 +308,12 @@ class AgentBox:
         if tool not in TOOLS:
             raise ServiceError(404, f"알 수 없는 도구: {tool}")
         self.sandboxes.get(sid)  # 없으면 SandboxError
+        long = [k for k, v in args.items() if k != "content" and isinstance(v, str) and len(v) > TOOL_ARG_MAX]
+        if long:
+            # 정책 판단과 승인 미리보기는 명령 길이에 비례해 CPU·exec를 쓴다. 판단 전에 길이부터 막는다 (보안 검수 run-5)
+            self.log_best_effort(sid, tool, "tool_blocked", {"reason": "argument_too_long", "args": long,
+                                                             "limit": TOOL_ARG_MAX}, actor="system")
+            raise ServiceError(413, f"도구 인자가 너무 김: {', '.join(long)} (최대 {TOOL_ARG_MAX}자). 나눠서 호출할 것")
         try:
             req_id = self.audit.append(actor=actor, event="tool_request", sandbox_id=sid, tool=tool,
                                        payload={"args": self._logged_args(tool, args)})
@@ -332,6 +341,12 @@ class AgentBox:
                 preview = self._preview(sid, tool, args)
             except Exception as e:  # 미리보기가 실패해도 승인은 사람에게 넘긴다
                 preview = {"command": args.get("command"), "affected": [], "notes": [f"미리보기 실패: {e}"]}
+            preview = bound_payload(preview)  # 대기 행도 감사 로그와 같은 크기로 (보안 검수 run-5)
+            if actor == "agent" and self.disk_low():
+                # 호출을 받을 때의 확인 뒤에 판단·미리보기가 오래 걸릴 수 있다. 행을 쓰기 직전에 다시 본다
+                self.log_best_effort(sid, tool, "tool_blocked", {"request": req_id, "reason": "disk_low"})
+                raise ServiceError(507, "컨트롤 플레인 디스크의 남은 공간이 부족해 승인 요청을 만들지 않음. "
+                                        "사람이 공간을 확보한 뒤 다시 호출할 것.")
             cap = self._capture(sid)
             if cap:
                 preview["capture"] = cap[1]

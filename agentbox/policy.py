@@ -24,6 +24,7 @@ REQUIRE_APPROVAL = "require_approval"
 _ACTIONS = {ALLOW, DENY, REQUIRE_APPROVAL}
 
 _SHELL_PUNCT = set(";&|()<>`$")
+_LEX_PUNCT = set(";&|()<>")   # shlex가 단어를 끊는 문자 (_words의 punctuation_chars)
 
 
 @dataclass
@@ -57,7 +58,10 @@ def _words(command: str, depth: int = 0) -> list[str]:
         cleaned = t.replace("$(", " ").replace("`", " ").replace("${", " ").replace("}", " ")
         for piece in cleaned.split():
             out.append(piece)
-        if any(c.isspace() for c in t) or any(c in _SHELL_PUNCT for c in t):
+        # 다시 쪼개서 달라지는 토큰만 다시 본다: 공백이나 구분자(;&|()<>)가 들어 있고 구분자만으로 된 것은 아닌 토큰
+        # (예: bash -c 'x;rm y'의 'x;rm y'). ';'나 'x$'를 다시 렉싱하면 같은 토큰이 깊이 한도까지 되풀이돼,
+        # 'x;x;x;…' 같은 명령 하나가 수 초씩 CPU를 쓴다 (보안 검수 run-5). $( ) ` ${ }는 위 cleaned가 이미 펼친다.
+        if any(c.isspace() for c in t) or (any(c in _LEX_PUNCT for c in t) and not all(c in _LEX_PUNCT for c in t)):
             out.extend(_words(t, depth + 1))
     return out
 
