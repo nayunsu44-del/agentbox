@@ -283,3 +283,22 @@ def test_failed_burst_baseline_is_logged():
     assert "sb" not in box._gui_burst
     assert [(r["event"], r["payload"]["snapshot_id"]) for r in box.audit.rows] == [("gui_burst_open_failed", "snap_9")]
     box._burst_pool.shutdown()
+
+
+def test_gui_input_refused_when_burst_baseline_unreadable():
+    # run-3 v09 fail-closed: 기준을 못 읽으면 그 GUI 입력은 실행하지 않고, 다음 입력이 다시 스냅샷·구간을 연다
+    from agentbox.sandbox import SandboxError
+
+    box, sb = _gui_box()
+    sb.snapshot = lambda sid, reason: {"id": "snap_9", "image": "img"}
+
+    def broken(sid):
+        raise RuntimeError("/workspace 파일 목록 실패 (exit 126)")
+
+    sb.workspace_manifest = broken
+    box._gui_input_at["sb"] = time.monotonic()
+    with pytest.raises(SandboxError, match="실행하지 않음"):
+        box._snapshot("sb", "key", "before key", {"request": 1})
+    assert "sb" not in box._gui_burst and box._gui_needs_snapshot("sb")
+    assert [r["event"] for r in box.audit.rows] == ["gui_burst_open_failed", "snapshot"]
+    box._burst_pool.shutdown()

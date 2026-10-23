@@ -219,6 +219,25 @@ def test_gui_input_snapshots_per_burst(desk):
 
 
 @needs_desktop
+def test_gui_input_refused_without_burst_baseline(desk, monkeypatch):
+    """보안 검수 run-3 v09: GUI 구간 기준을 못 읽으면(예: 에이전트가 pid 한도를 채움) 기록 없는 GUI 입력을 실행하지 않는다."""
+    e = desk
+    real = e.box.sandboxes.workspace_manifest
+
+    def broken(sid):
+        raise RuntimeError("프로세스를 만들 수 없음")
+
+    monkeypatch.setattr(e.box.sandboxes, "workspace_manifest", broken)
+    r = tool(e, "key", keys="ctrl+Escape")
+    assert r.status_code == 503 and "실행하지 않음" in r.text, r.text
+    ev = [x["event"] for x in events(e)]
+    assert "gui_burst_open_failed" in ev and "tool_result" not in ev
+    monkeypatch.setattr(e.box.sandboxes, "workspace_manifest", real)
+    assert tool(e, "key", keys="ctrl+Escape").status_code == 200        # 다시 부르면 구간을 연다
+    assert e.sid in e.box._gui_burst and len(e.box.sandboxes.list_snapshots(e.sid)) == 2
+
+
+@needs_desktop
 def test_gui_burst_changes_logged(desk):
     """보안 검수 N-1(방안 G): GUI 구간 동안 정책 밖에서 바뀐 파일을 기록하고, 시작 스냅샷으로 되돌릴 수 있다."""
     e = desk
