@@ -380,3 +380,22 @@ def test_preview_paths_with_spaces_and_newlines(home):
         assert [a["path"] for a in p["affected"]] == ["dir with space", "dir with space/inner"]
     finally:
         c.delete(f"/sandboxes/{sid}", headers=H)
+
+
+@needs_desktop
+def test_novnc_extracted_once_under_concurrency(home, monkeypatch):
+    """보안 검수 run-4 F5: 인증 없는 정적 파일 요청이 동시에 와도 noVNC 꺼내기는 한 번이고, 실패하면 한동안 다시 하지 않는다."""
+    from concurrent.futures import ThreadPoolExecutor
+    from docker.models.containers import ContainerCollection
+    created = []
+    real = ContainerCollection.create
+    monkeypatch.setattr(ContainerCollection, "create", lambda self, *a, **kw: (created.append(1), real(self, *a, **kw))[1])
+    c, box, H, _ = _build()
+    box.sandboxes.settings.desktop_image = "agentbox-missing-image:0"     # 실패 쪽 먼저
+    assert [c.get("/static/novnc/core/rfb.js").status_code for _ in range(3)] == [404, 404, 404]
+    assert len(created) == 1                                             # 실패한 뒤에는 바로 다시 하지 않는다
+    c2, _, _, _ = _build()                                               # 새 서버: 진짜 이미지
+    created.clear()
+    with ThreadPoolExecutor(8) as ex:
+        codes = list(ex.map(lambda _: c2.get("/static/novnc/core/rfb.js").status_code, range(8)))
+    assert codes == [200] * 8 and len(created) == 1
