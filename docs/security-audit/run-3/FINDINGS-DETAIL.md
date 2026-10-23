@@ -8,7 +8,7 @@
 
 - fingerprint: `agentbox/service.py:close_idle_gui_bursts:cross-sandbox-untimed-exec-outside-tool-concurrency`
 - 심각도: likelihood medium · impact high · overall **high**; confidence high
-- 수정 상태: 아직 수정 안 됨
+- 수정 상태: 이 브랜치에 `c1f88da`로 수정됨. 회귀 테스트: `tests/test_m2_unit.py::test_idle_burst_close_does_not_run_on_caller_thread`, `tests/test_m2_unit.py::test_gui_execs_have_a_container_side_deadline`, `tests/test_m2_acceptance.py::test_frozen_display_does_not_hold_tools_or_takeover`
 
 ### 설명
 
@@ -546,7 +546,7 @@ def _logged_args(tool: str, args: dict[str, Any]) -> dict[str, Any]:
 
 - fingerprint: `agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause`
 - 심각도: likelihood medium · impact medium · overall **medium**; confidence high
-- 수정 상태: 아직 수정 안 됨
+- 수정 상태: 이 브랜치에 `c1f88da`로 수정됨. 회귀 테스트: `tests/test_m2_acceptance.py::test_gui_burst_restarts_after_pause_and_restore`, `tests/test_m2_unit.py::test_lifecycle_change_resets_gui_burst_timers`, `tests/test_m2_unit.py::test_burst_from_replaced_container_kills_nothing`, `tests/test_m2_unit.py::test_failed_burst_close_is_logged_not_dropped_silently`
 
 ### 설명
 
@@ -685,7 +685,7 @@ def pause(sid: str, p: Principal = Depends(human_only)):
 
 - fingerprint: `agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized`
 - 심각도: likelihood medium · impact medium · overall **medium**; confidence high
-- 수정 상태: 아직 수정 안 됨
+- 수정 상태: 이 브랜치에 `c1f88da`로 수정됨. 회귀 테스트: `tests/test_m3_acceptance.py::test_web_approval_neutralises_bidi_controls`
 
 ### 설명
 

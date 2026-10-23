@@ -125,12 +125,15 @@ pytest                                                 # 160 passed
 3. v17, v18, v19 레코드를 `findings.json`에 넣고 5단계 검증을 돌린다(`gen5.py`의 FP 표에 추가). 이어서 `apply5.py` 방식으로 반영하고 `gen6.py`로 보고서를 다시 만든다.
 4. 확정 건 수정과 회귀 테스트(아래 목록), 그리고 PR.
 
+수정한 것 (`c1f88da`, 회귀 테스트 포함. 내용은 REPORT 3.1·3.5·3.6과 4절 아래 메모):
+- v11·v10: GUI와 수집 exec에 컨테이너 쪽 `timeout -k`, 유휴 구간 닫기는 전용 스레드, 인수·반환은 30초 상한과 대기 중 에이전트 GUI 차단
+- v12: 일시정지 전 구간 닫기, 일시정지·재개·복원·삭제 때 타이머 초기화, 구간에 `container_id`, 닫기 실패는 `gui_burst_close_failed`
+- v13: 웹 템플릿 `finalize`로 모든 출력의 제어·bidi 문자를 보이는 이스케이프로
+- v09(일부): 수집 exec 종료 코드 확인, 기준을 못 읽으면 `gui_burst_open_failed`. fail-closed는 아직
+
 남은 수정 목록:
-- v11·v10: GUI와 수집 exec에 컨테이너 쪽 `timeout -k`, 구간 닫기를 호출자 스레드에서 분리, takeover는 `gui_lock.acquire(timeout)`
-- v12: 복원·일시정지·재개 때 타이머 초기화, 구간에 `container_id` 기록
-- v13: 웹 템플릿에 `_safe`와 같은 필터
 - v03: `cmd_agent.log`에 줄 단위 `_safe`
-- v09: exit code 확인, 실패하면 `gui_burst_error` 기록
+- v09 나머지: 기준을 못 읽었을 때 GUI 입력을 막을지(fail-closed) 결정
 - v14: X-Frame-Options SAMEORIGIN + frame-ancestors 'self'
 - v06 남은 틈: `cp -ax` 또는 하위 경로 검사
 - v17: preview가 모델링하지 못한 구간마다 경고를 단다

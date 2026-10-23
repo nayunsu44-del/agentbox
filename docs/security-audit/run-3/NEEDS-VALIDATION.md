@@ -10,6 +10,7 @@
 
 - fingerprint: `agentbox/service.py:_run_tool:gui_lock-held-across-untimed-x-exec-blocks-takeover`
 - 판정: needs_validation (심각도 없음, 확정 취약점 아님)
+- 참고: 이 근본 원인에 대한 변경 `c1f88da`이 브랜치에 있다. 감사 대상 소스는 바뀌지 않았다.
 
 ### 설명
 
@@ -56,6 +57,7 @@ Disposable desktop sandbox on a real Docker daemon with agentbox-desktop:0.1 (lo
 
 - fingerprint: `agentbox/service.py:_open_gui_burst:silent-fail-open-without-audit`
 - 판정: needs_validation (심각도 없음, 확정 취약점 아님)
+- 참고: 이 근본 원인에 대한 변경 `c1f88da`이 브랜치에 있다. 감사 대상 소스는 바뀌지 않았다.
 
 ### 설명
 

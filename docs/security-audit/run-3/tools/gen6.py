@@ -26,6 +26,23 @@ FIX = {
     "agentbox/sandbox.py:create:source_dir-overlap-guard-case-insensitive-bypass":
         ("152b8e4", ["tests/test_m4_unit.py::test_overlap_uses_filesystem_identity",
                      "tests/test_m4_unit.py::test_overlap_sees_bind_mount_alias"]),
+    "agentbox/service.py:close_idle_gui_bursts:cross-sandbox-untimed-exec-outside-tool-concurrency":
+        ("c1f88da", ["tests/test_m2_unit.py::test_idle_burst_close_does_not_run_on_caller_thread",
+                       "tests/test_m2_unit.py::test_gui_execs_have_a_container_side_deadline",
+                       "tests/test_m2_acceptance.py::test_frozen_display_does_not_hold_tools_or_takeover"]),
+    "agentbox/service.py:gui-burst-state-dropped-on-restore-and-pause":
+        ("c1f88da", ["tests/test_m2_acceptance.py::test_gui_burst_restarts_after_pause_and_restore",
+                       "tests/test_m2_unit.py::test_lifecycle_change_resets_gui_burst_timers",
+                       "tests/test_m2_unit.py::test_burst_from_replaced_container_kills_nothing",
+                       "tests/test_m2_unit.py::test_failed_burst_close_is_logged_not_dropped_silently"]),
+    "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized":
+        ("c1f88da", ["tests/test_m3_acceptance.py::test_web_approval_neutralises_bidi_controls"]),
+    # needs_validation이지만 판정과 상관없이 먼저 막아 둔 것
+    "agentbox/service.py:_run_tool:gui_lock-held-across-untimed-x-exec-blocks-takeover":
+        ("c1f88da", ["tests/test_m2_unit.py::test_takeover_waits_bounded_and_stops_new_agent_gui_calls",
+                       "tests/test_m2_acceptance.py::test_frozen_display_does_not_hold_tools_or_takeover"]),
+    "agentbox/service.py:_open_gui_burst:silent-fail-open-without-audit":
+        ("c1f88da", ["tests/test_m2_unit.py::test_failed_burst_baseline_is_logged"]),
 }
 
 # short ids used in REPORT.md and HANDOFF (Phase 3 verifier ids)

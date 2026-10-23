@@ -67,12 +67,12 @@ GUI 도구는 설계상 승인을 거치지 않는다(N-1). 이를 보완하는 
 
 | 심각도 | ID | 제목 | 경계 | 관찰 결과 (한 줄) | 수정 |
 |---|---|---|---|---|---|
-| **high** | v11 | 유휴 GUI 구간 닫기가 남의 샌드박스 스레드와 사람 승인·감사 스레드에서 제한 시간 없는 docker exec로 돎 | 에이전트(샌드박스 B) → 다른 샌드박스와 사람의 가용성 | B의 Xvfb를 멈추자 A의 `list_dir`가 20초 넘게 막혔고, Xvfb를 재개한 뒤 0.3초 만에 돌아옴(parent-live l2) | 아직 |
+| **high** | v11 | 유휴 GUI 구간 닫기가 남의 샌드박스 스레드와 사람 승인·감사 스레드에서 제한 시간 없는 docker exec로 돎 | 에이전트(샌드박스 B) → 다른 샌드박스와 사람의 가용성 | B의 Xvfb를 멈추자 A의 `list_dir`가 20초 넘게 막혔고, Xvfb를 재개한 뒤 0.3초 만에 돌아옴(parent-live l2) | `c1f88da` |
 | **medium** | v02 | UI·CLI 감사 타임라인이 가장 오래된 5000행에서 멈춤 | 에이전트 → 사람의 감사 확인 | 5012행에서 UI는 4601~5000번만 보였고 하단에는 "최근 400개"라고 표시. CLI는 1~5000번만 출력 | `3587c9c` |
 | **medium** | v05 | 사람 토큰을 바꿔도 기존 브라우저 세션이 12시간 유지 | 예전 운영자 → 관리자 UI | 토큰 교체와 재시작 뒤 옛 토큰은 401인데, 옛 쿠키로는 승인 거절이 실행돼 감사에 남음 | `3587c9c` |
 | **medium** | v08 | 도구 인자가 크기 제한 없이 지울 수 없는 감사 로그에 기록 | 에이전트 → 공유 감사 DB | 3 MiB 인자가 그대로 한 행이 됨. UPDATE·DELETE는 트리거가 막고, verify·list가 전부 다시 읽음 | `e63922c` |
-| **medium** | v12 | 복원·일시정지 때 GUI 구간의 정리 kill과 `gui_changes` 기록이 사라짐 | 에이전트 → GUI 보완 장치(N-1) | 복원 뒤 남은 백그라운드 프로세스가 죽지 않았고 `gui_changes`도 없었음. 낡은 기준으로는 새 데스크톱의 프로세스를 죽이기도 함 | 아직 |
-| **medium** | v13 | 웹 승인 카드가 exec 명령의 유니코드 방향 제어 문자를 그대로 표시 | 에이전트 → 사람의 승인 판단 | Chromium에서 `; python3 /workspace/job.py ;`가 앞의 `echo` 따옴표 안에 든 것처럼 보임(parent-live l5) | 아직 |
+| **medium** | v12 | 복원·일시정지 때 GUI 구간의 정리 kill과 `gui_changes` 기록이 사라짐 | 에이전트 → GUI 보완 장치(N-1) | 복원 뒤 남은 백그라운드 프로세스가 죽지 않았고 `gui_changes`도 없었음. 낡은 기준으로는 새 데스크톱의 프로세스를 죽이기도 함 | `c1f88da` |
+| **medium** | v13 | 웹 승인 카드가 exec 명령의 유니코드 방향 제어 문자를 그대로 표시 | 에이전트 → 사람의 승인 판단 | Chromium에서 `; python3 /workspace/job.py ;`가 앞의 `echo` 따옴표 안에 든 것처럼 보임(parent-live l5) | `c1f88da` |
 | **low** | v03 | `agentbox agent`가 파일 내용·파일 이름·모델 출력을 제어 문자 그대로 터미널에 출력 | 문서·파일 작성자 → 운영자 터미널 기록 | pyte 화면에서 `→ read_file(...)` 줄이 지워지고 가짜 `[사용자]` 줄이 나타남 | 아직 |
 | **low** | v06 | `source_dir` 겹침 검사가 파일 시스템 실체가 아니라 경로 문자열을 비교 | 운영자 실수 → 사람 토큰이 에이전트에게 노출 | 바인드 마운트 별칭은 받아들여졌고, 에이전트의 `read_file`이 진짜 사람 토큰을 돌려줌. 원래 경로는 거부됨(parent-live l8) | `152b8e4` (아래 남은 틈 참고) |
 
@@ -95,6 +95,10 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
 - **가장 작은 수정:**
   - 구간 닫기와 GUI 경로의 모든 docker exec에 컨테이너 쪽 `timeout -k`를 씌운다. exec, read_file, outbox_read는 이미 그렇게 한다.
   - 구간 닫기를 호출자 스레드에서 떼어 별도 백그라운드 작업으로 옮기거나, 해당 샌드박스의 예산에서 쓰게 한다.
+- **수정:** `c1f88da`.
+  - 화면(X)과 구간 기록에 쓰는 exec(`_x`, `desktop_processes`, `kill_processes`, `workspace_manifest`)를 모두 컨테이너 쪽 `timeout -k`로 감쌌다. 기본 15초이고, `type`은 글자 수만큼 늘린다. 시간이 초과되면 반쯤 받은 결과를 쓰지 않고 실패로 돌린다.
+  - 유휴 구간 닫기는 전용 스레드 4개(`agentbox-burst`)에서 돈다. 도구 호출, 승인 조회, `expire_stale`은 닫기를 넣기만 하고 바로 돌아간다. 감사 로그 조회는 최대 5초까지 기다린다.
+  - 회귀 테스트: `tests/test_m2_unit.py::test_idle_burst_close_does_not_run_on_caller_thread`, `test_gui_execs_have_a_container_side_deadline`, `tests/test_m2_acceptance.py::test_frozen_display_does_not_hold_tools_or_takeover`. 마지막 테스트는 실제 데스크톱에서 Xvfb를 멈추고 돌린다.
 
 ### 3.2 [medium] v02 — 감사 타임라인이 오래된 5000행에서 멈춤
 - **위치:** `audit.py:190-197`(`ORDER BY id LIMIT`), `web.py:262-263`(`rows[-400:]`, `total=len(rows)`), `cli.py`의 `cmd_audit`(limit=5000, `after_id` 없음).
@@ -125,7 +129,11 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
   - 복원 뒤 GUI 입력이 스냅샷도, 구간도 만들지 않는다. 그동안 남은 백그라운드 프로세스는 죽지 않고 `gui_changes`도 남지 않는다.
   - 일시정지 중에 유휴로 닫히면 구간이 사라진다.
   - 옛 컨테이너의 기준으로 닫으면 새 컨테이너의 uid 1001 프로세스를 전부 죽인다.
-- **수정 방향(아직 안 고침):** GUI 구간 상태를 컨테이너 수명에 묶는다. 복원·일시정지·재개 때 타이머를 초기화하고, 구간에 `container_id`를 기록한다. 구간은 정리가 성공한 뒤에 버린다.
+- **수정:** `c1f88da`.
+  - 일시정지 전에 구간을 닫고, 일시정지·재개·복원·삭제 때 구간 타이머를 지운다(`end_gui_burst`, `reset_gui_timers`). 그래서 바로 다음 GUI 입력이 스냅샷을 뜨고 새 구간을 연다.
+  - 구간에 `container_id`를 기록한다. 컨테이너가 바뀐 구간은 아무것도 죽이지 않는다.
+  - 정리나 비교에 실패하면 `gui_burst_close_failed`를 남긴다. 실패한 구간을 조용히 버리지 않는다.
+  - 회귀 테스트: `tests/test_m2_acceptance.py::test_gui_burst_restarts_after_pause_and_restore`, `tests/test_m2_unit.py::test_lifecycle_change_resets_gui_burst_timers`, `test_burst_from_replaced_container_kills_nothing`, `test_failed_burst_close_is_logged_not_dropped_silently`.
 
 ### 3.6 [medium] v13 — 웹 승인 카드의 방향 제어 문자
 - **위치:**
@@ -133,7 +141,10 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
   - 터미널은 `cli._safe`(`cli.py:34-39`, `196-199`)로 막는데, 웹 쪽에는 같은 필터가 없다.
 - **주체:** 프롬프트 주입 에이전트. 허용 목록에 없는 프로그램을 승인 받으려 한다.
 - **결과:** U+2067/U+2069로 명령의 표시 순서를 바꾸면, 사람이 보는 카드는 무해한 `echo`처럼 보인다. 그런데 승인하면 `python3 /workspace/job.py`가 실행된다. 확인은 parent-live Chromium(`l5_card.png`)으로 했다.
-- **수정 방향(아직 안 고침):** `_UNSAFE`와 같은 문자 집합을 보이는 이스케이프로 바꾸는 Jinja 필터를 만든다. 승인과 감사 템플릿의 명령, 경로, describe 출력에 적용한다. `unicode-bidi: isolate`도 함께 쓴다.
+- **수정:** `c1f88da`.
+  - 웹 템플릿 환경에 `finalize`를 걸었다. 그래서 모든 `{{ }}` 출력에서 `cli._UNSAFE`와 같은 문자(C0·DEL·C1, bidi 제어)가 `\u2067` 같은 보이는 이스케이프로 바뀐다. 줄바꿈과 탭은 그대로 둔다.
+  - 템플릿마다 필터를 다는 방식이 아니어서, 새 템플릿이나 필드에서 빠뜨릴 수 없다.
+  - 회귀 테스트: `tests/test_m3_acceptance.py::test_web_approval_neutralises_bidi_controls`. 승인 화면과 감사 화면을 함께 본다.
 
 ### 3.7 [low] v03 — `agentbox agent` 터미널 출력의 제어 문자
 - **위치:** `cli.py:353-361`(`cmd_agent.log`), `agent.py:116-126`(read_file·list_dir 결과를 그대로 넘김).
@@ -162,6 +173,11 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
 | 3 | v15 | `gui_strays`가 창 소유(클라이언트가 정하는 `_NET_WM_PID` 포함)로 정리 대상에서 뺌 | `service.py:215` → `sandbox.py:690` → `sandbox.py:221` | 실제 이미지에서 GUI 입력만으로, 구간 시작 세션에 창이 있는(또는 새 창 앱의 자식인) 프로세스를 남길 수 있는가 | 구간 중 파일 관리자에서 스크립트를 실행하고, 구간이 닫힌 뒤에도 `/workspace/_v15_probe`의 mtime이 계속 바뀌는지 확인 | 배포 이미지에서 같은 탐침으로 세션 ID와 창 PID 동작을 확인 |
 | 4 | v14 | 쿠키 인증 UI에 frame-ancestors/X-Frame-Options가 없음 → 같은 사이트 출처가 framing해 클릭 한 번으로 승인 | `web.py:181` → … → `service.py:415` | 배포에 공격자가 영향을 줄 수 있는 같은 사이트 출처(같은 루프백 호스트의 다른 포트, 형제 서브도메인)가 있는가. Firefox와 WebKit 동작 | Firefox와 WebKit에서 l3 재현 반복, 수정 후 회귀 확인 | 배포의 같은 사이트 출처 목록 확인 |
 | 5 | v01 | `same_origin`이 scheme을 비교하지 않음 | `web.py:203` → `api.py:119` → `api.py:110` → `web.py:209` | schemeful same-site가 없는 운영자 브라우저가 있는가(Chromium 141은 쿠키를 보내지 않았음, l4). HSTS와 경로상 공격자가 범위에 드는가 | Firefox와 WebKit에서 http→https 교차 scheme POST 시험 | 운영 호스트의 HSTS(또는 preload) 여부와 운영자 브라우저 종류 확인 |
+
+이 브랜치에서 판정과 상관없이 먼저 막아 둔 것이 두 건 있다. 감사 대상 소스는 바뀌지 않았고, 판정도 그대로 needs_validation이다.
+
+- **v10 (`c1f88da`):** GUI exec에 컨테이너 쪽 제한 시간이 걸린다. 인수와 반환은 `gui_lock`을 최대 30초까지만 기다리고, 넘으면 503을 준다. 인수를 기다리는 동안과 그 뒤 60초 동안은 에이전트의 GUI 도구를 새로 돌리지 않는다(423). 그래서 다시 누르면 인수된다. 테스트: `tests/test_m2_unit.py::test_takeover_waits_bounded_and_stops_new_agent_gui_calls`, `tests/test_m2_acceptance.py::test_frozen_display_does_not_hold_tools_or_takeover`.
+- **v09 (`c1f88da`, 일부):** 파일 목록과 프로세스 목록 exec의 종료 코드를 확인한다. 기준을 못 읽으면 빈 기준으로 구간을 열지 않고 `gui_burst_open_failed`를 남긴다. 닫기에 실패하면 `gui_burst_close_failed`를 남긴다. 실패했을 때 GUI 입력을 막는 쪽(fail-closed)은 아직 넣지 않았다. 테스트: `tests/test_m2_unit.py::test_failed_burst_baseline_is_logged`.
 
 ## 5. 보강 메모와 좋은 패턴
 
