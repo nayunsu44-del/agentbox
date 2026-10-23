@@ -2,10 +2,16 @@
 # 웹소켓(화면 보기)도 reverse_proxy가 그대로 넘긴다. Host와 X-Forwarded-Proto를 붙여 주므로
 # agentbox는 같은 출처 검사와 Secure 쿠키를 그대로 쓴다.
 # 본문 상한은 agentbox도 걸지만(AGENTBOX_MAX_BODY, AGENTBOX_MAX_UPLOAD_BODY) 프록시에서 먼저 끊는다.
-# 파일 넣기 요청 전체 상한(기본 256MB)보다 작게 잡으면 큰 파일을 넣을 수 없다.
+# 파일 넣기(/sandboxes/{id}/files)만 큰 본문을 받고, 나머지 JSON·폼 경로는 작게 끊는다 (보안 검수 run-5 N1).
+# 파일 넣기 상한(기본 256MB)을 agentbox의 AGENTBOX_MAX_UPLOAD_BODY보다 작게 잡으면 큰 파일을 넣을 수 없다.
 {$AGENTBOX_SITE} {
-	request_body {
+	@upload path_regexp ^/sandboxes/[^/]+/files$
+	@other not path_regexp ^/sandboxes/[^/]+/files$
+	request_body @upload {
 		max_size {$AGENTBOX_PROXY_MAX_BODY:256MB}
+	}
+	request_body @other {
+		max_size {$AGENTBOX_PROXY_MAX_JSON:8MiB}
 	}
 	reverse_proxy agentbox:8765
 }

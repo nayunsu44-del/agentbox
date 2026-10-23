@@ -17,6 +17,7 @@ import secrets
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from http.cookies import CookieError, SimpleCookie
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlsplit
@@ -84,6 +85,9 @@ class _NoFraming:
 
 
 _UPLOAD_PATH = re.compile(r"/sandboxes/[^/]+/files")
+# 자격 증명 없이 본문을 받는 경로(로그인 폼)와 그 본문 상한. 토큰 하나면 되므로 작게 둔다
+_ANON_BODY_PATHS = {"/login"}
+_ANON_BODY_MAX = 64 * 1024
 
 
 class _BodyLimit:
@@ -91,13 +95,14 @@ class _BodyLimit:
     여기서 막지 않으면 토큰 없는 클라이언트가 고른 크기만큼 메모리·임시 파일을 쓴 뒤에야 401이 난다 (보안 검수 run-4 F1).
     Content-Length가 상한을 넘으면 읽지 않고 413, 길이 없이 흘려 보내면 상한에서 끊고 413."""
 
-    def __init__(self, app, json_max: int, upload_max: int):
+    def __init__(self, app, json_max: int, upload_max: int, authenticated=None):
         self.app, self.json_max, self.upload_max = app, json_max, upload_max
+        self.authenticated = authenticated   # headers dict -> bool (유효한 토큰·세션이 있는가)
 
     @staticmethod
-    async def _reject(send, cap: int) -> None:
-        body = json.dumps({"detail": f"요청 본문이 너무 큼 (최대 {cap} bytes)"}, ensure_ascii=False).encode()
-        await send({"type": "http.response.start", "status": 413,
+    async def _reject(send, cap: int, status: int = 413, detail: str | None = None) -> None:
+        body = json.dumps({"detail": detail or f"요청 본문이 너무 큼 (최대 {cap} bytes)"}, ensure_ascii=False).encode()
+        await send({"type": "http.response.start", "status": status,
                     "headers": [(b"content-type", b"application/json"), (b"content-length", str(len(body)).encode()),
                                 (b"connection", b"close")]})
         await send({"type": "http.response.body", "body": body})
@@ -107,9 +112,19 @@ class _BodyLimit:
             return await self.app(scope, receive, send)
         upload = scope["method"] == "POST" and _UPLOAD_PATH.fullmatch(scope["path"])
         cap = self.upload_max if upload else self.json_max
-        length = dict(scope["headers"]).get(b"content-length")
-        if length is not None and (not length.isdigit() or int(length) > cap):
+        headers = dict(scope["headers"])
+        length = headers.get(b"content-length")
+        if length is not None and (not length.isdigit() or len(length) > 20 or int(length) > cap):
             return await self._reject(send, cap)
+        has_body = (length is not None and int(length) > 0) or b"transfer-encoding" in headers
+        if has_body and scope["path"] in _ANON_BODY_PATHS:
+            cap = min(cap, _ANON_BODY_MAX)
+            if length is not None and int(length) > cap:
+                return await self._reject(send, cap)
+        elif has_body and self.authenticated and not await run_in_threadpool(self.authenticated, headers):
+            # 본문을 읽기 전에 자격 증명부터 본다. FastAPI는 본문을 다 읽고 JSON을 해석한 뒤에야 인증 의존성을
+            # 풀어서, 토큰 없는 8MiB 요청 하나가 401 전에 약 200MB를 썼다 (보안 검수 run-5 N1)
+            return await self._reject(send, cap, 401, "Authorization: Bearer <토큰> 또는 로그인 세션이 필요함")
         seen, over, started = 0, False, False
 
         async def limited_receive():
@@ -167,7 +182,24 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     app = FastAPI(title="agentbox", version="0.1.0", lifespan=lifespan)
     app.state.box = box
-    app.add_middleware(_BodyLimit, json_max=settings.max_body_bytes, upload_max=settings.max_upload_body_bytes)
+    def authenticated(headers: dict[bytes, bytes]) -> bool:
+        """본문을 읽기 전의 확인: 사람 토큰, 살아 있는 샌드박스의 에이전트 토큰, 또는 로그인 세션 쿠키.
+        권한(사람만, 자기 샌드박스만 등)은 여기서 보지 않는다. 라우트의 의존성이 그대로 다시 본다."""
+        auth = headers.get(b"authorization", b"").decode("latin-1")
+        if auth.lower().startswith("bearer "):
+            token = auth.split(" ", 1)[1].strip()
+            return (secrets.compare_digest(token.encode("latin-1"), human_token.encode())
+                    or box.sandboxes.sandbox_for_token(token) is not None)
+        cookies = SimpleCookie()
+        try:
+            cookies.load(headers.get(b"cookie", b"").decode("latin-1"))
+        except CookieError:
+            return False
+        got = cookies.get(D.COOKIE)
+        return bool(got and box.desktop.session_scope(got.value))
+
+    app.add_middleware(_BodyLimit, json_max=settings.max_body_bytes, upload_max=settings.max_upload_body_bytes,
+                       authenticated=authenticated)
     app.add_middleware(_NoFraming)
 
     def principal(authorization: str = Header(default="")) -> Principal:

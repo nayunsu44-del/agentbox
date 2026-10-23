@@ -66,6 +66,7 @@ docker compose exec agentbox agentbox ui --base-url https://agentbox.example.com
 - `AGENTBOX_SITE`가 공개 도메인이면 Caddy가 인증서를 자동으로 받는다 (80·443 포트가 열려 있어야 함). 비우면 `localhost`로 뜨고 Caddy 내부 CA로 서명한다 (개발용, 브라우저 경고). 포트는 `AGENTBOX_HTTPS_PORT`·`AGENTBOX_HTTP_PORT`로 바꾼다.
 - 데이터 폴더(compose 변수 `AGENTBOX_HOME_DIR`, 기본 `/var/lib/agentbox`. 컨테이너 안에서는 이 값이 `AGENTBOX_HOME`이 된다)는 호스트와 컨테이너에서 같은 경로로 마운트한다. 샌드박스의 `/source`를 호스트 Docker 데몬이 마운트하기 때문이다. 파일은 웹 UI로 넣는다.
 - 컨트롤 플레인 컨테이너는 `/var/run/docker.sock`을 쓴다. 이 소켓은 호스트 root 권한과 같으므로 이 컨테이너만 쓰게 둔다. gVisor 등 격리 런타임은 호스트 데몬에 설치한다. 설치하지 않으면 컨트롤 플레인이 뜨지 않는다 (아래 참고).
+- 컨트롤 플레인 컨테이너의 메모리 상한은 `AGENTBOX_MEM_LIMIT`(기본 `2g`)다. 넘으면 이 컨테이너만 다시 뜬다(`restart: unless-stopped`). Caddy는 파일 넣기 경로만 `AGENTBOX_PROXY_MAX_BODY`(기본 256MB)까지 받고, 나머지 경로는 `AGENTBOX_PROXY_MAX_JSON`(기본 8MiB)에서 끊는다.
 - 에이전트 쪽 MCP 설정은 `AGENTBOX_URL=https://agentbox.example.com`. 내부 CA를 쓰면 `SSL_CERT_FILE`로 그 루트 인증서를 믿게 한다 (`docker compose exec caddy cat /data/caddy/pki/authorities/local/root.crt`).
 
 `agentbox serve`는 TLS 없이 127.0.0.1 밖에 열지 않는다. 직접 열 때는 셋 중 하나를 고른다.
@@ -290,8 +291,9 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 | `AGENTBOX_GUI_SNAPSHOT_IDLE` · `_INTERVAL` | `60` · `600` | GUI 입력이 이만큼(초) 쉬었다 다시 시작될 때, 또는 마지막 GUI 스냅샷이 interval(초)보다 오래됐을 때 스냅샷 (`_INTERVAL=0`이면 끔) |
 | `AGENTBOX_SNAPSHOT_QUOTA` | `50` | 샌드박스 하나의 스냅샷이 이만큼 쌓이면 에이전트의 덮어쓰기·삭제는 모두 승인을 거침 (`0`이면 끔). 샌드박스를 지우면 스냅샷 이미지도 지워짐 |
 | `AGENTBOX_MAX_UPLOAD` | 50MB | 파일 넣기 하나의 상한 |
-| `AGENTBOX_MAX_BODY` | 8MB | JSON 요청 본문 상한. 넘으면 본문을 읽기 전에 413 (인증보다 먼저 적용) |
+| `AGENTBOX_MAX_BODY` | 8MB | JSON 요청 본문 상한. 넘으면 본문을 읽기 전에 413 (인증보다 먼저 적용). 본문이 있는 요청은 토큰·로그인 세션이 유효해야 본문을 읽는다(아니면 401). 로그인 폼만 예외이고 64KB까지 |
 | `AGENTBOX_MAX_UPLOAD_BODY` | 256MB | 파일 넣기 요청 하나(여러 파일)의 본문 상한. 넘으면 413 |
+| `AGENTBOX_MAX_CONNECTIONS` | `256` | 동시에 처리하는 연결·요청 수(`agentbox serve`의 uvicorn `limit_concurrency`). 넘으면 503. 0이면 끈다 |
 | `AGENTBOX_APPROVAL_TIMEOUT` | `300` | 승인 대기 상한(초) |
 | `AGENTBOX_DESKTOP_IMAGE` | `agentbox-desktop:0.1` | desktop 템플릿 이미지 |
 | `AGENTBOX_DESKTOP_MEM` · `_CPUS` · `_PIDS` | `1536m` · `2.0` · `1024` | desktop 샌드박스 자원 상한 |

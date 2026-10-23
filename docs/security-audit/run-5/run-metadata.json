@@ -14,7 +14,7 @@
  ],
  "scope_note": "Focused follow-up: the three units run-4 left deferred plus four units for code changed by the run-4 fixes (PRs #16-#22). The LLM-provider data path is a documented owner-accepted limitation and is out of scope.",
  "budget": 30,
- "budget_note": "Owner-set cap of 30 agent invocations. Owner model split: hunters Opus; everything else (Phase 3 candidate verifiers, Phase 5 record verifiers, coverage critics, re-verifiers) Sonnet. Reconnaissance was done by the parent (no agent spent): run-4 architecture plus a delta for every file changed since 9805d91. Parent-live checks (real Docker, desktop image) are outside the budget. Plan: 6 hunters, ~8 Phase 3, ~8 Phase 5, 2 retries, 2 critics; ask the owner before exceeding 30.",
+ "budget_note": "Owner-set cap of 30 agent invocations. Owner model split: hunters Opus; everything else (Phase 3 candidate verifiers, Phase 5 record verifiers, coverage critics, re-verifiers) Sonnet. Reconnaissance was done by the parent (no agent spent): run-4 architecture plus a delta for every file changed since 9805d91. Parent-live checks (real Docker, desktop image) are outside the budget. Plan: 6 hunters, ~8 Phase 3, ~8 Phase 5, 2 retries, 2 critics; ask the owner before exceeding 30. After the run the owner approved one more invocation (31) to re-check the policy-cpu replacement.",
  "execution_policy": "sandboxed-source-and-local-only",
  "execution_note": "Linux cloud container. Agent-run target code goes only through tools/sbx: docker run --network none, no docker socket, --read-only, host /usr read-only, audited worktree read-only at /target, writes only to agents/<id>/scratch (256 MiB loop-mounted ext4) at /scratch, /dev/shm 16 MiB, --pull never, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB, 1 CPU, 64 pids, 32 MiB files, 120 s wall clock, explicit env allowlist. Checks needing the real control plane or the desktop image are run by the parent in disposable containers on loopback and labelled parent-live.",
  "companions_selected": [],
@@ -38,14 +38,15 @@
   "phase5": 8,
   "retries": 2,
   "critics": 2,
-  "reverify": 2
+  "reverify": 3
  },
- "agents_spent_total": 30,
+ "agents_spent_total": 31,
  "phase": "done_phase6_reports_and_fixes",
  "retry_note": "h-gui-lease and h-bodylimit were each resumed once to fix only the unit reviewed_paths union (HUNTING.md contract); results otherwise unchanged.",
  "deviations": [
   "r-prune Phase 5 replace changed only two line references (cli.py:322->323, audit.py:353-354->358-359) and wording in trace/execution/confidence; apply.py parked it as material by field, the parent checked the diff (verdict, root cause, severity, trace kinds/files/lines unchanged) and applied it with tools/apply5_nonmaterial.py without a re-verifier.",
-  "rv-policy-cpu (fresh re-verifier of r-policy-cpu's parked replacement) returned a final message that is not valid JSON (one closing brace missing at the end). Under the never-repair rule it was discarded; a resend would have been invocation 31 over the owner cap of 30. The parked replacement (agents/r-policy-cpu/pending-replacement.json) was therefore not applied and findings.json keeps the Phase 3 record (v-policy-cpu, confirmed low). The discarded text is kept at agents/rv-policy-cpu/final.txt; its technical point (a narrower _words recursion would lose detection; use a lossless skip) was used for the code fix, not for the record."
+  "rv-policy-cpu (fresh re-verifier of r-policy-cpu's parked replacement) returned a final message that is not valid JSON (one closing brace missing at the end). Under the never-repair rule it was discarded; a resend would have been invocation 31 over the owner cap of 30. The parked replacement (agents/r-policy-cpu/pending-replacement.json) was therefore not applied and findings.json keeps the Phase 3 record (v-policy-cpu, confirmed low). The discarded text is kept at agents/rv-policy-cpu/final.txt; its technical point (a narrower _words recursion would lose detection; use a lossless skip) was used for the code fix, not for the record.",
+  "rv2-policy-cpu (owner-approved 31st invocation, after the run) re-checked the parked r-policy-cpu replacement and returned replace with its own corrected record (remediation: lossless re-lex skip, not the narrower recursion; corrected numbers). Applied with tools/apply_reverify.py; findings.json now holds that record."
  ],
  "run_status_reason": "budget_exhausted: final-clean critic returned stop=false; 7 units deferred"
 }

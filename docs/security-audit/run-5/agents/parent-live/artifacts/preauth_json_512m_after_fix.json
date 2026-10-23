@@ -1,0 +1,77 @@
+{
+ "body_bytes": 8388580,
+ "rss_idle_mb": 58,
+ "healthz_idle_s": 0.005,
+ "single": {
+  "result": {
+   "error": "ConnectionResetError(104, 'Connection reset by peer')",
+   "s": 0.0
+  },
+  "rss_after_mb": 59,
+  "hwm_mb": 59
+ },
+ "concurrent_4": {
+  "results": [
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.0
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.01
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.0
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.0
+   }
+  ],
+  "healthz_during_s": 0.002,
+  "server_alive": true,
+  "hwm_mb": 59,
+  "exit": null
+ },
+ "concurrent_8": {
+  "results": [
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.01
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.01
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.0
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.0
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.01
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.01
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.01
+   },
+   {
+    "error": "ConnectionResetError(104, 'Connection reset by peer')",
+    "s": 0.0
+   }
+  ],
+  "healthz_during_s": 0.003,
+  "server_alive": true,
+  "hwm_mb": 59,
+  "exit": null
+ }
+}

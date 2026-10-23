@@ -124,6 +124,8 @@ def cmd_serve(a: argparse.Namespace) -> None:
     if behind:
         # 프록시가 붙여 준 X-Forwarded-Proto로 https를 알아본다. 이 포트는 프록시에게만 열어 둘 것.
         extra.update(proxy_headers=True, forwarded_allow_ips=os.environ.get("AGENTBOX_TRUSTED_PROXIES", "*"))
+    if s.max_connections > 0:
+        extra.update(limit_concurrency=s.max_connections)
     uvicorn.run(app, host=a.host, port=a.port, log_level="warning", **extra)
 
 
