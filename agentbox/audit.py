@@ -4,10 +4,13 @@
 - 테이블은 추가 전용이다. UPDATE·DELETE는 트리거가 막는다.
 - 기록이 실행보다 먼저다. append()가 실패하면 호출자는 실행하지 않는다.
 - verify()는 체인을 처음부터 다시 계산해 처음 깨진 지점을 돌려준다.
+- 오래된 항목은 운영자가 retention.prune으로만 덜어낸다. 덜어낸 행은 아카이브 파일로 내보내고, 마지막 행의
+  id와 해시를 기준점(audit_anchor)으로 남긴다. verify()는 기준점부터 검사하고, 아카이브를 주면 처음부터 잇는다.
 """
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import json
 import re
@@ -36,7 +39,26 @@ CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit
 BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit
 BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
+CREATE TABLE IF NOT EXISTS audit_anchor (
+    seq             INTEGER PRIMARY KEY,
+    ts              TEXT NOT NULL,
+    last_id         INTEGER NOT NULL,
+    last_hash       TEXT NOT NULL,
+    rows            INTEGER NOT NULL,
+    archive         TEXT NOT NULL,
+    archive_sha256  TEXT NOT NULL
+);
+CREATE TRIGGER IF NOT EXISTS audit_anchor_no_update BEFORE UPDATE ON audit_anchor
+BEGIN SELECT RAISE(ABORT, 'audit anchors are append-only'); END;
+CREATE TRIGGER IF NOT EXISTS audit_anchor_no_delete BEFORE DELETE ON audit_anchor
+BEGIN SELECT RAISE(ABORT, 'audit anchors are append-only'); END;
 """
+# 정리(retention.prune)가 잠깐 지웠다가 되돌리는 트리거
+NO_DELETE_TRIGGER = "audit_no_delete"
+NO_DELETE_SQL = SCHEMA[SCHEMA.index("CREATE TRIGGER IF NOT EXISTS audit_no_delete"):
+                     SCHEMA.index("CREATE TABLE IF NOT EXISTS audit_anchor")]
+ARCHIVE_FORMAT = "agentbox-audit-archive/1"
+
 
 # AU-4 비밀값 가림. 값만 *** 로 바꾸고 이름은 남긴다. 등록된 토큰은 register_secret()으로 추가.
 # 에이전트가 정한 긴 문자열에도 선형으로 돌게, 이름 길이를 제한하고 왼쪽 끝을 고정한다.
@@ -135,9 +157,11 @@ class VerifyResult:
     checked: int
     broken_at: int | None = None
     reason: str | None = None
+    pruned_through: int | None = None   # 이 id까지는 정리해 아카이브로 옮겼다 (기준점부터 검사함)
 
     def as_dict(self) -> dict[str, Any]:
-        return {"ok": self.ok, "checked": self.checked, "broken_at": self.broken_at, "reason": self.reason}
+        return {"ok": self.ok, "checked": self.checked, "broken_at": self.broken_at, "reason": self.reason,
+                "pruned_through": self.pruned_through}
 
 
 def _canonical(record: dict[str, Any]) -> bytes:
@@ -146,6 +170,77 @@ def _canonical(record: dict[str, Any]) -> bytes:
 
 def compute_hash(prev_hash: str, record: dict[str, Any]) -> str:
     return hashlib.sha256(prev_hash.encode() + b"\n" + _canonical(record)).hexdigest()
+
+
+AUDIT_COLUMNS = "id, ts, sandbox_id, actor, event, tool, payload, prev_hash, hash"
+
+
+def latest_anchor(conn: sqlite3.Connection) -> tuple[int, str] | None:
+    """마지막 정리의 기준점 (지운 마지막 행의 id, 해시). 정리한 적이 없으면 None."""
+    r = conn.execute("SELECT last_id, last_hash FROM audit_anchor ORDER BY seq DESC LIMIT 1").fetchone()
+    return (r[0], r[1]) if r else None
+
+
+def check_chain(rows, prev: str, expected_id: int) -> tuple[VerifyResult | None, str, int, int]:
+    """rows(DB 행 순서의 튜플)를 prev·expected_id부터 잇는다.
+    (깨졌으면 결과 아니면 None, 마지막 해시, 다음 id, 확인한 개수)를 돌려준다."""
+    n = 0
+    for r in rows:
+        rid, why = r[0], None
+        if rid != expected_id:
+            why = f"id가 {expected_id} 다음에 {rid}로 건너뜀 (항목 삭제 의심)"
+        elif r[7] != prev:
+            why = "prev_hash가 직전 항목의 해시와 다름"
+        else:
+            try:
+                record = {"id": rid, "ts": r[1], "sandbox_id": r[2], "actor": r[3], "event": r[4], "tool": r[5],
+                          "payload": json.loads(r[6])}
+                if compute_hash(prev, record) != r[8]:
+                    why = "내용이 기록 당시와 다름 (해시 불일치)"
+            except json.JSONDecodeError:
+                why = "payload를 읽을 수 없음"
+        if why:
+            return VerifyResult(False, n, rid, why), prev, expected_id, n
+        prev, expected_id, n = r[8], expected_id + 1, n + 1
+    return None, prev, expected_id, n
+
+
+def read_archive(path: Path | str) -> tuple[dict[str, Any], list[tuple], list[dict[str, Any]]]:
+    """정리 아카이브를 읽는다: (머리, 감사 행 튜플 목록, 승인 행 목록)."""
+    head: dict[str, Any] = {}
+    rows: list[tuple] = []
+    approvals: list[dict[str, Any]] = []
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        for line in f:
+            d = json.loads(line)
+            kind = d.pop("kind", None)
+            if kind == "header":
+                head = d
+            elif kind == "audit":
+                rows.append(tuple(d[c] for c in AUDIT_COLUMNS.split(", ")))
+            elif kind == "approval":
+                approvals.append(d)
+    if head.get("format") != ARCHIVE_FORMAT:
+        raise ValueError(f"감사 아카이브가 아님: {path}")
+    return head, rows, approvals
+
+
+def insert_record(conn: sqlite3.Connection, actor: str, event: str, sandbox_id: str | None, tool: str | None,
+                  payload: dict[str, Any]) -> int:
+    """열린 쓰기 트랜잭션 안에서 체인 끝에 한 항목을 잇는다. 정리로 표가 비었으면 기준점에서 잇는다."""
+    row = conn.execute("SELECT id, hash FROM audit ORDER BY id DESC LIMIT 1").fetchone() or latest_anchor(conn)
+    prev_hash = row[1] if row else GENESIS
+    new_id = (row[0] + 1) if row else 1
+    ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    record = {"id": new_id, "ts": ts, "sandbox_id": sandbox_id, "actor": actor, "event": event, "tool": tool,
+              "payload": payload}
+    conn.execute(
+        "INSERT INTO audit (id, ts, sandbox_id, actor, event, tool, payload, prev_hash, hash)"
+        " VALUES (?,?,?,?,?,?,?,?,?)",
+        (new_id, ts, sandbox_id, actor, event, tool, json.dumps(payload, ensure_ascii=False, sort_keys=True),
+         prev_hash, compute_hash(prev_hash, record)),
+    )
+    return new_id
 
 
 def _row(r: tuple) -> dict[str, Any]:
@@ -198,26 +293,7 @@ class AuditLog:
             with self._lock:
                 self.conn.execute("BEGIN IMMEDIATE")
                 try:
-                    row = self.conn.execute("SELECT id, hash FROM audit ORDER BY id DESC LIMIT 1").fetchone()
-                    prev_hash = row[1] if row else GENESIS
-                    new_id = (row[0] + 1) if row else 1
-                    ts = datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-                    record = {
-                        "id": new_id,
-                        "ts": ts,
-                        "sandbox_id": sandbox_id,
-                        "actor": actor,
-                        "event": event,
-                        "tool": tool,
-                        "payload": payload,
-                    }
-                    h = compute_hash(prev_hash, record)
-                    self.conn.execute(
-                        "INSERT INTO audit (id, ts, sandbox_id, actor, event, tool, payload, prev_hash, hash)"
-                        " VALUES (?,?,?,?,?,?,?,?,?)",
-                        (new_id, ts, sandbox_id, actor, event, tool,
-                         json.dumps(payload, ensure_ascii=False, sort_keys=True), prev_hash, h),
-                    )
+                    new_id = insert_record(self.conn, actor, event, sandbox_id, tool, payload)
                     self.conn.execute("COMMIT")
                     return new_id
                 except BaseException:
@@ -258,28 +334,46 @@ class AuditLog:
                                      (rid, sandbox_id)).fetchone() is not None
 
     def verify(self) -> VerifyResult:
+        """기준점(마지막 정리)부터 체인을 다시 계산한다. 정리한 적이 없으면 처음부터."""
         with self._lock:
-            rows = self.conn.execute(
-                "SELECT id, ts, sandbox_id, actor, event, tool, payload, prev_hash, hash FROM audit ORDER BY id"
-            ).fetchall()
-        prev = GENESIS
-        expected_id = 1
-        for i, r in enumerate(rows):
-            rid = r[0]
-            if rid != expected_id:
-                return VerifyResult(False, i, rid, f"id가 {expected_id} 다음에 {rid}로 건너뜀 (항목 삭제 의심)")
-            if r[7] != prev:
-                return VerifyResult(False, i, rid, "prev_hash가 직전 항목의 해시와 다름")
-            try:
-                payload = json.loads(r[6])
-            except json.JSONDecodeError:
-                return VerifyResult(False, i, rid, "payload를 읽을 수 없음")
-            record = {
-                "id": rid, "ts": r[1], "sandbox_id": r[2], "actor": r[3],
-                "event": r[4], "tool": r[5], "payload": payload,
-            }
-            if compute_hash(prev, record) != r[8]:
-                return VerifyResult(False, i, rid, "내용이 기록 당시와 다름 (해시 불일치)")
-            prev = r[8]
-            expected_id += 1
-        return VerifyResult(True, len(rows))
+            anchor = latest_anchor(self.conn)
+            rows = self.conn.execute(f"SELECT {AUDIT_COLUMNS} FROM audit ORDER BY id").fetchall()
+        prev, start = (anchor[1], anchor[0] + 1) if anchor else (GENESIS, 1)
+        through = anchor[0] if anchor and anchor[0] > 0 else None
+        if anchor and not rows:   # 정리는 같은 트랜잭션에서 audit_pruned 항목을 남기므로 비어 있을 수 없다
+            return VerifyResult(False, 0, start, "정리 뒤의 항목이 하나도 없음 (항목 삭제 의심)", through)
+        broken, _, _, n = check_chain(rows, prev, start)
+        if broken:
+            broken.pruned_through = through
+            return broken
+        return VerifyResult(True, n, pruned_through=through)
+
+    def verify_archives(self, paths: list[Path | str]) -> VerifyResult:
+        """아카이브(오래된 것부터)와 지금 표를 처음부터 이어 검사한다. 아카이브마다 정리 기록(기준점)의
+        sha256과 마지막 행이 맞아야 한다."""
+        with self._lock:
+            anchors = self.conn.execute(
+                "SELECT last_id, last_hash, archive_sha256 FROM audit_anchor ORDER BY seq").fetchall()
+            rows = self.conn.execute(f"SELECT {AUDIT_COLUMNS} FROM audit ORDER BY id").fetchall()
+        if len(paths) != len(anchors):
+            return VerifyResult(False, 0, None, f"정리 기록은 {len(anchors)}번인데 아카이브는 {len(paths)}개")
+        prev, expected, total = GENESIS, 1, 0
+        for path, (last_id, last_hash, sha) in zip(paths, anchors):
+            if hashlib.sha256(Path(path).read_bytes()).hexdigest() != sha:
+                return VerifyResult(False, total, None, f"아카이브가 정리 기록과 다름 (sha256): {path}")
+            _, arows, _ = read_archive(path)
+            broken, prev, expected, n = check_chain(arows, prev, expected)
+            total += n
+            if broken:
+                broken.checked = total
+                return broken
+            if expected - 1 != last_id or prev != last_hash:
+                return VerifyResult(False, total, None, f"아카이브의 마지막 행이 기준점과 다름: {path}")
+        if anchors and not rows:
+            return VerifyResult(False, total, expected, "정리 뒤의 항목이 하나도 없음 (항목 삭제 의심)")
+        broken, _, _, n = check_chain(rows, prev, expected)
+        total += n
+        if broken:
+            broken.checked = total
+            return broken
+        return VerifyResult(True, total, pruned_through=anchors[-1][0] if anchors and anchors[-1][0] > 0 else None)

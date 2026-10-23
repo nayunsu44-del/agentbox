@@ -297,13 +297,38 @@ def cmd_audit(a: argparse.Namespace) -> None:
 
 
 def cmd_verify(a: argparse.Namespace) -> None:
-    with _client() as c:
-        v = _check(c.get("/audit/verify"))
+    if a.archive:   # 아카이브와 이어 검사하려면 DB 파일을 직접 읽는다 (호스트에서 실행)
+        from .audit import AuditLog
+        log = AuditLog(Settings().db_path)
+        try:
+            v = log.verify_archives(a.archive).as_dict()
+        finally:
+            log.conn.close()
+    else:
+        with _client() as c:
+            v = _check(c.get("/audit/verify"))
     if v["ok"]:
-        print(f"{GREEN}해시 체인 온전함{RESET}: 항목 {v['checked']}개 모두 확인")
+        since = " (아카이브부터)" if a.archive else (
+            f" (#{v['pruned_through']}까지는 정리해 아카이브로 옮김)" if v.get("pruned_through") else "")
+        print(f"{GREEN}해시 체인 온전함{RESET}: 항목 {v['checked']}개 모두 확인{since}")
     else:
         print(f"{RED}해시 체인 깨짐{RESET}: 항목 #{v['broken_at']} — {v['reason']}")
         sys.exit(1)
+
+
+def cmd_prune(a: argparse.Namespace) -> None:
+    from .retention import prune
+    try:
+        s = prune(Settings().db_path, a.before, a.archive, dry_run=a.dry_run)
+    except (ValueError, FileExistsError, RuntimeError) as e:
+        sys.exit(f"{RED}{e}{RESET}")
+    span = f"#{s['first_id']}~#{s['last_id']}" if s["audit_rows"] else "없음"
+    print(f"감사 행 {s['audit_rows']}개 ({span}), 끝난 승인 {s['approval_rows']}개 — {s['before']} 이전")
+    if s["pruned"]:
+        print(f"{GREEN}아카이브로 옮기고 지움{RESET}: {s['archive']} (sha256 {s['archive_sha256'][:16]}…). "
+              "아카이브는 따로 보관할 것. 'agentbox verify --archive …'로 처음부터 검사할 수 있음")
+    elif not a.dry_run:
+        print("지울 것이 없음")
 
 
 def cmd_snapshots(a: argparse.Namespace) -> None:
@@ -422,7 +447,16 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--sandbox")
     s.set_defaults(fn=cmd_audit)
 
-    sub.add_parser("verify", help="해시 체인 검증").set_defaults(fn=cmd_verify)
+    s = sub.add_parser("verify", help="해시 체인 검증")
+    s.add_argument("--archive", action="append", default=[],
+                   help="정리 아카이브 (오래된 것부터, 정리한 횟수만큼). 주면 DB를 직접 읽어 처음부터 검사")
+    s.set_defaults(fn=cmd_verify)
+
+    s = sub.add_parser("prune", help="오래된 감사·승인 행을 아카이브로 옮기고 지움 (호스트에서, DB 직접)")
+    s.add_argument("--before", required=True, help="이 시각보다 오래된 행 (예: 2026-07-01, 시간대 없으면 UTC)")
+    s.add_argument("--archive", required=True, help="새로 만들 아카이브 파일 (.jsonl.gz)")
+    s.add_argument("--dry-run", action="store_true", help="지울 행 수만 보여 주고 지우지 않음")
+    s.set_defaults(fn=cmd_prune)
 
     s = sub.add_parser("snapshots")
     s.add_argument("sandbox")
