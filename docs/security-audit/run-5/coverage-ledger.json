@@ -442,6 +442,23 @@
     "method": "local",
     "result": "No longer holds; the root cause is fixed. AuditLog.append applies bound_payload(self._mask(payload)) to every record, so approval previews and str(e) error strings are bounded too. Locally, the approval_requested payload for a 5832767-byte preview was stored as 83141 bytes, and tool_request as 16543 bytes. The masking pass runs before bounding (linear: about 1.0 s for 65536 notes), which is CPU only.",
     "artifact": "agents/h-approvals/artifacts/h.out"
+   },
+   {
+    "agent_id": "v-approvals",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/approvals.py",
+     "agentbox/audit.py",
+     "agentbox/config.py",
+     "agentbox/preview.py",
+     "agentbox/service.py",
+     "agentbox/templates/_approvals.html"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
@@ -460,7 +477,9 @@
    "disk_low measures db_path.parent only. When AGENTBOX_DB is on a different filesystem from AGENTBOX_HOME (captures) or the Docker data root (snapshots, writable layers), agent-driven growth there is not part of the guard.",
    "approvals rows (args head, preview, result) bypass AuditLog._mask, and retention._write_archive copies them unmasked into the prune archive next to masked audit rows. Readers are human or operator only, but archives may be handed on; mask before compaction or archiving.",
    "AuditLog.append runs _mask over the full unbounded payload before bound_payload (linear, about 1 s for 65536 notes). Bounding first would cap that CPU."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v-approvals"
  },
  {
   "coverage_id": "GUI%20burst%20stray-process%20decision%20at%20burst%20close%3A%20desktop_processes%20%28root%20ps%20%2B%20XRes%20window%20owners%20from%20a%20python3%20-I%20ctypes%20script%20run%20as%20the%20desktop%20user%20via%20docker%20exec%29%2C%20gui_strays%2Fgui_kept%2C%20and%20the%20per-sandbox%20kept%20set%20carried%20into%20the%20next%20burst%20baseline::Window%20ownership%20used%20to%20spare%20uid-1001%20processes%20from%20the%20stray%20kill%20now%20comes%20from%20the%20X%20server%20%28XResQueryClientIds%20client%20pid%20via%20SO_PEERCRED%29%20instead%20of%20the%20client-declared%20_NET_WM_PID%3B%20kept%20pids%20are%20excluded%20from%20the%20next%20baseline%20so%20they%20are%20re-judged.%20Invariant%3A%20a%20process%20the%20agent%20started%20during%20a%20burst%20cannot%20make%20itself%20or%20another%20process%20look%20window-owning%20or%20baseline%2C%20and%20any%20failure%20of%20the%20owner%20query%20fails%20toward%20stopping%20more%20processes.::agentbox%2Fsandbox_desktop.py%23_WINDOW_OWNERS%2Fdesktop_processes%20%2B%20agentbox%2Fgui_state.py%23_new_processes%2Fgui_strays%2Fgui_kept%20%2B%20agentbox%2Fgui_bursts.py%23open%2F_stop_strays%2F_kept::ATTACK-CLASSES.md%23Business%20logic",
@@ -995,10 +1014,12 @@
    "agentbox/api.py",
    "agentbox/approvals.py",
    "agentbox/audit.py",
+   "agentbox/config.py",
    "agentbox/preview.py",
    "agentbox/retention.py",
    "agentbox/sandbox.py",
-   "agentbox/service.py"
+   "agentbox/service.py",
+   "agentbox/templates/_approvals.html"
   ],
   "local_checks": [
    {
@@ -1037,6 +1058,23 @@
     "method": "source",
     "result": "Holds. delete_sandbox (service.py:538-543) drops capture PNGs, and SandboxManager.delete marks the sandbox deleted (sandbox.py:320-326). Leftover pending rows expire through expire_stale and are compacted. Approving one reaches _snapshot, and sandboxes._container raises SandboxError for a deleted sandbox (sandbox.py:225-228), so decide records FAILED and runs nothing. Finished rows (denied, executed, failed, expired) are removed only by the host prune command (retention.py:41, 54-64), which matches the documented design. The one exception is a row stuck in 'approved' after a _finish storage error (see the unit-1 hardening note).",
     "artifact": null
+   },
+   {
+    "agent_id": "v-approvals",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/api.py",
+     "agentbox/approvals.py",
+     "agentbox/audit.py",
+     "agentbox/config.py",
+     "agentbox/preview.py",
+     "agentbox/service.py",
+     "agentbox/templates/_approvals.html"
+    ],
+    "note": "phase3 decision confirmed",
+    "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+    "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
@@ -1055,6 +1093,8 @@
    "disk_low measures db_path.parent only. When AGENTBOX_DB is on a different filesystem from AGENTBOX_HOME (captures) or the Docker data root (snapshots, writable layers), agent-driven growth there is not part of the guard.",
    "approvals rows (args head, preview, result) bypass AuditLog._mask, and retention._write_archive copies them unmasked into the prune archive next to masked audit rows. Readers are human or operator only, but archives may be handed on; mask before compaction or archiving.",
    "AuditLog.append runs _mask over the full unbounded payload before bound_payload (linear, about 1 s for 65536 notes). Bounding first would cap that CPU."
-  ]
+  ],
+  "x_decision": "confirmed",
+  "x_decided_by": "v-approvals"
  }
 ]

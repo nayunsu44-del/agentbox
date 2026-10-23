@@ -84,6 +84,155 @@
  },
  {
   "verdict": "confirmed",
+  "fingerprint": "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention",
+  "title": "One agent exec call writes a pending approval row about 45x its body size, getting past the PR #20 disk guard in a single step",
+  "description": "PR #20 added AgentBox.disk_low(), a free-space pre-check at the top of call_tool, and compaction of finished approval rows. Pending approval rows are still written raw and without a size bound, and the preview is amplified from the agent's command. preview_command emits one fixed Korean note (about 90 bytes) for every shell segment it cannot classify, so a command made of 2-byte 'x;' segments (default policy rule exec-needs-approval) produces a preview about 45x the request. approvals.create stores that preview plus the raw args in the shared SQLite file, which is in WAL mode, so the data is written to both agentbox.db and the -wal file. The guard is evaluated once before the call. Reproduced independently in the sandbox: one 131097-byte agent request, made with 1 MiB of headroom above min_free_bytes, returned 202, grew agentbox.db from 4096 to 6004736 bytes (45.8x) and the -wal file to 6089392 bytes, and disk_low() was True afterwards. The pending row held args of 131087 bytes and a preview of 5832767 bytes (65536 notes), while the audit approval_requested row was bounded to 83141 bytes. Cost scales linearly: policy.decide took about 80 microseconds per segment (0.31 s at 4096 segments, 5.27 s at 65536) and preview_command about 4 microseconds per segment, with a stable preview-to-command size ratio. A body at the 8 MiB AGENTBOX_MAX_BODY cap would therefore take roughly 5-6 minutes of CPU in a tool_pool thread and write on the order of 366 MiB of row data plus a similar amount of WAL, which exceeds the 256 MiB default margin on its own. That 8 MiB figure is extrapolated, not run. Each sandbox can run 4 such calls concurrently (tool_concurrency), and because the slow decide step runs after the single pre-check, concurrent calls all pass it. Up to 20 pending rows are allowed per sandbox. Expiry compaction shrinks the row (16533/83045 bytes) but not the file: the database grew from 6.0 to 12.1 MB with 2890 free pages and nothing runs VACUUM. When the volume fills, human audit-logged writes fail closed (log_human 503, decide claim 503, expire_stale stops), and the human approval fragment renders every note of the pending row (7.47 MB of HTML for this one row). This is the part of the run-4 N2 root cause (agent-grown approval rows without an effective bound) that PR #20 did not cover. Note: the finding is a per-call overshoot of the guard, not unbounded sustained growth. Once free space drops below the margin, further agent calls are refused with 507.",
+  "root_cause": "The disk guard is only a threshold check at call entry (service.py:282). The REQUIRE_APPROVAL branch then calls _preview (service.py:332), and preview_command appends one note per unrecognised segment with no count bound (preview.py:125). The 200-item cap at preview.py:127-128 applies only to 'affected'. approvals.create (approvals.py:56-57) stores json.dumps(args) and json.dumps(preview) unbounded. bound_payload is applied only to the audit copy (AuditLog.append) and to finished rows (_finish, service.py:406-411), never when the pending row is created. The agent request body is capped only by the global 8 MiB AGENTBOX_MAX_BODY, and there is no per-argument size limit before policy and preview.",
+  "intended_behavior": "No single agent request can make the control plane persist more than a small, fixed bound of approval data. Pending rows hold the same bounded shape as the audit log (capped args and a capped preview with a bounded notes list), so the 256 MiB guard margin cannot be crossed by one admitted call.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 274,
+    "scope": "call_tool route (POST /sandboxes/{sid}/tools/{tool})",
+    "description": "An agent token posts {\"args\": {\"command\": \"x;x;...\"}}. The ToolCall args dict has no per-value cap, and _BodyLimit allows up to AGENTBOX_MAX_BODY (8 MiB)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 282,
+    "scope": "AgentBox.call_tool",
+    "description": "disk_low() is evaluated once, at entry. Free space is still above min_free_bytes, so the call is admitted."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 311,
+    "scope": "AgentBox._call_tool",
+    "description": "policy.decide returns exec-needs-approval, because 'x' is not in the read-only allowlist (default_policy.yaml, rule exec-needs-approval). Reproduced: decision=exec-needs-approval."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 332,
+    "scope": "AgentBox._call_tool",
+    "description": "_preview calls sandboxes.preview, which calls preview_command on the raw command. On exception, the fallback preview copies the raw command (service.py:334)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/preview.py",
+    "line": 125,
+    "scope": "preview_command",
+    "description": "One note is appended per unclassified segment with no count bound: 65536 notes for 65536 'x;' segments."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/approvals.py",
+    "line": 56,
+    "scope": "ApprovalStore.create",
+    "description": "json.dumps(args) and json.dumps(preview) are inserted raw into the shared SQLite file, which is in WAL mode, so the bytes are written to both the database and the WAL."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/preview.py",
+    "line": 125,
+    "description": "notes.append(f\"'{_short_seg(seg)}' 부분의 영향은 ...\") runs once per segment. Only 'affected' is truncated, at lines 127-128."
+   },
+   {
+    "file": "agentbox/approvals.py",
+    "line": 56,
+    "description": "create stores args and preview with json.dumps and no size check (lines 56-57)."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 282,
+    "description": "The only disk guard on this route is the pre-check at call entry."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 338,
+    "description": "approvals.create is called with the uncapped preview after the guard, with no re-check of free space."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 406,
+    "description": "_finish applies _logged_args and bound_payload only when an approval finishes, so compaction never limits the pending row."
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 260,
+    "description": "The shared DB is put in WAL mode, so the large insert is also written to agentbox.db-wal."
+   },
+   {
+    "file": "agentbox/templates/_approvals.html",
+    "line": 16,
+    "description": "The human approval card renders every note of every pending row (measured 7472223 bytes of HTML for one row)."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 57,
+    "description": "The default min_free_bytes margin is 256 MiB."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Requires an agent token for a running sandbox, the lowest-trust principal. The threat model assumes it may be prompt-injected."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "Default policy (or any policy that sends an exec to require_approval) and AGENTBOX_MIN_FREE greater than 0. The body must fit AGENTBOX_MAX_BODY (8 MiB default). A larger body costs about 80 microseconds of policy CPU per 2-byte segment."
+   },
+   {
+    "kind": "data_state",
+    "description": "Fewer than PENDING_APPROVALS_MAX (20) pending approvals for the sandbox, and free space above min_free_bytes when the call starts."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent holding only its own sandbox's agent token calls the exec tool with a long command made of trivial unrecognised segments.",
+   "payloads": [
+    "POST /sandboxes/{sid}/tools/exec  {\"args\": {\"command\": \"x;\" * 65536}}  (131097-byte JSON body; scale toward the 8 MiB cap for the deployed limit)"
+   ],
+   "instructions": [
+    "In tools/sbx (no network, no Docker, 512 MiB, 120 s), build AgentBox with the real AuditLog, ApprovalStore, DesktopControl and default_policy.yaml, plus a fake SandboxManager whose preview() calls the real preview_command with empty glob and walk callbacks.",
+    "Set settings.min_free_bytes = shutil.disk_usage(home).free - 1 MiB so that disk_low() is False.",
+    "Call box.call_tool('sb_x', 'exec', {'command': 'x;'*65536}, actor='agent') once, then measure agentbox.db and agentbox.db-wal, the approvals row lengths, disk_low() and the audit row sizes.",
+    "Time policy.decide and preview_command for n = 4096..65536 segments to confirm linear scaling."
+   ],
+   "observed_result": "Independent re-run: decision=exec-needs-approval, call_tool status 202, disk_low before=False and after=True, agentbox.db 4096 -> 6004736 bytes (45.8x the 131097-byte body), -wal 6089392 bytes, pending row args 131087 bytes and preview 5832767 bytes (65536 notes), audit approval_requested payload only 83141 bytes. Scaling run: policy.decide 0.31/0.69/1.26/2.45/5.27 s at 4096/8192/16384/32768/65536 segments and preview_command 0.02-0.26 s, so the cost is linear and an 8 MiB body is feasible, taking minutes of CPU. The expiry-compaction file growth (6.0 to 12.1 MB) and the 7.47 MB HTML fragment come from the hunter's run (agents/h-approvals/artifacts/h.out). The jinja2 rendering step was not reproduced because the module is unavailable under python -I in the sandbox. Filling a real disk and the 8 MiB case were not run."
+  },
+  "remediation": {
+   "strategy": "Bound pending rows at creation. (1) Reject agent string args above a fixed size (for example LOGGED_ARGS_MAX) with 413 before policy and preview, which also removes the policy.decide CPU cost. (2) In preview_command, cap the notes (keep the first 50 plus one 'and N more segments' summary). (3) Store bound-shaped args/preview in approvals.create, or keep the raw args elsewhere with a hard cap. (4) Re-check disk_low() immediately before approvals.create and treat sqlite3.Error from create or _finish as 503. (5) Optionally run PRAGMA wal_checkpoint(TRUNCATE) and VACUUM after prune and expiry so that compaction returns space.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/preview.py",
+     "fixed_code": "NOTES_MAX = 50\n...\n    if len(notes) > NOTES_MAX:\n        extra = len(notes) - NOTES_MAX\n        notes = notes[:NOTES_MAX] + [f\"... 외 {extra}개 조각의 영향도 자동 계산하지 못함. 명령 원문을 확인할 것.\"]\n    return {\"command\": command, \"cwd\": WORKSPACE, \"affected\": affected, \"notes\": notes}"
+    },
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "            preview = bound_payload(preview)\n            if actor == \"agent\" and self.disk_low():\n                raise ServiceError(507, \"컨트롤 플레인 디스크의 남은 공간이 부족해 승인 요청을 만들지 않음.\")\n            apr = self.approvals.create(sandbox_id=sid, tool=tool, args=args, ...)"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "Any agent token can do it with one ordinary-looking request under the default policy, and the threat model assumes a prompt-injected agent. Crossing the full 256 MiB margin in one call needs a multi-MiB body, which takes minutes of server CPU. Smaller bodies still overshoot the guard by about 45x their size per call."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Shared control-plane disk and availability. An admitted call can overshoot the free-space margin by far more than its own size, after which human audit-logged actions (decide, delete, pause) fail closed with 503 and the approval UI bloats. Growth stops once the guard refuses further agent calls, and recovery needs the operator to free disk out of band because compaction does not shrink the file. No integrity or confidentiality loss."
+   },
+   "overall_severity": "medium"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "The full call_tool path ran locally with the real policy, preview, approval store and audit code, and the byte counts reproduced exactly. Linear scaling was measured with timing runs. The 8 MiB figure and a real disk-full state are extrapolated and were deliberately not run."
+  }
+ },
+ {
+  "verdict": "confirmed",
   "fingerprint": "agentbox/desktop_ws.py:relay+agentbox/api.py:desktop_ws:blocking-sqlite-audit-docker-on-event-loop",
   "title": "Desktop WebSocket handler blocks the shared event loop on SQLite and audit locks, so one desktop connect stalls every HTTP route",
   "description": "The async route /sandboxes/{sid}/desktop/ws (api.py:408-418) and desktop_ws.relay make synchronous SQLite, threading.Lock and Docker SDK calls directly on the asyncio event loop. These are the session lookup, vnc_command (_rec plus containers.get), the log_human audit write, add_conn, the per-message touch() in control mode, the 30 s session re-check and the log_best_effort audit write on disconnect. While another SQLite connection holds the write lock (for example retention.prune's BEGIN IMMEDIATE, run by the host operator) or a worker holds AuditLog._lock, one authenticated desktop WS connect or disconnect freezes the whole control plane for up to the 5 s default sqlite busy timeout or the remaining lock hold. That covers every HTTP route, including human approvals and deletes, agent tool responses and /healthz. A desktop-link session scoped to one sandbox, or a desktop page that auto-reconnects, can repeat the stall while the condition lasts. An unauthenticated upgrade with a junk cookie stalls the loop only in a narrower case: a human desktop write (login, ticket, takeover or handback) is itself waiting on the SQLite write lock while holding DesktopControl._lock, and the loop then waits on that lock in session_scope. This undoes the design intent at api.py:158-160, which keeps blocking tool work off the human API's executor. The attacker cannot create the long lock hold, only trigger the WS event while one exists.",
@@ -242,7 +391,7 @@
     "file": "agentbox/cli.py",
     "line": 319,
     "scope": "cmd_prune",
-    "description": "Host operator runs `agentbox prune --before ... --archive ...`. It calls retention.prune on Settings().db_path and catches only ValueError, FileExistsError and RuntimeError (cli.py:322-324)."
+    "description": "Host operator runs `agentbox prune --before ... --archive ...`. It calls retention.prune on Settings().db_path and catches only ValueError, FileExistsError and RuntimeError (cli.py:323-324)."
    },
    {
     "kind": "propagation",
@@ -299,11 +448,11 @@
    {
     "file": "agentbox/audit.py",
     "line": 362,
-    "description": "verify_archives reads the archive and compares its sha256 to the anchor. With the archive deleted it raises FileNotFoundError, and with an empty archive list it fails on the anchor/archive count mismatch (audit.py:353-354)."
+    "description": "verify_archives reads the archive and compares its sha256 to the anchor. With the archive deleted it raises FileNotFoundError, and with an empty archive list it fails on the anchor/archive count mismatch (audit.py:358-359)."
    },
    {
     "file": "agentbox/cli.py",
-    "line": 322,
+    "line": 323,
     "description": "cmd_prune catches only ValueError, FileExistsError and RuntimeError. The OperationalError surfaces as a traceback."
    }
   ],
@@ -331,7 +480,7 @@
     "Read the exception, whether the archive exists, the audit/anchor rows, and the verify() and verify_archives() results.",
     "The hunter's artifacts agents/h-retention/artifacts/h.out and h2.out show the same with the full harness. h2 uses a real asynchronous SIGINT during a real 20k-row COMMIT and hit the inner except in 5 of 5 attempts."
    ],
-   "observed_result": "Independent run: prune raised OperationalError('cannot rollback - no transaction is active') with __context__ KeyboardInterrupt. The archive no longer exists. The audit table holds 3 rows starting at id 6, with anchor (seq 1, last_id 5, 'x.jsonl.gz'). verify() returned ok=True, pruned_through=5. verify_archives([archive]) raised FileNotFoundError. Hunter's h2.out confirms a real asynchronous SIGINT during a real COMMIT reaches the inner except with the 20000 rows committed."
+   "observed_result": "Independent run (repeated by the final verifier with the same shim): prune raised OperationalError('cannot rollback - no transaction is active') with __context__ KeyboardInterrupt. The archive no longer exists. The audit table holds 3 rows starting at id 6, with anchor (seq 1, last_id 5, 'x.jsonl.gz'). verify() returned ok=True, pruned_through=5. verify_archives([archive]) raised FileNotFoundError. Hunter's h2.out confirms a real asynchronous SIGINT during a real COMMIT reaches the inner except with the 20000 rows committed."
   },
   "remediation": {
    "strategy": "Make archive cleanup depend on commit state, not on whether an exception was raised. Roll back only while conn.in_transaction is true. In the outer handler, check whether an audit_anchor row with this archive's name and sha256 exists, and unlink only if it does not. If the check itself fails, keep the archive. Report a post-commit interruption as 'pruned; archive kept at <path>' rather than a raw OperationalError. Optionally fsync the archive's parent directory after creating it. Add a regression test where a Connection factory raises KeyboardInterrupt after a successful COMMIT, and assert the archive remains and verify_archives([archive]) passes.",
@@ -355,7 +504,7 @@
   },
   "confidence": {
    "score": "high",
-   "reason": "The source lines match. I reproduced the outcome independently in the sandbox with a COMMIT-then-SIGINT shim. The hunter's real-timing harness produced the same behaviour in 5 of 5 attempts. The synthetic shim models the timing: a signal delivered during COMMIT is raised as KeyboardInterrupt on return from the C call."
+   "reason": "The source lines match at 346df29 (two line references corrected). The final verifier reproduced the outcome independently in the sandbox with a COMMIT-then-SIGINT shim, and the hunter's real-timing harness produced the same behaviour in 5 of 5 attempts. The synthetic shim models the timing: a signal delivered during COMMIT is raised as KeyboardInterrupt on return from the C call."
   }
  },
  {
