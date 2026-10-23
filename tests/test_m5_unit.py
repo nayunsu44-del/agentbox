@@ -209,3 +209,118 @@ def test_desktop_ws_does_not_block_event_loop_on_sqlite(tmp_path, monkeypatch):
         t.join()
         w.join(15)
     assert took < 1.0, took
+
+
+# ---- 인수 중에 열리는 GUI 구간 (보안 검수 run-5) -------------------------------------------------------------
+_BASE = [{"pid": 1, "ppid": 0, "sid": 1, "uid": 0, "args": "tini"},
+         {"pid": 100, "ppid": 1, "sid": 100, "uid": 1001, "args": "xfce4-session"},
+         {"pid": 101, "ppid": 100, "sid": 100, "uid": 1001, "args": "xfce4-panel"}]
+_HUMAN = [{"pid": 200, "ppid": 101, "sid": 100, "uid": 1001, "args": "xfce4-terminal"},
+          {"pid": 201, "ppid": 200, "sid": 201, "uid": 1001, "args": "bash"},
+          {"pid": 202, "ppid": 201, "sid": 201, "uid": 1001, "args": "python3 -m http.server"}]
+
+
+class _Audit:
+    def __init__(self):
+        self.rows = []
+
+    def append(self, **row):
+        self.rows.append(row)
+        return len(self.rows)
+
+
+class _GuiSb:
+    def __init__(self, block=False):
+        import threading
+        self.settings = Settings()
+        self.procs, self.windows = list(_BASE), {100, 101}
+        self.manifest = {"a.txt": (1, "1", "1")}
+        self.killed, self.snaps, self.clicks = [], [], []
+        self.block, self.entered, self.go = block, threading.Event(), threading.Event()
+
+    def get(self, sid):
+        return {"id": sid, "container_id": "c1", "status": "running"}
+
+    def template_of(self, sid):
+        return Settings().template("desktop")
+
+    def _desktop(self, sid):
+        return None
+
+    def desktop_processes(self, sid):
+        return [dict(p) for p in self.procs], set(self.windows)
+
+    def kill_processes(self, sid, pids):
+        self.killed += list(pids)
+
+    def workspace_manifest(self, sid):
+        return dict(self.manifest), False
+
+    def snapshot(self, sid, reason):
+        self.snaps.append(reason)
+        if self.block:
+            self.entered.set()
+            self.go.wait(10)       # 몇 초 걸리는 docker commit 자리
+        return {"id": f"snap_{len(self.snaps)}", "image": "img"}
+
+    def snapshot_count(self, sid):
+        return len(self.snaps)
+
+    def screenshot(self, sid):
+        raise __import__("agentbox.sandbox", fromlist=["SandboxError"]).SandboxError("no screen")
+
+    def click(self, sid, x, y, button, double):
+        self.clicks.append((x, y))
+        return {"clicked": [x, y]}
+
+    def list_dir(self, sid, path):
+        return {"path": path, "entries": []}
+
+
+def _human_acts(sb):
+    sb.procs += _HUMAN
+    sb.windows |= {200}
+    sb.manifest["human_notes.txt"] = (5, "2", "2")
+
+
+def test_click_racing_takeover_opens_no_burst(tmp_path):
+    """에이전트 클릭의 커밋 중에 사람이 인수하면, 커밋 뒤 구간을 열지 않는다. 열면 인수 중에 사람이 띄운 셸이
+    나중에 구간이 닫힐 때 멈추고, 사람의 편집이 에이전트 변경으로 남았다."""
+    import threading
+
+    from agentbox.service import AgentBox
+    sb = _GuiSb(block=True)
+    box = AgentBox(_Audit(), Policy({"default": "allow"}), sb, approvals=None, desktop=DesktopControl())
+    out = {}
+    t = threading.Thread(target=lambda: out.setdefault("r", box.call_tool("sb", "click", {"x": 1, "y": 1})))
+    t.start()
+    assert sb.entered.wait(5)                  # 에이전트가 스냅샷 판단을 지나 커밋 중
+    box.takeover("sb", "hs_1")
+    sb.go.set()
+    t.join(5)
+    assert out["r"].status == 423 and sb.clicks == []
+    assert "sb" not in box.bursts._gui_burst
+    _human_acts(sb)
+    box.call_tool("sb", "list_dir", {"path": "/workspace"})   # 쉬는 구간을 닫는 호출
+    box.bursts.close_idle(wait=5)
+    assert sb.killed == []
+    assert not [r for r in box.audit.rows if r["event"] == "gui_changes"]
+    box.bursts._burst_pool.shutdown()
+
+
+def test_gui_approval_decided_during_takeover_takes_no_snapshot(tmp_path):
+    """인수 중에 GUI 입력 승인을 결정하면 스냅샷·구간 없이 실패로 끝난다."""
+    from agentbox.approvals import ApprovalStore
+    from agentbox.service import AgentBox
+    sb = _GuiSb()
+    box = AgentBox(_Audit(), Policy({"default": "allow", "rules": [{"id": "g", "tool": "click",
+                                                                     "action": "require_approval"}]}),
+                   sb, approvals=ApprovalStore(tmp_path / "a.db"), desktop=DesktopControl())
+    box.takeover("sb", "hs_1")
+    out = box.call_tool("sb", "click", {"x": 1, "y": 1})
+    assert out.status == 202
+    apr = box.decide(out.body["approval_id"], True, session="hs_1")
+    assert apr["status"] == "failed"
+    assert sb.snaps == [] and sb.clicks == []
+    assert "sb" not in box.bursts._gui_burst
+    box.bursts._burst_pool.shutdown()
