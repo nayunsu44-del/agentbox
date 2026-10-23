@@ -213,7 +213,8 @@ medium 이상 6건의 전체 경로, 근거, 재현, 수정 방향은 [`FINDINGS
 이 브랜치에서 판정과 상관없이 먼저 막아 둔 것이 세 건 있다. 감사 대상 소스는 바뀌지 않았고, 판정도 그대로 needs_validation이다.
 
 - **v10 (`c1f88da`):** GUI exec에 컨테이너 쪽 제한 시간이 걸린다. 인수와 반환은 `gui_lock`을 최대 30초까지만 기다리고, 넘으면 503을 준다. 인수를 기다리는 동안과 그 뒤 60초 동안은 에이전트의 GUI 도구를 새로 돌리지 않는다(423). 그래서 다시 누르면 인수된다. 테스트: `tests/test_m2_unit.py::test_takeover_waits_bounded_and_stops_new_agent_gui_calls`, `tests/test_m2_acceptance.py::test_frozen_display_does_not_hold_tools_or_takeover`.
-- **v09 (`c1f88da`, 일부):** 파일 목록과 프로세스 목록 exec의 종료 코드를 확인한다. 기준을 못 읽으면 빈 기준으로 구간을 열지 않고 `gui_burst_open_failed`를 남긴다. 닫기에 실패하면 `gui_burst_close_failed`를 남긴다. 실패했을 때 GUI 입력을 막는 쪽(fail-closed)은 아직 넣지 않았다. 테스트: `tests/test_m2_unit.py::test_failed_burst_baseline_is_logged`.
+- **v09 (`c1f88da`, 일부):** 파일 목록과 프로세스 목록 exec의 종료 코드를 확인한다. 기준을 못 읽으면 빈 기준으로 구간을 열지 않고 `gui_burst_open_failed`를 남긴다. 닫기에 실패하면 `gui_burst_close_failed`를 남긴다. 테스트: `tests/test_m2_unit.py::test_failed_burst_baseline_is_logged`.
+  - 병합 뒤 후속 변경에서 fail-closed로 바꿨다. 기준을 못 읽으면 그 GUI 입력은 실행하지 않고 503을 준다. 다음 입력이 다시 스냅샷을 뜨고 구간을 연다. 테스트: `tests/test_m2_unit.py::test_gui_input_refused_when_burst_baseline_unreadable`, `tests/test_m2_acceptance.py::test_gui_input_refused_without_burst_baseline`.
 - **v14 (`28fd4c9`):** 모든 HTTP 응답에 `X-Frame-Options: SAMEORIGIN`과 `Content-Security-Policy: frame-ancestors 'self'`를 붙인다. 같은 출처의 데스크톱 iframe은 그대로 된다. 테스트: `tests/test_m4_acceptance.py::test_ui_refuses_framing`.
 
 ## 5. 보강 메모와 좋은 패턴

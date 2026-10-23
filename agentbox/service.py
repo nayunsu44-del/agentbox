@@ -263,7 +263,7 @@ class AgentBox:
             return False
         return self._needs_snapshot(sid, tool, args)
 
-    def _open_gui_burst(self, sid: str, snapshot_id: str) -> None:
+    def _open_gui_burst(self, sid: str, snapshot_id: str) -> bool:
         try:
             # 구간은 지금 컨테이너의 것이다. 복원으로 컨테이너가 바뀌면 옛 pid·파일 목록으로 새 데스크톱을 판단하지 않는다
             container_id = self.sandboxes.get(sid)["container_id"]
@@ -272,9 +272,10 @@ class AgentBox:
         except Exception as e:  # 기록용이라 실패해도 도구 호출은 막지 않는다. 다만 구간 기록이 없다는 것은 남긴다
             self._safe_log(sid, None, "gui_burst_open_failed", {"snapshot_id": snapshot_id,
                                                                  "error": (str(e) or type(e).__name__)[:300]})
-            return
+            return False
         self._gui_burst[sid] = {"snapshot_id": snapshot_id, "manifest": manifest, "truncated": truncated,
                                 "pids": {p["pid"] for p in procs}, "container_id": container_id}
+        return True
 
     def _stop_gui_strays(self, sid: str, burst: dict[str, Any], reason: str) -> str | None:
         """구간에서 GUI로 띄운 백그라운드 일을 멈춘다. 그대로 두면 구간이 끝난 뒤에도 정책 밖에서 파일을 바꾼다.
@@ -358,11 +359,17 @@ class AgentBox:
         if tool in GUI_INPUT:
             self._close_gui_burst(sid, "next_burst")
         snap = self.sandboxes.snapshot(sid, reason=reason)
+        opened = True
         if tool in GUI_INPUT:
             self._gui_snap_at[sid] = time.monotonic()
-            self._open_gui_burst(sid, snap["id"])
+            opened = self._open_gui_burst(sid, snap["id"])
         self.audit.append(actor="system", event="snapshot", sandbox_id=sid, tool=tool,
                           payload={**ref, "snapshot_id": snap["id"], "image": snap["image"]})
+        if not opened:
+            # 기준 없이 구간을 돌리면 그 동안 GUI로 바꾼 것이 기록되지 않는다. 에이전트가 pid 한도를 채워 일부러
+            # 이 상태를 만들 수 있으니 이 입력은 실행하지 않고, 다음 입력이 다시 구간을 열게 한다 (보안 검수 run-3 v09)
+            self.reset_gui_timers(sid)
+            raise SandboxError("GUI 구간 기준(파일·프로세스 목록)을 읽지 못해 GUI 입력을 실행하지 않음. 잠시 뒤 다시 호출할 것")
         return snap
 
     # ---- 도구 호출 --------------------------------------------------------
