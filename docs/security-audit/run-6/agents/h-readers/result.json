@@ -1,0 +1,253 @@
+{
+  "artifacts_to_promote": [
+    "h.out"
+  ],
+  "units": [
+    {
+      "coverage_id": "Container%20output%20readers%20that%20fully%20buffer%20attacker-controlled%20bytes%3A%20sandbox.py%20exec_run%20without%20a%20read%20cap%20or%20container-side%20timeout%20%28list_dir%20ls%20-la%20%3A442%2C%20exists%20%3A475%2C%20delete%20%3A497%2C%20outbox_list%20find%20-printf%20%3A548%2C%20is_dir%20%3A537%2C%20plus%20_expand%20glob%20%3A578%20and%20_walk%20find%20-print0%20%3A584%20which%20gained%20_PREVIEW_TIMEOUT%20in%20PR%20%2324%29%20versus%20the%20capped%20_Head%20exec%20path%20%28%3A85%2C%3A427%29::Agent-owned%20container%20filesystem%20output%20to%20control-plane%20memory%20and%20tool_pool%2Frequest%20threads.%20An%20agent%20can%20create%20millions%20of%20names%2C%20deep%20trees%20or%20huge%20glob%20matches%2C%20so%20a%20human-triggered%20or%20preview-triggered%20listing%20buffers%20an%20unbounded%20demux%20result%20in%20the%20single%20control-plane%20process.%20Run-4%20N3%20%28needs_validation%2C%20not%20re-hunted%29.%20The%20h-xres%20and%20h-policy-cpu%20units%20excluded%20Unbounded%20buffering%20and%20cardinality%20citing%20N3%2C%20so%20no%20unit%20owns%20it%2C%20and%20PR%20%2318%20changed%20_expand%2F_walk%20%28NUL-separated%20output%2C%20head%20-z%29%20without%20a%20reader-cap%20review.::agentbox%2Fsandbox.py%23list_dir%2Fexists%2Fdelete_file%2Foutbox_list%2Fis_dir%2F_expand%2F_walk%2Fpreview%20%2B%20agentbox%2Fsandbox_common.py%23_timed%20%2B%20agentbox%2Fsandbox_desktop.py%23_x%2Fdesktop_processes%20%2B%20agentbox%2Fpreview.py::Unbounded%20buffering%20and%20cardinality%20of%20container-controlled%20output",
+      "disposition": "candidate",
+      "reviewed_paths": [
+        "agentbox/api.py",
+        "agentbox/preview.py",
+        "agentbox/sandbox.py",
+        "agentbox/sandbox_common.py",
+        "agentbox/sandbox_desktop.py",
+        "agentbox/service.py",
+        "agentbox/web.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-readers",
+          "reviewed_paths": [
+            "agentbox/sandbox.py",
+            "agentbox/sandbox_common.py"
+          ],
+          "invariant": "exec uses _Head streaming byte cap and _timed, while list_dir, outbox_list, and exists/is_dir are checked for container-side timeouts and output byte caps",
+          "method": "source",
+          "result": "Confirmed from source that exec streams through _Head with _OUT_LIMIT (64 KiB) and _timed(t), read_file and outbox_read use head -c and _timed(_READ_TIMEOUT), workspace_manifest uses head -c and _timed(_MANIFEST_TIMEOUT). However, list_dir and outbox_list use c.exec_run without _timed or head byte caps, buffering arbitrary output in control-plane memory.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-readers",
+          "reviewed_paths": [
+            "agentbox/preview.py",
+            "agentbox/sandbox.py"
+          ],
+          "invariant": "preview_command glob expansion and recursive directory walking enforce call bounds and output record caps",
+          "method": "local",
+          "result": "Sandboxed test confirmed that preview_command enforces PREVIEW_CALLS_MAX (40) and truncates affected items to limit (200), and _walk uses head -z; however, _expand has no record or byte cap, allowing wildcards matching thousands of paths to buffer full output before truncation.",
+          "artifact": "agents/h-readers/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-readers",
+          "reviewed_paths": [
+            "agentbox/sandbox_desktop.py"
+          ],
+          "invariant": "desktop_processes and screenshot enforce timeouts and output buffering bounds",
+          "method": "source",
+          "result": "desktop_processes uses _timed(_X_TIMEOUT) with ps -eo bounded by container pids_limit (1024), and screenshot uses _timed(_X_TIMEOUT) with scrot -o -z, though screenshot cats the entire PNG into memory without streaming byte cap.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-readers",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/service.py",
+            "agentbox/web.py"
+          ],
+          "invariant": "list_dir and outbox_list callers propagate uncurbed container output to control-plane consumers",
+          "method": "source",
+          "result": "Confirmed that api.py /sandboxes/{sid}/outbox and web.py outbox_frag pass outbox_list output directly to JSON serialization and Jinja template rendering without pagination or cardinality bounds, and service.py _call_tool routes list_dir directly to the container.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [
+        "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap"
+      ],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "Docker%20data-root%20growth%20that%20AgentBox.disk_low%20does%20not%20measure%3A%20container%20writable%20layers%20%28AGENTBOX_DISK%20default%20empty%20so%20no%20storage_opt%29%2C%20docker%20commit%20snapshot%20images%20%28snapshot_quota%2050%20per%20sandbox%2C%20unlimited%20sandboxes%29%2C%20and%20the%20exec%2Fwrite_file%20calls%20that%20an%20admitted%20call%20can%20run%20for%20up%20to%20exec_timeout::Agent%20to%20host%20disk%20outside%20the%20guard%3A%20disk_low%20checks%20shutil.disk_usage%28db_path.parent%29%20only%20%28service.py%3A395%29%2C%20while%20the%20growth%20lands%20in%20the%20Docker%20root.%20When%20DB%20and%20Docker%20root%20are%20on%20different%20filesystems%2C%20or%20one%20admitted%20exec%20fills%20the%20layer%2C%20the%20507%20guard%20never%20trips.%20h-approvals%20recorded%20this%20only%20as%20hardening%20and%20did%20not%20test%20per-sandbox%20or%20aggregate%20snapshot%20disk.::agentbox%2Fservice.py%23disk_low%2Fcall_tool%20%2B%20agentbox%2Fsandbox.py%23_run_container%2Fsnapshot%2Fwrite_file%20%2B%20agentbox%2Fconfig.py%23disk_limit%2Fmin_free_bytes%2Fsnapshot_quota%20%2B%20deploy%2Fdocker-compose.yml%20volume%20layout::Quota-accounting%20scope%20and%20reset%20gaps%20%28disk%20accounting%20measured%20on%20the%20wrong%20filesystem%29",
+      "disposition": "candidate",
+      "reviewed_paths": [
+        "agentbox/config.py",
+        "agentbox/sandbox.py",
+        "agentbox/service.py",
+        "deploy/docker-compose.yml"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-readers",
+          "reviewed_paths": [
+            "agentbox/config.py",
+            "agentbox/service.py"
+          ],
+          "invariant": "AgentBox.disk_low accurately accounts for all host disk growth vectors caused by agent actions",
+          "method": "local",
+          "result": "Sandboxed test and source inspection established that disk_low queries only shutil.disk_usage(s.db_path.parent).free against min_free_bytes; when container layers or Docker images grow outside db_path.parent, disk_low remains False and does not trip the 507 guard.",
+          "artifact": "agents/h-readers/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-readers",
+          "reviewed_paths": [
+            "agentbox/sandbox.py",
+            "deploy/docker-compose.yml"
+          ],
+          "invariant": "container writable layers and snapshot images are bounded by filesystem quotas and deployment volume layout",
+          "method": "source",
+          "result": "Confirmed that config.disk_limit defaults to empty string so sandbox._run_container omits storage_opt, leaving container layers without size quotas, and snapshot commits images to Docker storage root up to snapshot_quota (50) per sandbox across unlimited sandboxes, while deploy/docker-compose.yml mounts AGENTBOX_HOME separately from the host Docker storage root.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [
+        "agentbox/service.py:disk_low-unmonitored-docker-data-root"
+      ],
+      "unresolved": []
+    }
+  ],
+  "candidates": [
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+      "title": "Unbounded buffering and missing container-side timeouts in list_dir, outbox_list, and preview glob expand",
+      "description": "While exec streams output through _Head (capping memory to 64 KiB) and read_file, outbox_read, and workspace_manifest apply container-side head caps and timeouts, list_dir and outbox_list invoke c.exec_run without container-side _timed timeouts or stream-limiting byte caps, buffering arbitrary output in the control-plane process. Furthermore, preview _expand lacks output cardinality/byte limits, allowing an agent with a populated workspace or outbox to exhaust control-plane RAM or block worker threads indefinitely.",
+      "claimed_root_cause": "Container output consumption disciplines were applied inconsistently: exec uses _Head streaming (_OUT_LIMIT=64 KiB) and _timed, read_file/outbox_read use head -c and _timed, workspace_manifest uses head -c and _timed, and preview _walk uses head -z and _timed. However, list_dir (ls -la) and outbox_list (find -printf) lack both container-side timeouts and output byte bounds, while preview _expand has a 10s timeout but no output byte cap or record limit. An agent-populated directory with hundreds of thousands of files causes c.exec_run to buffer all demuxed bytes in memory, parse them into unbounded Python structures, and potentially stall tool_pool and HTTP worker threads.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "agentbox/service.py",
+          "line": 293,
+          "scope": "AgentBox.call_tool",
+          "description": "Agent calls list_dir or triggers approval preview (via exec) on an agent-populated directory, or human views outbox via GET /sandboxes/{sid}/outbox."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/sandbox.py",
+          "line": 442,
+          "scope": "SandboxManager.list_dir",
+          "description": "list_dir calls c.exec_run([\"ls\", \"-la\", \"--\", p], demux=True) without _timed and without _Head streaming, waiting for all container output to buffer into control-plane RAM."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/sandbox.py",
+          "line": 548,
+          "scope": "SandboxManager.outbox_list",
+          "description": "outbox_list executes find without _timed or head cap, passing raw output to _parse_outbox which instantiates uncurbed Python lists of dicts."
+        },
+        {
+          "kind": "sink",
+          "file": "agentbox/sandbox.py",
+          "line": 116,
+          "scope": "_parse_outbox",
+          "description": "Control plane process buffers unbounded byte arrays and creates thousands of Python objects, risking memory exhaustion in the 2 GB control container or threadpool worker exhaustion."
+        }
+      ],
+      "evidence": [
+        {
+          "file": "agentbox/sandbox.py",
+          "line": 424,
+          "description": "exec streams output into _Head with _OUT_LIMIT cap and _timed(t, kill_after=5)."
+        },
+        {
+          "file": "agentbox/sandbox.py",
+          "line": 442,
+          "description": "list_dir runs c.exec_run([\"ls\", \"-la\", \"--\", p]) with no _timed timeout and no byte cap."
+        },
+        {
+          "file": "agentbox/sandbox.py",
+          "line": 548,
+          "description": "outbox_list runs c.exec_run with find -printf without _timed or output truncation before _parse_outbox."
+        },
+        {
+          "file": "agentbox/sandbox.py",
+          "line": 578,
+          "description": "_expand runs container glob without head -z or output limit, unlike _walk which uses head -z."
+        }
+      ],
+      "blockers": [
+        "Demonstrating full control-plane memory exhaustion or threadpool hang under large-scale container output requires running against a live Docker daemon with a real container, which is excluded from the subagent sandbox environment."
+      ],
+      "validation_plan": {
+        "local": "In a live test with Docker running: (1) create a sandbox container, (2) populate /workspace/outbox with 200,000 files using a fast shell loop, (3) call GET /sandboxes/{sid}/outbox and POST /sandboxes/{sid}/tools/list_dir with path /workspace/outbox, (4) observe control plane memory consumption spike and monitor process RSS; (5) test replacing outbox with a hanging device or slow pipe to observe thread starvation.",
+        "deployment": "Review production control-plane logs and metrics under high file counts for OOM kills (mem_limit: 2g) or 504/timeout errors on list_dir and outbox endpoints."
+      }
+    },
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "agentbox/service.py:disk_low-unmonitored-docker-data-root",
+      "title": "disk_low measures SQLite db_path.parent rather than Docker daemon storage root allowing complete host disk exhaustion",
+      "description": "AgentBox.disk_low checks free disk space strictly via shutil.disk_usage(self.settings.db_path.parent). In deployments where the agentbox database volume (AGENTBOX_HOME) and Docker's data root (/var/lib/docker) reside on separate filesystems, container layer growth and docker commit snapshot images (up to 50 per sandbox) consume Docker storage without decreasing free space on db_path.parent. The 507 guard never trips, allowing agents to exhaust host Docker disk, cause daemon failures, and prevent administrative log_human operations which fail closed with 503.",
+      "claimed_root_cause": "The disk guard in AgentBox.disk_low (service.py:421-437) assumes all disk growth occurs on the filesystem containing db_path.parent. However, Docker container writable layers and commit images (sandbox.py:356-370) grow inside Docker's data root (e.g. /var/lib/docker). In deploy/docker-compose.yml, AGENTBOX_HOME (/var/lib/agentbox) is a separate bind mount. When db_path.parent and Docker data root are on distinct partitions, or when an admitted exec runs dd/fallocate for up to exec_timeout (since AGENTBOX_DISK is empty by default so containers have no storage_opt size quota), host Docker storage can be completely filled without triggering disk_low.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "agentbox/service.py",
+          "line": 296,
+          "scope": "AgentBox.call_tool",
+          "description": "Agent calls an admitted tool (e.g. exec writing large files to /workspace, or write_file triggering snapshot)."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/service.py",
+          "line": 428,
+          "scope": "AgentBox.disk_low",
+          "description": "disk_low evaluates shutil.disk_usage(s.db_path.parent).free against s.min_free_bytes; because Docker storage is on a separate filesystem, db_path.parent free space remains high and disk_low returns False."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/sandbox.py",
+          "line": 361,
+          "scope": "SandboxManager.snapshot",
+          "description": "c.commit commits container writable layer into a new Docker image in Docker data root, accumulating up to snapshot_quota (50) images per sandbox."
+        },
+        {
+          "kind": "sink",
+          "file": "agentbox/sandbox.py",
+          "line": 269,
+          "scope": "SandboxManager._run_container",
+          "description": "Container has no storage_opt disk quota (disk_limit is empty by default), allowing unrestricted accumulation of data in Docker's storage root until the host filesystem is exhausted."
+        }
+      ],
+      "evidence": [
+        {
+          "file": "agentbox/service.py",
+          "line": 428,
+          "description": "disk_low measures shutil.disk_usage(s.db_path.parent).free exclusively."
+        },
+        {
+          "file": "agentbox/config.py",
+          "line": 42,
+          "description": "disk_limit defaults to empty string, disabling container storage_opt size limits."
+        },
+        {
+          "file": "agentbox/config.py",
+          "line": 46,
+          "description": "snapshot_quota defaults to 50 snapshots per sandbox without aggregate disk quota."
+        },
+        {
+          "file": "agentbox/sandbox.py",
+          "line": 361,
+          "description": "snapshot calls c.commit(), creating full container layer image copies in Docker root."
+        },
+        {
+          "file": "deploy/docker-compose.yml",
+          "line": 31,
+          "description": "AGENTBOX_HOME is mounted to /var/lib/agentbox separately from Docker host root."
+        }
+      ],
+      "blockers": [
+        "Simulating separate filesystem mounts for AGENTBOX_HOME and Docker root (/var/lib/docker) along with live docker commit image accumulation requires access to a host Docker daemon and multiple mount points, which is unavailable in the isolated sandbox."
+      ],
+      "validation_plan": {
+        "local": "On a live host running Docker with AGENTBOX_HOME on a loopback mount or separate partition from /var/lib/docker: (1) configure min_free_bytes=256MB, (2) run an agent script that creates files and commits snapshots up to snapshot_quota, (3) verify that disk_low continues returning False while Docker data root disk usage increases until /var/lib/docker is exhausted.",
+        "deployment": "Check host partition layout in production deployments to verify whether /var/lib/docker and AGENTBOX_HOME are on separate volumes, and monitor Docker daemon root volume free space independently of the application database volume."
+      }
+    }
+  ],
+  "hardening": [
+    "agentbox/sandbox.py:list_dir-and-outbox_list: Wrap ls -la in list_dir and find in outbox_list with _timed(_READ_TIMEOUT) to prevent hung container filesystems from holding tool_pool or HTTP request worker threads indefinitely.",
+    "agentbox/sandbox.py:_expand-head-limit: Add a head -z limit to _expand in sandbox.py similar to _walk's head -z -n \"$2\" to cap the number of glob-expanded path strings returned before control-plane parsing.",
+    "agentbox/service.py:disk_low-docker-root: Query the Docker daemon storage root filesystem or enforce mandatory AGENTBOX_DISK container quotas so that disk_low accounts for container layer and snapshot growth."
+  ],
+  "uncovered": []
+}

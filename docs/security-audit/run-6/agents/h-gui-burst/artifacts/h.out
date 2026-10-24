@@ -1,0 +1,25 @@
+=== Test 1: Unit 1 Reproduction (GuiBursts.covers container_id binding gap) ===
+Click outcome status: 200
+Click container executed: [('c2', 5, 5)]
+Burst container_id: c1
+Active container_id: c2
+Does container match? False
+GuiBursts.covers('sb1'): True
+Processes killed: []
+Did rogue process 999 get killed? False
+Close failed event logged: True
+Close failed error message: 컨테이너가 바뀌어 비교하지 않음 (복원)
+Is rogue process 999 in new baseline? True
+Test 1 SUCCESS: Defect reproduced cleanly.
+
+=== Test 2: Unit 1 Fix Verification (Validate container_id in covers) ===
+Click error: 기다리는 동안 화면 제어가 바뀌어 GUI 구간이 닫혔음. 이 입력은 실행하지 않음. 다시 호출할 것
+Clicks executed on C2: []
+Test 2 SUCCESS: Fix prevented unauthorized execution on C2.
+
+=== Test 3: Unit 2 PR #24 Takeover Isolation Verification ===
+GUI tool call under takeover status: 202
+Decide under active takeover status: failed, error: 사람이 화면을 조작 중이라 승인된 GUI 입력을 실행하지 않음. 돌려받은 뒤 다시 요청할 것
+Racing tool outcome status: 423
+Test 3 SUCCESS: PR #24 takeover isolation confirmed.
+

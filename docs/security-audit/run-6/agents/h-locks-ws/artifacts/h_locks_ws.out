@@ -1,0 +1,19 @@
+=== CHECK 1: AuditLog._lock hold time and log_human non-503 behavior ===
+verify(100 valid rows): ok=True, checked=100
+recent(sb_1, 10k rows): total=1010, returned=400, time=31.19ms
+log_human while _lock held: result=success (waited on lock, did not fail with 503)
+
+=== CHECK 2: DesktopControl lock hierarchy (_db_lock -> _lock) ===
+new_session: public=hs_c1131b23
+take: lease.sandbox_id=sb_1, session=hs_c1131b23
+touch: updated client_bytes in-memory successfully
+release: released lease and cleaned up DB row
+
+=== CHECK 3: desktop_ws threadpool offload & shielded disconnect logging ===
+asyncio.shield disconnect logging on cancellation: completed=True
+
+=== CHECK 4: retention.prune post-COMMIT archive preservation ===
+Prune interrupted after COMMIT: interrupted=True, archive_exists=True
+verify_archives on preserved archive: ok=True, checked=9
+
+ALL INVARIANT CHECKS PASSED.

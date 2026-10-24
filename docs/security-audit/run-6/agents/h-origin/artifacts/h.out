@@ -1,0 +1,35 @@
+
+--- UNIT 1: same_origin tests ---
+  check_same_origin No origin: True (expected True)
+  check_same_origin Empty origin: True (expected True)
+  check_same_origin Origin null: False (expected False)
+  check_same_origin http origin vs host (scheme mismatch): True (expected True)
+  check_same_origin https origin vs host: True (expected True)
+  check_same_origin Different domain: False (expected False)
+  check_same_origin Matching host:port: True (expected True)
+  check_same_origin Port mismatch: origin with port, host without: False (expected False)
+  check_same_origin Port mismatch: origin without port, host with: False (expected False)
+  check_same_origin Userinfo in origin (netloc is attacker@example.com): False (expected False)
+  POST /logout with matching https Origin: 303
+  POST /logout with downgraded http Origin: 303
+  POST /logout with NO Origin header: 303
+  POST /logout with cross-site Origin: 403
+  POST /logout with Origin: null: 403
+  POST /ui/approvals/approve with http://testserver Origin: 200
+  POST /ui/approvals/approve with evil.com Origin: 403
+  POST /ui/approvals/approve with NO Origin header: 200
+
+--- UNIT 2: _BodyLimit tests ---
+  POST /tools/exec unauthenticated: status=401, json_decoded_count=0
+  POST /tools/exec invalid bearer: status=401, json_decoded_count=0
+  POST /tools/exec deleted sandbox token: status=401, json_decoded_count=0
+  POST /approvals/apr_none human token: status=404, json_decoded_count=1
+  POST /login small body (100B): status=200
+  POST /login oversized body (70 KiB): status=413
+  POST /login/ (trailing slash): status=401
+  POST /tools/exec malformed cookie: status=401, json_decoded_count=0
+  POST /approvals/apr_none valid session cookie: status=401, json_decoded_count=1
+  GET /healthz: status=200
+  POST /login non-digit Content-Length: status=413
+  POST /login >20-digit Content-Length: status=413
+All tests passed successfully!

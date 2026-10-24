@@ -1,0 +1,248 @@
+{
+  "units": [
+    {
+      "coverage_id": "AuditLog._lock%20as%20a%20global%20contention%20point%20reachable%20by%20agent-grown%20table%20size%20and%20by%20unauthenticated%20traffic%3A%20GET%20%2Fui%2Faudit%20%28polled%20every%203%20s%20by%20templates%2Fsandbox.html%29%2C%20GET%20%2Fui%2Fverify%2C%20GET%20%2Faudit%2Fverify%2C%20AuditLog.recent%20%28unindexed%20COUNT%28%2A%29%20WHERE%20sandbox_id%29%2C%20AuditLog.verify%20%28fetchall%20of%20the%20whole%20table%2C%20audit.py%3A336-350%29%2C%20AuditLog.list%2C%20versus%20every%20AuditLog.append%2Finsert_record%20from%20agent%20tool%20calls%20and%20every%20fail-closed%20log_human%3B%20plus%20the%20unauthenticated%20POST%20%2Flogin%20failure%20throttle%20%28web.py%3A93-114%29%20and%20extract_novnc%20single-flight%20%28sandbox_desktop.py%3A174%29::Agent%20and%20unauthenticated%20clients%20to%20human%20availability%20and%20audit%20evidence%3A%20AuditLog.recent%2Fverify%20scan%20the%20agent-grown%20table%20under%20the%20same%20_lock%20append%20needs%20%28fail-closed%20log_human%20returns%20503%20while%20it%20is%20held%29%2C%20verify%20loads%20the%20whole%20table%2C%20the%20F8%20login%20throttle%20shares%20one%20global%20window%2C%20and%20F5%20extract_novnc%20holds%20a%20global%20lock%20across%20docker%20create.%20Invariant%3A%20no%20agent%20or%20unauthenticated%20sequence%20holds%20these%20locks%20long%20enough%20to%20refuse%20human%20actions%2C%20exhaust%20memory%2C%20or%20hide%20credential-guessing%20evidence.::agentbox%2Faudit.py%23recent%2Fverify%2Flist%2Fappend%2Finsert_record%2F_lock%20%2B%20agentbox%2Fweb.py%23note_login_failure%2Faudit%20and%20verify%20routes%20%2B%20agentbox%2Fapi.py%23%2Faudit%2Fverify%20%2B%20agentbox%2Fsandbox_desktop.py%23extract_novnc%2F_NOVNC_LOCK%20%2B%20agentbox%2Ftemplates%2Fsandbox.html%20%283%20s%20poll%29::Resource%20exhaustion%3A%20lock%20contention%20and%20pre-authentication%20work%20imbalance",
+      "disposition": "candidate",
+      "reviewed_paths": [
+        "agentbox/api.py",
+        "agentbox/audit.py",
+        "agentbox/sandbox_desktop.py",
+        "agentbox/service.py",
+        "agentbox/templates/sandbox.html",
+        "agentbox/web.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-locks-ws",
+          "reviewed_paths": [
+            "agentbox/audit.py",
+            "agentbox/service.py"
+          ],
+          "invariant": "AuditLog._lock hold duration and serialization with fail-closed log_human",
+          "method": "local",
+          "result": "Benchmarked AuditLog.recent() and verify() hold times over a 10,000-row table (~31ms recent query hold time). Concurrently tested log_human() while AuditLog._lock was held: log_human() blocked cleanly on with self._lock until release and succeeded; Python threading.Lock has no timeout and does not raise AuditWriteError or trigger a 503 ServiceError under lock contention.",
+          "artifact": "agents/h-locks-ws/artifacts/h_locks_ws.out"
+        },
+        {
+          "agent_id": "h-locks-ws",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/templates/sandbox.html",
+            "agentbox/web.py"
+          ],
+          "invariant": "Authorization gates on audit table read and verification endpoints",
+          "method": "source",
+          "result": "Verified that GET /ui/audit (polled every 3s in sandbox.html) and GET /ui/verify in web.py:291,297 require browser_human (screen_human, scope '*'), and GET /audit and GET /audit/verify in api.py:356,362 require human_only. Neither unauthenticated clients nor agent tokens can invoke recent(), verify(), or list(), preventing untrusted table scanning or verification memory amplification.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-locks-ws",
+          "reviewed_paths": [
+            "agentbox/sandbox_desktop.py",
+            "agentbox/web.py"
+          ],
+          "invariant": "Isolation of login failure throttle and noVNC extraction single-flight lock",
+          "method": "source",
+          "result": "Confirmed in web.py:93-114 that note_login_failure() uses an in-memory fails_lock held only for sub-microsecond dict mutations, logging up to 5 individual failures per 60s window and aggregating excess into suppressed_before on the next window to prevent audit lock contention without dropping guessing evidence. In sandbox_desktop.py:174-192, _NOVNC_LOCK is fast-path bypassed once rfb.js exists and is isolated strictly to extract_novnc, with a 60s retry backoff on failure, preventing docker create thrashing and cross-subsystem contention.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-locks-ws",
+          "reviewed_paths": [
+            "agentbox/audit.py",
+            "agentbox/templates/sandbox.html"
+          ],
+          "invariant": "AuditLog._lock hold duration during unindexed UI polling and full-table verify fetchall under realistic payload sizes",
+          "method": "local",
+          "result": "Demonstrated that with realistic ~25 KiB payloads (30.5 MiB DB across 1,200 rows), unindexed recent() holds AuditLog._lock for 113.3ms per poll, and verify() holds AuditLog._lock for 1,264ms during fetchall while peaking at 58.5 MiB memory. Extrapolated to 10,000 rows (~200 MiB), verify() holds the lock for ~10.5s while consuming ~487 MiB memory, and 3-second UI polling holds the lock for ~0.94s per poll, stalling all concurrent tool execution and human log_human calls.",
+          "artifact": "agents/h-locks-ws/artifacts/bench_realistic.out"
+        }
+      ],
+      "candidate_fingerprints": [
+        "agentbox/audit.py:AuditLog:table-growth-lock-contention-and-verify-memory"
+      ],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "DesktopControl%20lock%20split%20%28_db_lock%20vs%20_lock%2C%20desktop.py%3A90-305%29%2C%20desktop%20WebSocket%20threadpool%20offload%20and%20shielded%20disconnect%20logging%20%28api.py%3A441%2C%20desktop_ws.py%3A19-24%2C%2076%2C%2093-113%29%2C%20and%20retention.prune%20post-COMMIT%20archive%20preservation%20%28retention.py%3A104-145%29::Event-loop%20responsiveness%2C%20lock%20ordering%20and%20archive%20durability%20%28PR%20%2324%20fixes%20for%20run-5%20F3%20and%20F4%29%3A%20DesktopControl%20separates%20_db_lock%20%28SQLite%29%20from%20_lock%20%28in-memory%20leases%2Fconns%2Fgui_locks%29%20with%20lock%20order%20_db_lock%20-%3E%20_lock%3B%20desktop_ws%20and%20relay%20run%20SQLite%2C%20Docker%20vnc_command%20and%20audit%20logging%20in%20threadpools%20and%20shield%20disconnect%20logging%20before%20drop_conn%3B%20retention.prune%20checks%20audit_anchor%20before%20unlinking%20the%20archive%20on%20exception.%20Invariant%3A%20no%20WebSocket%20or%20desktop%20path%20blocks%20the%20asyncio%20event%20loop%20on%20SQLite%20or%20Docker%2C%20no%20method%20violates%20_db_lock%20-%3E%20_lock%20ordering%20or%20exposes%20inconsistent%20lease%2Fsession%20state%20across%20the%20two%20locks%2C%20and%20no%20failure%20after%20COMMIT%20in%20prune%20deletes%20a%20referenced%20archive.::agentbox%2Fdesktop.py%23DesktopControl%20%2B%20agentbox%2Fdesktop_ws.py%23relay%20%2B%20agentbox%2Fapi.py%23desktop_ws%20%2B%20agentbox%2Fretention.py%23prune::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "agentbox/api.py",
+        "agentbox/desktop.py",
+        "agentbox/desktop_ws.py",
+        "agentbox/retention.py",
+        "tests/test_m5_unit.py",
+        "tests/test_retention.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-locks-ws",
+          "reviewed_paths": [
+            "agentbox/desktop.py",
+            "agentbox/desktop_ws.py",
+            "tests/test_m5_unit.py"
+          ],
+          "invariant": "DesktopControl lock hierarchy (_db_lock -> _lock) and event-loop non-blocking threadpool offload",
+          "method": "local",
+          "result": "Audited all 22 methods of DesktopControl: lock ordering strictly obeys _db_lock -> _lock with no reverse acquisitions; in-memory operations (touch, lease, may_connect, add_conn, drop_conn) take only _lock. Verified via test_desktop_ws_does_not_block_event_loop_on_sqlite and scratch tests that SQLite session lookups, Docker vnc_command, and audit logging are offloaded to threadpools, allowing event-loop requests (/healthz) to respond in <1s even while an external transaction holds the SQLite write lock.",
+          "artifact": "agents/h-locks-ws/artifacts/h_locks_ws.out"
+        },
+        {
+          "agent_id": "h-locks-ws",
+          "reviewed_paths": [
+            "agentbox/desktop_ws.py"
+          ],
+          "invariant": "Shielded disconnect audit logging on asyncio task cancellation",
+          "method": "local",
+          "result": "Verified in desktop_ws.py:90-108 that relay's finally block wraps log_best_effort in loop.run_in_executor and shields it via await asyncio.shield(logged). Tested cancellation behavior: when the relay task is cancelled, the background disconnect audit log task executes to completion in the threadpool, while the inner finally block promptly cleans up by dropping conn, cancelling subtasks, and killing the container exec process.",
+          "artifact": "agents/h-locks-ws/artifacts/h_locks_ws.out"
+        },
+        {
+          "agent_id": "h-locks-ws",
+          "reviewed_paths": [
+            "agentbox/retention.py",
+            "tests/test_retention.py"
+          ],
+          "invariant": "Retention prune post-COMMIT archive preservation on interrupt or exception",
+          "method": "local",
+          "result": "Verified retention.py:104-145 and tested via test_interrupt_after_commit_keeps_archive and scratch tests: prune checks conn.in_transaction before executing ROLLBACK and queries SELECT 1 FROM audit_anchor WHERE archive = ? AND archive_sha256 = ? before unlinking. If COMMIT succeeded, the anchor row exists (or sqlite3.Error defaults to committed=True), preventing the archive from being deleted when an exception occurs post-COMMIT.",
+          "artifact": "agents/h-locks-ws/artifacts/h_locks_ws.out"
+        },
+        {
+          "agent_id": "h-locks-ws",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/desktop.py"
+          ],
+          "invariant": "Concurrency safety across session, redeem, take, end_session, and close_all",
+          "method": "source",
+          "result": "Confirmed in desktop.py and api.py that ticket redemption (redeem), session creation (new_session), session termination (end_session), and session lookup (session_scope) are serialized by _db_lock, preventing session duplication or use after logout. Concurrently, takeover lease operations (take, release, close_all) synchronize SQLite takeover_leases and in-memory _leases under _db_lock -> _lock, preventing inconsistent lease or session state across races.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [
+    {
+      "proposed_verdict": "confirmed",
+      "fingerprint": "agentbox/audit.py:AuditLog:table-growth-lock-contention-and-verify-memory",
+      "title": "Unindexed audit table scan in recent() and full-table fetchall in verify() hold global AuditLog._lock, causing availability stalls and memory exhaustion as table grows",
+      "description": "The audit table schema defines no index on sandbox_id, yet GET /ui/audit (polled every 3 seconds by the sandbox UI) invokes AuditLog.recent(), which executes unindexed 'SELECT COUNT(*) FROM audit WHERE sandbox_id = ?' and 'SELECT ... WHERE sandbox_id = ?' queries under the global in-process AuditLog._lock. When an agent grows the table with realistic tool call payloads and previews (up to 128 KiB each), these queries must scan every leaf and overflow page. Furthermore, AuditLog.verify() executes 'SELECT ... FROM audit ORDER BY id' and calls .fetchall() under AuditLog._lock, holding the lock while loading all rows into Python memory at once (~487 MiB for 10,000 rows). Because AuditLog.append() (used by all tool logging and fail-closed log_human operations) serializes on AuditLog._lock, these operations block all human and agent actions for seconds, and verify() risks container OOM termination.",
+      "root_cause": "AuditLog._lock is a coarse-grained process-wide lock held across long-running database read operations. The audit table lacks an index on sandbox_id, forcing full table scans on frequent UI polling (every 3s), and AuditLog.verify() unconditionally fetches all rows across the table's entire history into memory under the same lock rather than streaming, chunking, or querying via a non-blocking read connection in WAL mode.",
+      "intended_behavior": "UI polling via recent() should be satisfied rapidly using an index on audit(sandbox_id) without scanning unrelated overflow pages. Verification in verify() should stream or paginate rows using fetchmany() outside the append lock, and should not hold the primary write lock across full-table queries.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "agentbox/templates/sandbox.html",
+          "line": 19,
+          "scope": "sandbox.html",
+          "description": "Operator viewing sandbox page triggers automatic polling of GET /ui/audit?sandbox_id={sid} every 3 seconds via htmx"
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/web.py",
+          "line": 293,
+          "scope": "audit_frag",
+          "description": "audit_frag invokes box.audit.recent(sandbox_id=sandbox_id, limit=400)"
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/audit.py",
+          "line": 325,
+          "scope": "AuditLog.recent",
+          "description": "AuditLog.recent acquires self._lock and executes unindexed SELECT COUNT(*) and SELECT ... WHERE sandbox_id = ? scanning every leaf and overflow page"
+        },
+        {
+          "kind": "sink",
+          "file": "agentbox/audit.py",
+          "line": 293,
+          "scope": "AuditLog.append",
+          "description": "Every concurrent AuditLog.append call, including fail-closed log_human operator actions and agent tool calls, blocks on with self._lock"
+        }
+      ],
+      "evidence": [
+        {
+          "file": "agentbox/audit.py",
+          "line": 27,
+          "description": "audit table schema defines only id as primary key without any index on sandbox_id"
+        },
+        {
+          "file": "agentbox/audit.py",
+          "line": 325,
+          "description": "AuditLog.recent executes unindexed table scan under self._lock for every poll"
+        },
+        {
+          "file": "agentbox/audit.py",
+          "line": 340,
+          "description": "AuditLog.verify executes fetchall() of the entire audit table under self._lock, buffering all payloads in Python memory"
+        },
+        {
+          "file": "agentbox/templates/sandbox.html",
+          "line": 19,
+          "description": "Audit timeline polls /ui/audit every 3s, causing continuous lock contention as row count and payload sizes grow"
+        },
+        {
+          "file": "agentbox/service.py",
+          "line": 705,
+          "description": "Human operations serialized through log_human block on self._lock while long-running queries or fetchall hold the lock"
+        }
+      ],
+      "conditions": [
+        {
+          "kind": "data_state",
+          "description": "The audit table has accumulated thousands of rows containing realistic tool payloads and approval previews (16-32 KiB each) within the 90-day retention window"
+        },
+        {
+          "kind": "user_interaction",
+          "description": "A human operator opens the web UI sandbox view (triggering 3s polling) or clicks verify chain"
+        }
+      ],
+      "execution": {
+        "attacker_perspective": "An unprivileged agent generating ordinary tool executions (e.g. exec, write_file) with 16-25 KiB arguments or previews populates the audit table up to tens of thousands of rows. When a human administrator views the sandbox UI (which polls /ui/audit every 3s) or triggers /ui/verify, the unindexed table scan and full table fetchall hold the global AuditLog._lock for seconds at a time and allocate hundreds of megabytes of memory, degrading control-plane responsiveness and blocking all tool logging and human admin actions.",
+        "payloads": [
+          "python3 /scratch/bench_realistic.py"
+        ],
+        "instructions": [
+          "Create an AuditLog database with 1,200 rows containing realistic ~25 KiB tool call/preview payloads (~30.5 MiB database size).",
+          "Invoke AuditLog.recent('sb_other', limit=25) to measure unindexed leaf/overflow page scan duration under self._lock.",
+          "Invoke AuditLog.verify() to measure lock hold time and peak heap memory allocation during self.conn.execute(...).fetchall() under self._lock."
+        ],
+        "observed_result": "In an isolated 512 MiB sandbox with 1,200 rows of 25.2 KiB payloads (30.49 MiB DB), recent('sb_other', limit=25) held AuditLog._lock for 113.31ms. Full table fetchall in verify() held AuditLog._lock for 1264.15ms (1.26s) with a peak memory allocation of 58.45 MiB. Extrapolated to 10,000 rows (~200 MiB table), verify() holds AuditLog._lock for ~10.5s while consuming ~487 MiB of memory, and 3-second polling by sandbox.html holds the lock for ~0.94s per poll (occupying over 30% of total available time), blocking all concurrent audit.append and log_human calls."
+      },
+      "remediation": {
+        "strategy": "1. Add an index on audit(sandbox_id) in SCHEMA (CREATE INDEX IF NOT EXISTS audit_sandbox_id ON audit(sandbox_id)) so that recent() queries for a specific sandbox only read relevant rows rather than scanning the entire table and all overflow pages.\n2. In AuditLog.verify(), avoid holding self._lock across the entire fetchall() or iterate through rows in bounded batches (or fetch only necessary columns such as id, ts, prev_hash, hash, payload with fetchmany) outside the lock, or run verification queries on a separate read connection under SQLite WAL mode without blocking the in-process append lock.",
+        "code_changes": [
+          {
+            "file_name": "agentbox/audit.py",
+            "fixed_code": "CREATE TABLE IF NOT EXISTS audit (\n    id          INTEGER PRIMARY KEY,\n    ts          TEXT NOT NULL,\n    sandbox_id  TEXT,\n    actor       TEXT NOT NULL,\n    event       TEXT NOT NULL,\n    tool        TEXT,\n    payload     TEXT NOT NULL,\n    prev_hash   TEXT NOT NULL,\n    hash        TEXT NOT NULL\n);\nCREATE INDEX IF NOT EXISTS audit_sandbox_id ON audit(sandbox_id);\n"
+          }
+        ]
+      },
+      "severity": {
+        "likelihood": {
+          "score": "medium",
+          "reason": "Any active agent operating over several hours or days naturally generates thousands of audit entries with previews and tool arguments, and the web UI polls /ui/audit automatically every 3 seconds whenever a human operator views the sandbox page."
+        },
+        "impact": {
+          "score": "medium",
+          "reason": "Global lock contention on AuditLog._lock stalls all concurrent tool executions and human administrative operations for seconds at a time; whole-table fetchall() during verify() loads hundreds of megabytes into Python memory, risking out-of-memory container termination in constrained environments."
+        },
+        "overall_severity": "medium"
+      },
+      "confidence": {
+        "score": "high",
+        "reason": "Demonstrated directly via controlled local execution in the sandbox, measuring exact lock hold durations and memory allocation on realistic payload sizes."
+      }
+    }
+  ],
+  "hardening": [
+    "In agentbox/web.py, note_login_failure() tracks login failure counts in memory (fails['suppressed']). If the control plane restarts before another failed login attempt triggers the window flush, or if a user logs in successfully without subsequent failed logins, the suppressed failure count is not flushed to the durable audit log. Adding a flush of suppressed counts on successful login or shutdown would ensure unwritten failure counts are persisted."
+  ],
+  "uncovered": [],
+  "artifacts_to_promote": [
+    "bench_realistic.out",
+    "h_locks_ws.out"
+  ]
+}

@@ -1,0 +1,15 @@
+=== 1. display.escape_controls validation ===
+Escape controls check: PASS (all Cc, Cf, Zl, Zp properly neutralized)
+
+=== 2. Jinja finalize=_shown and template rendering ===
+_approvals.html: PASS (no unneutralized control or bidi chars)
+_outbox.html: PASS (no unneutralized control or bidi chars)
+_audit.html: PASS (no unneutralized control or bidi chars)
+
+=== 3. CLI _safe validation ===
+cli._safe: PASS (all controls including newlines/tabs escaped)
+
+=== 4. Desktop D.page interpolation ===
+D.page: PASS (static template replacement using verified server tokens)
+
+=== SUMMARY: ALL INVARIANTS SATISFIED ===

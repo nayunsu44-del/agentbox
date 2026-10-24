@@ -1,0 +1,247 @@
+{
+  "artifacts_to_promote": [
+    "h.out"
+  ],
+  "units": [
+    {
+      "coverage_id": "Agent%20tool-argument%20length%20cap%20and%20policy%2Fpreview%2Fapproval%20bounds%20%28PR%20%2324%29%3A%20TOOL_ARG_MAX%20%28service.py%3A49%2C%20322-329%29%2C%20policy._relex_changes%20%28policy.py%3A40-49%2C%2073%29%2C%20preview_command%20PREVIEW_CALLS_MAX%2FNOTES_MAX%20and%20operand%20deduplication%20%28preview.py%3A70-160%29%2C%20sandbox._PREVIEW_TIMEOUT%2F_preview_ok%20%28sandbox.py%3A39%2C%20104-106%2C%20578-594%29%2C%20and%20pending-approval%20bound_payload%28preview%29%20%2B%20pre-create%20disk_low%28%29%20recheck%20%28service.py%3A357-362%29::Agent-to-control-plane%20CPU%2C%20container-exec%20and%20SQLite%20amplification%20across%20tool%20calls%20%28PR%20%2324%20fixes%20for%20run-5%20F1%2C%20F5%2C%20F6%29%3A%20_call_tool%20rejects%20non-content%20args%20over%2016%20KiB%20%28measured%20on%20str%20or%20json.dumps%29%20with%20413%20before%20audit%2Fpolicy%3B%20_words%20skips%20re-lexing%20only%20when%20_relex_changes%20is%20False%3B%20preview_command%20caps%20expand%2Fwalk%20calls%20at%2040%20%2810%20s%20timeout%20each%29%20and%20notes%20at%2050%3B%20pending%20approvals%20bound%20preview%20to%20128%20KiB%20and%20re-check%20disk_low%20before%20creation.%20Invariant%3A%20no%20agent%20tool%20call%20can%20bypass%20TOOL_ARG_MAX%2C%20cause%20superlinear%20or%20multi-second%20policy%20CPU%2C%20trigger%20unbounded%20preview%20execs%2C%20or%20write%20an%20oversized%20pending%20approval%20row%20past%20disk_low%2C%20and%20_relex_changes%20does%20not%20drop%20any%20dangerous%20command%20detection.::agentbox%2Fservice.py%23TOOL_ARG_MAX%2F_call_tool%20%2B%20agentbox%2Fpolicy.py%23_relex_changes%2F_words%20%2B%20agentbox%2Fpreview.py%23PREVIEW_CALLS_MAX%2FNOTES_MAX%2Fpreview_command%20%2B%20agentbox%2Fsandbox.py%23_PREVIEW_TIMEOUT%2F_preview_ok%2F_expand%2F_walk::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Superlinear%20parsing%2C%20matching%2C%20or%20evaluation",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "agentbox/approvals.py",
+        "agentbox/audit.py",
+        "agentbox/policy.py",
+        "agentbox/preview.py",
+        "agentbox/sandbox.py",
+        "agentbox/service.py",
+        "tests/test_m5_unit.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-preview-argcap",
+          "reviewed_paths": [
+            "agentbox/approvals.py",
+            "agentbox/audit.py",
+            "agentbox/service.py"
+          ],
+          "invariant": "TOOL_ARG_MAX (16 KiB) is enforced on non-content arguments in _call_tool before policy/preview, bound_payload caps pending approval preview to 128 KiB, and disk_low recheck runs immediately before approvals.create.",
+          "method": "local",
+          "result": "Calls with command over 16 KiB are rejected with 413 before policy/preview/audit. Pending approval preview payload is bounded to <= 128 KiB, and disk_low recheck blocks creation when disk space is below min_free_bytes.",
+          "artifact": "agents/h-preview-argcap/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-preview-argcap",
+          "reviewed_paths": [
+            "agentbox/policy.py"
+          ],
+          "invariant": "policy._relex_changes skips shlex recursion only on tokens consisting solely of _LEX_PUNCT or without punctuation/whitespace, preventing multi-second CPU while preserving detection of all dangerous commands.",
+          "method": "local",
+          "result": "Adversarial 16 KiB inputs parse in under 100 ms (< 40 ms typical). All hidden command structures (sh -c, backticks, $(), quotes, comments) remain detected by simple_programs and Policy.decide.",
+          "artifact": "agents/h-preview-argcap/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-preview-argcap",
+          "reviewed_paths": [
+            "agentbox/preview.py",
+            "agentbox/sandbox.py"
+          ],
+          "invariant": "preview_command caps container expand/walk calls at PREVIEW_CALLS_MAX (40) with operand deduplication, notes at NOTES_MAX (50), and sandbox._expand/_walk enforce 10s timeouts via _PREVIEW_TIMEOUT and _preview_ok.",
+          "method": "local",
+          "result": "1000 rm operands trigger exactly 40 container calls with deduplication, notes are capped at 51 with warning, and container calls have 10s timeout.",
+          "artifact": "agents/h-preview-argcap/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-preview-argcap",
+          "reviewed_paths": [
+            "tests/test_m5_unit.py"
+          ],
+          "invariant": "Unit test suite verifies regression bounds for PR #24 argument caps, policy relex skips, preview call and notes limits, and pending row bounding.",
+          "method": "local",
+          "result": "All test_m5_unit.py tests pass cleanly in 2.99s.",
+          "artifact": "agents/h-preview-argcap/artifacts/h.out"
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "Approval-preview%20truthfulness%20after%20the%20F4%20change%3A%20preview_command%20%28rm%20operand%20expansion%20via%20_expand%2C%20recursive%20_walk%2C%20curl%20upload%20detection%2C%20_split_segments%20and%20_WRAPPERS%20handling%29%20versus%20what%20the%20approved%20shell%20command%20really%20does::Human%20approval%20binding%3A%20the%20card%20the%20human%20decides%20on%20is%20computed%20by%20a%20separate%20shell-parse%20and%20container%20glob%2Ffind%2C%20not%20by%20the%20executing%20shell.%20The%20run-4%20F4%20fix%20replaced%20newline%20output%20with%20NUL-separated%20records%20and%20head%20-z%2C%20and%20no%20run-5%20unit%20re-checks%20the%20card%20against%20real%20behaviour.%20Cases%20to%20test%3A%20brace%20and%20tilde%20expansion%2C%20dotfile%20globs%2C%20rm%20-f%2F--no-preserve-root%2C%20operands%20after%20%27--%27%2C%20symlinks%2C%20names%20with%20newlines%20or%20leading%20%27-%27%2C%20commands%20the%20preview%20marks%20%27no%20effect%20computed%27%2C%20and%20the%20200-item%20display%20truncation%20hiding%20later%20deletions.::agentbox%2Fpreview.py%23preview_command%2F_split_segments%20%2B%20agentbox%2Fsandbox.py%23_expand%2F_walk%2Fpreview%20%2B%20agentbox%2Fservice.py%23_preview%2Fdecide%20%2B%20agentbox%2Ftemplates%2F_approvals.html::Action-confirmation%20and%20approval%20binding%20%28preview%20does%20not%20match%20execution%29",
+      "disposition": "candidate",
+      "reviewed_paths": [
+        "agentbox/default_policy.yaml",
+        "agentbox/preview.py",
+        "agentbox/sandbox.py",
+        "agentbox/service.py",
+        "agentbox/templates/_approvals.html"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-preview-argcap",
+          "reviewed_paths": [
+            "agentbox/preview.py",
+            "agentbox/sandbox.py"
+          ],
+          "invariant": "Approval preview accurately reports the files that will be deleted by the executing shell command (/bin/bash), and warns if shell expansion or substitution semantics differ.",
+          "method": "local",
+          "result": "Discrepancy confirmed: _expand runs in /bin/sh (dash) where brace expansion ({a,b}) and positional parameter tilde expansion (~/file) are not performed, causing preview_command to falsely report '삭제 시도 (현재 존재하지 않음)' with no warning notes, while executing shell (/bin/bash) deletes the existing files.",
+          "artifact": "agents/h-preview-argcap/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-preview-argcap",
+          "reviewed_paths": [
+            "agentbox/service.py",
+            "agentbox/templates/_approvals.html"
+          ],
+          "invariant": "Approval card shown to human operator conveys accurate action-confirmation semantics and alerts operator whenever preview calculations cannot compute the exact impact.",
+          "method": "source",
+          "result": "templates/_approvals.html renders preview.affected table and preview.notes. Because preview_command appends no note when matches is empty, the operator sees '현재 존재하지 않음' for brace/tilde targets without any warning that shell expansion failed.",
+          "artifact": null
+        },
+        {
+          "agent_id": "h-preview-argcap",
+          "reviewed_paths": [
+            "agentbox/default_policy.yaml"
+          ],
+          "invariant": "Commands involving rm, curl, or destructive operations are routed through human approval queue.",
+          "method": "source",
+          "result": "Rules rm-curl-needs-approval and exec-needs-approval route commands containing rm or not in read-only whitelist to require_approval, where approval card is generated by preview_command.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [
+        "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets"
+      ],
+      "unresolved": []
+    }
+  ],
+  "candidates": [
+    {
+      "proposed_verdict": "confirmed",
+      "fingerprint": "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets",
+      "title": "Approval impact preview misreports rm targets under brace and tilde expansion as nonexistent",
+      "description": "The human approval preview card computes file impact by tokenizing the command with shlex and passing operands to container callbacks (_expand and _walk). In sandbox.py:_expand, the pattern is evaluated in container /bin/sh (dash), where brace expansion (e.g. {a,b}.txt, {1..100}) and positional parameter tilde expansion (~/file) are not performed. When _expand tests existence via [ -e \"$p\" ], no file literally named \"{a,b}.txt\" or \"/workspace/~/file\" exists, returning an empty match list. preview_command (preview.py:110-111) maps this to {'path': op, 'effect': '삭제 시도 (현재 존재하지 않음)'} and appends no warning note. When the human approves the action believing the target does not exist, sandbox.py:425 executes the command via /bin/bash, which performs full brace and tilde expansion and deletes the real files.",
+      "root_cause": "The preview command parsing and container path expansion logic diverges from the execution shell. preview_command in preview.py tokenizes commands with POSIX shlex and delegates expansion to _expand, which invokes /bin/sh (dash) with positional argument $1. POSIX dash does not support brace expansion and does not expand tildes within variable expansions, returning empty matches for {a,b} and ~ operands. Furthermore, preview.py:88 warns only on $, `, <, and eval, failing to flag brace or tilde characters. The system erroneously asserts that targets do not exist rather than warning that shell expansion could not be calculated.",
+      "intended_behavior": "Approval impact preview should either execute expansion using the same shell (bash) and environment as execution, or detect shell-specific expansion constructs such as { and ~ and add an explicit warning note (notes) that the exact affected files could not be computed automatically, prompting the operator to inspect the raw command before approval.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "agentbox/service.py",
+          "line": 318,
+          "scope": "AgentBox._call_tool",
+          "description": "Agent submits an exec tool request with rm command using brace or tilde expansion."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/service.py",
+          "line": 354,
+          "scope": "AgentBox._call_tool",
+          "description": "Policy routes destructive command to require_approval and invokes _preview."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/sandbox.py",
+          "line": 595,
+          "scope": "SandboxManager.preview",
+          "description": "Delegates to preview_command with container _expand and _walk callbacks."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/preview.py",
+          "line": 109,
+          "scope": "preview_command",
+          "description": "Loops over rm operands and calls expand(op) for brace/tilde pattern."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/sandbox.py",
+          "line": 578,
+          "scope": "SandboxManager._expand",
+          "description": "Runs /bin/sh (dash) script where $1 does not expand braces or tildes, returning empty list."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/preview.py",
+          "line": 111,
+          "scope": "preview_command",
+          "description": "Appends '삭제 시도 (현재 존재하지 않음)' to affected list with no warning note."
+        },
+        {
+          "kind": "sink",
+          "file": "agentbox/templates/_approvals.html",
+          "line": 14,
+          "scope": "approvals.html template",
+          "description": "Operator is presented with an approval card stating target does not exist, and upon approval bash deletes real files."
+        }
+      ],
+      "evidence": [
+        {
+          "file": "agentbox/preview.py",
+          "line": 111,
+          "description": "preview_command maps empty expand(op) result to '삭제 시도 (현재 존재하지 않음)' without warning note."
+        },
+        {
+          "file": "agentbox/sandbox.py",
+          "line": 578,
+          "description": "_expand executes via /bin/sh (dash) script where positional $1 lacks brace and tilde expansion."
+        },
+        {
+          "file": "agentbox/sandbox.py",
+          "line": 425,
+          "description": "exec runs under /bin/bash where brace and tilde expansions take place upon execution."
+        }
+      ],
+      "conditions": [
+        {
+          "kind": "authorization_role",
+          "description": "Agent must have token to call tools on its sandbox."
+        },
+        {
+          "kind": "user_interaction",
+          "description": "Human operator must approve the pending exec request based on the inaccurate impact card."
+        }
+      ],
+      "execution": {
+        "attacker_perspective": "Agent issues exec tool call: POST /sandboxes/{sid}/tools/exec with command 'rm {a,b}.txt' where 'a.txt' and 'b.txt' exist in /workspace.",
+        "payloads": [
+          "rm {a,b}.txt",
+          "rm ~/test_agentbox_audit_tilde.txt"
+        ],
+        "instructions": [
+          "Create files 'a.txt' and 'b.txt' in /workspace.",
+          "Run preview_command('rm {a,b}.txt', 200, expand, walk) using container _expand.",
+          "Observe that preview card lists 'affected': [{'path': '{a,b}.txt', 'effect': '삭제 시도 (현재 존재하지 않음)'}] and empty 'notes'.",
+          "Execute 'bash -c \"umask 002\\nrm {a,b}.txt\"' as in sandbox.py:425 and observe that 'a.txt' and 'b.txt' are deleted."
+        ],
+        "observed_result": "Preview reported affected: [{'path': '{a,b}.txt', 'effect': '삭제 시도 (현재 존재하지 않음)'}], notes: []. Bash execution deleted both a.txt and b.txt, leaving remaining files: []."
+      },
+      "remediation": {
+        "strategy": "In preview.py:88, include '{' and '~' in the check for shell substitution/expansion constructs, or update _expand to use bash with nullglob or flag unexpanded braces so that notes warns the operator that file impact could not be automatically calculated.",
+        "code_changes": [
+          {
+            "file_name": "agentbox/preview.py",
+            "fixed_code": "    if any(s in command for s in (\"$\", \"`\", \"<(\", \"eval \", \"{\", \"~\")):\n        notes.append(\"변수·명령 치환이나 중괄호·틸드 확장이 있어 실제로 무엇이 실행될지 자동 계산이 정확하지 않을 수 있음. 명령 원문을 확인할 것.\")"
+          }
+        ]
+      },
+      "severity": {
+        "likelihood": {
+          "score": "low",
+          "reason": "Requires prompt-injected agent to use brace or tilde expansion in rm command and human operator to rely on nonexistent status on card."
+        },
+        "impact": {
+          "score": "low",
+          "reason": "Action-binding card misreports existence of target files to the human operator before destructive deletion."
+        },
+        "overall_severity": "low"
+      },
+      "confidence": {
+        "score": "high",
+        "reason": "Demonstrated through exact sandboxed reproduction matching container shell and preview implementation."
+      }
+    }
+  ],
+  "hardening": [
+    "In agentbox/service.py:323-324, TOOL_ARG_MAX length check exempts k != 'content' unconditionally for all tools rather than restricting the exemption to (tool == 'write_file' and k == 'content'). An agent calling exec can supply a large content payload (up to body cap 8 MiB) without triggering 413, although the payload is not used by exec or policy.decide and finished approval rows are compacted via _logged_args.",
+    "In agentbox/preview.py:88, preview_command checks for ('$', '`', '<(', 'eval ') to warn the operator of variable or command substitution, but does not check for '{' (brace expansion) or '~' (tilde expansion)."
+  ],
+  "uncovered": []
+}

@@ -33,7 +33,7 @@ def main():
     if not isinstance(obj, dict) or set(obj) - {"units", "candidates", "hardening", "uncovered", "artifacts_to_promote"}:
         fail(f"bad top-level keys {sorted(obj) if isinstance(obj, dict) else type(obj)}")
     ledger = json.load(open(f"{RUN}/coverage-ledger.json", encoding="utf-8"))
-    mine = {u["coverage_id"]: u for u in ledger if u["agent_id"] == hid and u["status"] == "in_progress"}
+    mine = {u["coverage_id"]: u for u in ledger if u["agent_id"] == hid}
     units = obj.get("units", [])
     if sorted(u.get("coverage_id") for u in units) != sorted(mine):
         fail("units do not match the assigned coverage IDs")
@@ -58,8 +58,8 @@ def main():
             fail("unit reviewed_paths is not the union of its checks' paths")
     arts = obj.get("artifacts_to_promote", []) or []
     if arts:
-        r = subprocess.run([sys.executable, "-I", f"{RUN}/tools/promote.py", hid, *arts], capture_output=True, text=True, encoding="utf-8")
-        print((r.stdout + r.stderr).strip())
+        r = subprocess.run([sys.executable, "-I", f"{RUN}/tools/promote.py", hid, *arts], capture_output=True, text=True, encoding="utf-8", errors="replace")
+        print(((r.stdout or "") + (r.stderr or "")).strip())
     promoted = {f"agents/{hid}/artifacts/{a}" for a in arts if os.path.isfile(f"{RUN}/agents/{hid}/artifacts/{a}")}
     for u in units:
         for c in u["checks"]:

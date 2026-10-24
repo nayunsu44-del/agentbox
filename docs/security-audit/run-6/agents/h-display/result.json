@@ -1,0 +1,73 @@
+{
+  "units": [
+    {
+      "coverage_id": "Completeness%20of%20the%20PR%20%2319%20control-character%20filter%20at%20its%20sinks%3A%20display.escape_controls%20%28Cc%2FCf%2FZl%2FZp%20via%20unicodedata%29%20applied%20through%20Jinja%20finalize%20web._shown%20and%20cli._safe%2C%20versus%20sinks%20that%20bypass%20finalize%20or%20_safe::Agent-%20or%20container-controlled%20strings%20shown%20to%20the%20human.%20Check%3A%20non-str%20values%20%28Markup%2C%20dict%20or%20list%20reprs%29%2C%20tojson%20or%20attribute%20contexts%20%28hx-confirm%2C%20title%29%2C%20the%20desktop%20page%20D.page%20HTMLResponse%2C%20JSON%20error%20detail%20rendered%20by%20htmx%2C%20and%20CLI%20prints%20without%20_safe%20%28cli.py%3A166%20source_dir%2C%20cli.py%3A187%20sandbox_id%2Fcreated_at%2C%20cli.py%3A315%20verify%20reason%2C%20cli.py%3A337%20snapshot%20reason%29.%20Also%20categories%20left%20unescaped%20%28Co%2C%20Cn%2C%20Cs%2C%20Mn%20combining%20marks%2C%20tag%20characters%29.::agentbox%2Fdisplay.py%20%2B%20agentbox%2Fweb.py%23_shown%2Fdescribe%2F_short%20%2B%20agentbox%2Fcli.py%23_safe%20and%20print%20sites%20%2B%20agentbox%2Ftemplates%2F%2A.html::Terminal%20and%20display%20injection%20through%20untrusted%20strings%20%28output%20sink%20completeness%29",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "agentbox/cli.py",
+        "agentbox/desktop.py",
+        "agentbox/display.py",
+        "agentbox/templates/_approvals.html",
+        "agentbox/templates/_audit.html",
+        "agentbox/templates/_error.html",
+        "agentbox/templates/_notify.html",
+        "agentbox/templates/_outbox.html",
+        "agentbox/templates/base.html",
+        "agentbox/templates/sandbox.html",
+        "agentbox/web.py"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-display",
+          "reviewed_paths": [
+            "agentbox/cli.py",
+            "agentbox/display.py"
+          ],
+          "invariant": "Every terminal output sink printing agent- or container-controlled text applies display.escape_controls via cli._safe with keep_newlines=False, escaping all C0/C1 control codes, Bidi controls, invisibles, and newlines.",
+          "method": "local",
+          "result": "display.escape_controls categorizes by Unicode categories {'Cc', 'Cf', 'Zl', 'Zp'} and converts matched characters to hex escape representations (\\x.., \\u.., \\U..). In cli.py, _safe enforces keep_newlines=False, neutralizing newlines, carriage returns (\\r), ANSI escape sequences (\\x1b), and all Bidi overrides across cmd_approve and cmd_audit. Non-_safe print sites in cli.py (source_dir at :168, sandbox_id/created_at at :189, verify reason at :317, snapshot reason at :339) print only server-generated tokens or operator input, with no agent-controlled string interpolation.",
+          "artifact": "agents/h-display/artifacts/test_harness.out"
+        },
+        {
+          "agent_id": "h-display",
+          "reviewed_paths": [
+            "agentbox/templates/_approvals.html",
+            "agentbox/templates/_audit.html",
+            "agentbox/templates/_error.html",
+            "agentbox/templates/_notify.html",
+            "agentbox/templates/_outbox.html",
+            "agentbox/templates/base.html",
+            "agentbox/templates/sandbox.html",
+            "agentbox/web.py"
+          ],
+          "invariant": "Jinja2 template rendering in web.py consistently routes all interpolated strings through finalize=_shown (display.escape_controls with keep_newlines=True) alongside HTML autoescaping, neutralizing Bidi overrides, zero-width characters, and ANSI control codes in cards, timelines, notifications, and outbox lists.",
+          "method": "local",
+          "result": "web.py sets tpl.env.finalize = _shown, ensuring every string output in Jinja {{ }} is sanitized against {'Cc', 'Cf', 'Zl', 'Zp'}. In _approvals.html, _outbox.html, _audit.html, _error.html, _notify.html, and sandbox.html, command strings, file names, notes, rule reasons, and audit summaries are escaped, and carriage return (\\r) is stripped/escaped even with keep_newlines=True. Attribute contexts (data-text, data-notify, hx-confirm) are both control-escaped by _shown and entity-escaped by Jinja autoescape. Prior run-4 record agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized is verified resolved by PR #19.",
+          "artifact": "agents/h-display/artifacts/test_harness.out"
+        },
+        {
+          "agent_id": "h-display",
+          "reviewed_paths": [
+            "agentbox/desktop.py"
+          ],
+          "invariant": "Desktop viewer HTMLResponse (D.page) does not accept or interpolate unescaped agent or container strings into HTML or script contexts.",
+          "method": "local",
+          "result": "desktop.py D.page builds the HTML page via static string replacement of PAGE placeholders __SID__, __RUNTIME__, and __RUNC_WARNING__. In api.py desktop_page, sid is validated against SQLite sandboxes table where IDs are strictly 'sb_' + secrets.token_hex(4), and runtime is a server configuration string ('runc'/'runsc'/'kata'). No untrusted agent, container, or network data reaches D.page interpolation.",
+          "artifact": "agents/h-display/artifacts/test_harness.out"
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [],
+  "hardening": [
+    "web.py _shown checks isinstance(value, str); while all current template contexts pass strings or string-returning filters, any future template that directly renders a custom object relying on __str__ would bypass escape_controls (though HTML autoescape would still apply). Passing str(value) through escape_controls for all non-None values would eliminate this type-dispatch sensitivity.",
+    "Unicode combining marks (category Mn/Me, including Zalgo stacking and Variation Selectors U+FE00..U+FE0F, U+E0100..U+E01EF) and Private Use Area characters (Co) are intentionally not in _ESCAPED to allow legitimate international and symbol text; while they cannot alter Bidi directionality or execute ANSI control codes, stacking combining marks can cause visual font overflow in browsers and terminals. Capping repetitive combining sequences would provide visual hardening.",
+    "CLI print calls in cli.py (:168 source_dir, :189 sandbox_id/created_at, :317 verify reason, :339 snapshot reason, :53 _check error message) print without _safe. While these fields are currently strictly server-generated or operator-provided, applying _safe across all CLI output sites would provide defense-in-depth against malformed upstream server responses."
+  ],
+  "uncovered": [],
+  "artifacts_to_promote": [
+    "test_harness.out"
+  ]
+}

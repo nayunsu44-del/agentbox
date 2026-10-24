@@ -1,0 +1,18 @@
+=== Check 1: Output readers analysis ===
+_Head buffer cap enforced: len(buf)=65537, total=100000
+Generated raw outbox bytes for 10000 files: 408890 bytes
+_parse_outbox parsed 10000 records in 0.0228s
+Sample outbox row: {'name': 'file_0.txt', 'bytes': 1024, 'mtime': '2024-10-24T06:06:40+00:00'}
+preview_command result with 5000 expand matches: affected=200, notes=1
+preview notes: ['영향 항목 5000개 중 앞의 200개만 표시.']
+
+=== Check 2: disk_low and Docker root separation ===
+Settings db_path: /scratch/db_home/agentbox.db, db_path.parent: /scratch/db_home
+Default disk_limit: '' (empty means no storage_opt)
+Default snapshot_quota: 50
+Default min_free_bytes: 268435456 (256.0 MB)
+shutil.disk_usage(db_path.parent).free = 42655633408 bytes
+disk_low() = False
+When free_db > min_free_bytes: disk_low() is False
+Verified: disk_low() measures exclusively shutil.disk_usage(s.db_path.parent).free
+All checks completed successfully.

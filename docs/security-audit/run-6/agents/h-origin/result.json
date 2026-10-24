@@ -1,0 +1,161 @@
+{
+  "artifacts_to_promote": [
+    "h.out"
+  ],
+  "units": [
+    {
+      "coverage_id": "Browser-origin%20checks%20on%20cookie-authenticated%20routes%3A%20api.py%20same_origin%20%28api.py%3A221-223%29%20used%20by%20screen_principal%20%28api.py%3A235%2C%20every%20%2Fui%20and%20screen%20route%29%2C%20the%20login%2Fticket%20handlers%20%28web.py%3A159%2C169%29%20and%20the%20desktop%20WebSocket%20upgrade%20%28api.py%3A442%29%3B%20a%20missing%20Origin%20header%20is%20accepted::Cross-site%20or%20downgraded-scheme%20browser%20request%20to%20human%20authority%3A%20same_origin%20compares%20only%20urlsplit%28origin%29.netloc%20to%20the%20Host%20header%2C%20with%20no%20scheme%20check%2C%20and%20treats%20an%20absent%20Origin%20as%20same-origin.%20Behind%20a%20TLS%20proxy%20with%20forwarded_allow_ips%3D%27%2A%27%20a%20plain-HTTP%20origin%20on%20the%20same%20host%20passes.%20This%20is%20run-4%20N1%20%28needs_validation%2C%20source%20unchanged%29%20and%20no%20run-5%20unit%20owns%20it.%20The%20WS%20and%20body-cap%20units%20excluded%20CLIENT-SIDE.md%23Cross-site%20WebSocket%20request%20use%20by%20pointing%20to%20an%20%27existing%20h-session%20unit%27%20that%20is%20not%20in%20this%20ledger.::agentbox%2Fapi.py%23same_origin%2Fscreen_principal%2Fdesktop_ws%20%2B%20agentbox%2Fweb.py%20login%20and%20ticket%20routes%20%2B%20agentbox%2Fdesktop.py%20cookie%20attributes%20%28SameSite%2C%20Secure%2C%20scope%29%20%2B%20deploy%2FCaddyfile%20Host%2FOrigin%20forwarding::Cross-site%20WebSocket%20and%20cross-origin%20request%20forgery%20against%20cookie%20sessions%20%28scheme%20and%20missing-Origin%20gaps%29",
+      "disposition": "candidate",
+      "reviewed_paths": [
+        "agentbox/api.py",
+        "agentbox/cli.py",
+        "agentbox/desktop.py",
+        "agentbox/desktop_ws.py",
+        "agentbox/web.py",
+        "deploy/Caddyfile"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-origin",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/web.py"
+          ],
+          "invariant": "same_origin verifies both scheme and host origin on cookie-authenticated browser endpoints and rejects missing or downgraded-scheme Origin headers",
+          "method": "local",
+          "result": "Bounded sandboxed TestClient tests verified that same_origin() evaluates True for 'http://testserver' against https endpoints and True when Origin is omitted entirely, successfully allowing POST /logout (303) and POST /ui/approvals/approve (200) cross-scheme. Origin: null and cross-domain origins (evil.com) are rejected with 403.",
+          "artifact": "agents/h-origin/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-origin",
+          "reviewed_paths": [
+            "agentbox/cli.py",
+            "agentbox/desktop.py",
+            "agentbox/desktop_ws.py",
+            "deploy/Caddyfile"
+          ],
+          "invariant": "Cookie security attributes and proxy headers enforce secure transport and prevent downgraded cross-scheme session abuse",
+          "method": "source",
+          "result": "DesktopControl sets SameSite=Strict and Secure cookies when TLS is detected, but same_origin lacks access to the request scheme. deploy/Caddyfile configures reverse_proxy without Strict-Transport-Security (HSTS), leaving origin validation vulnerable to cross-scheme requests if browser SameSite policy permits.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [
+        "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare"
+      ],
+      "unresolved": []
+    },
+    {
+      "coverage_id": "Pre-read%20credential%20gate%20in%20_BodyLimit%20%28api.py%3A85-96%2C%20authenticated%20at%20api.py%3A185-199%29%2C%20%2Flogin%2064%20KiB%20anonymous%20body%20cap%20%28_ANON_BODY_PATHS%2F_ANON_BODY_MAX%2C%20api.py%3A53-54%29%2C%20Caddy%20per-route%20request_body%20%28%40upload%20vs%20%40other%2C%20deploy%2FCaddyfile%3A8-15%29%2C%20compose%20mem_limit%20%28deploy%2Fdocker-compose.yml%3A20%29%2C%20and%20uvicorn%20limit_concurrency%20%28config.py%3A68%2C%20cli.py%3A126-127%29::Pre-authentication%20body-read%20and%20memory%20amplification%20after%20PR%20%2325%20%28run-5%20N1%20fix%29%3A%20_BodyLimit%20checks%20has_body%20%28Content-Length%20%3E%200%20or%20Transfer-Encoding%20present%29%2C%20caps%20%2Flogin%20at%2064%20KiB%2C%20and%20for%20every%20other%20body-carrying%20request%20runs%20authenticated%28headers%29%20in%20the%20threadpool%20before%20letting%20the%20app%20read%20or%20decode%20any%20bytes%2C%20returning%20401%20when%20neither%20a%20valid%20Bearer%20token%20%28human%20or%20live%20agent%29%20nor%20a%20valid%20session%20cookie%20%28SimpleCookie%20D.COOKIE%20with%20session_scope%29%20is%20present.%20Invariant%3A%20an%20unauthenticated%20client%20cannot%20make%20the%20control%20plane%20read%2C%20buffer%2C%20JSON-parse%20or%20multipart-spool%20more%20than%2064%20KiB%2C%20or%20bypass%20the%20credential%20gate%20via%20HTTP%20framing%2C%20header%20casing%2Fduplication%2C%20path%20variations%20or%20cookie%20parsing.::agentbox%2Fapi.py%23_BodyLimit%2F_ANON_BODY_PATHS%2Fauthenticated%20%2B%20agentbox%2Fconfig.py%23max_connections%20%2B%20agentbox%2Fcli.py%23cmd_serve%20%2B%20deploy%2FCaddyfile%20%2B%20deploy%2Fdocker-compose.yml::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Pre-authentication%20work%20imbalance",
+      "disposition": "covered",
+      "reviewed_paths": [
+        "agentbox/api.py",
+        "agentbox/cli.py",
+        "agentbox/config.py",
+        "agentbox/desktop.py",
+        "agentbox/web.py",
+        "deploy/Caddyfile",
+        "deploy/docker-compose.yml"
+      ],
+      "checks": [
+        {
+          "agent_id": "h-origin",
+          "reviewed_paths": [
+            "agentbox/api.py",
+            "agentbox/web.py"
+          ],
+          "invariant": "Unauthenticated clients cannot trigger body reading or JSON parsing beyond 64 KiB across any endpoint, and /login enforces a 64 KiB cap",
+          "method": "local",
+          "result": "Sandboxed TestClient execution demonstrated that _BodyLimit evaluates authenticated() before reading body bytes. Unauthenticated 2MB requests to /sandboxes/sb_x/tools/exec, requests with invalid Bearer tokens, deleted sandbox tokens, and malformed cookies all return 401 with 0 JSON decode operations. POST /login allows <= 64 KiB and returns 413 for > 64 KiB. POST /login/ returns 401 without reading body.",
+          "artifact": "agents/h-origin/artifacts/h.out"
+        },
+        {
+          "agent_id": "h-origin",
+          "reviewed_paths": [
+            "agentbox/cli.py",
+            "agentbox/config.py",
+            "agentbox/desktop.py",
+            "deploy/Caddyfile",
+            "deploy/docker-compose.yml"
+          ],
+          "invariant": "Control plane enforces concurrency limits, proxy body caps, and container memory limits to prevent pre-authentication resource amplification",
+          "method": "source",
+          "result": "Source inspection confirms max_connections (default 256) is passed as limit_concurrency to uvicorn in cli.py, deploy/Caddyfile enforces 8MiB max_size on @other and 256MB on @upload, and deploy/docker-compose.yml sets mem_limit to 2g.",
+          "artifact": null
+        }
+      ],
+      "candidate_fingerprints": [],
+      "unresolved": []
+    }
+  ],
+  "candidates": [
+    {
+      "proposed_verdict": "needs_validation",
+      "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+      "title": "Scheme-blind Origin netloc comparison allows cross-scheme CSRF against cookie-authenticated routes",
+      "description": "same_origin compares only the netloc of the Origin header with the Host header and accepts missing Origin headers. When agentbox is deployed behind a TLS-terminating reverse proxy (such as Caddy) without HSTS, or on a host with co-located HTTP services, requests originating from an insecure http:// scheme on the same host match the netloc check and can perform state-changing operations (such as session termination via /logout or approval decisions via /ui/approvals) using the browser's session cookie.",
+      "claimed_root_cause": "agentbox/api.py:221-223: same_origin() returns True when urlsplit(origin).netloc == headers.get('host') or when Origin is absent. The closure receives only headers and does not verify whether the Origin scheme matches the request scheme (e.g., https). deploy/Caddyfile:1-17 does not set Strict-Transport-Security, so plain-HTTP contexts on the same host are not upgraded to HTTPS by the browser.",
+      "trace": [
+        {
+          "kind": "entrypoint",
+          "file": "agentbox/web.py",
+          "line": 169,
+          "scope": "logout",
+          "description": "Browser submits a cross-scheme POST /logout (or other state-changing browser route like /ui/approvals/{aid}/approve) from an http:// origin on the same host."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/api.py",
+          "line": 221,
+          "scope": "same_origin",
+          "description": "same_origin() extracts the Origin header, parses netloc with urlsplit, and compares it to Host, ignoring the http vs https scheme mismatch."
+        },
+        {
+          "kind": "propagation",
+          "file": "agentbox/desktop.py",
+          "line": 60,
+          "scope": "set_cookie",
+          "description": "Session cookie is configured with SameSite=Strict and Secure, leaving protection against cross-scheme requests dependent on browser-level Schemeful Same-Site enforcement."
+        },
+        {
+          "kind": "sink",
+          "file": "deploy/Caddyfile",
+          "line": 16,
+          "scope": "reverse_proxy",
+          "description": "Reverse proxy config lacks Strict-Transport-Security (HSTS), allowing insecure plaintext HTTP access on the same host to persist."
+        }
+      ],
+      "evidence": [
+        {
+          "file": "agentbox/api.py",
+          "line": 223,
+          "description": "same_origin() evaluates 'not origin or urlsplit(origin).netloc == headers.get(\"host\")'. Scheme is not compared, and absent Origin evaluates to True."
+        },
+        {
+          "file": "agentbox/api.py",
+          "line": 235,
+          "description": "screen_principal() validates incoming browser requests using same_origin(request.headers), allowing downgraded-scheme requests to authenticate."
+        },
+        {
+          "file": "deploy/Caddyfile",
+          "line": 16,
+          "description": "Caddy reverse proxy passes requests without injecting Strict-Transport-Security headers, allowing plaintext HTTP on the same host."
+        }
+      ],
+      "blockers": [
+        "Live browser verification is required to determine whether real-world Chromium, Firefox, and Safari browsers enforce Schemeful Same-Site policy strictly enough to suppress 'SameSite=Strict; Secure' cookies on cross-scheme (http:// to https://) requests against the same domain or localhost.",
+        "Verification on a live Docker deployment with Caddy reverse proxy to confirm whether port 80 HTTP traffic can trigger session termination (/logout) or administrative actions (/ui/approvals) via cross-scheme forgery in the absence of HSTS."
+      ],
+      "validation_plan": {
+        "local": "Start agentbox locally behind an HTTPS proxy using dummy session cookies. Using a browser (Chromium and Firefox), load a page served from http://localhost and trigger a fetch/form POST to https://localhost/logout and https://localhost/ui/approvals/{aid}/approve. Observe whether the browser attaches the agentbox_session cookie and whether the server processes the request with status 303/200.",
+        "deployment": "Deploy the official stack via deploy/docker-compose.yml with Caddy. Authenticate an administrative browser session over HTTPS. Navigate to an insecure HTTP site on the same host/domain and attempt a cross-scheme POST to /logout or an approval endpoint. Observe whether the session is terminated or the approval processed without origin rejection."
+      }
+    }
+  ],
+  "hardening": [
+    "authenticated() in api.py:193-199 catches CookieError when parsing Cookie headers with SimpleCookie, failing closed by returning False (401) on malformed cookies.",
+    "Trailing slash variations like POST /login/ are not included in _ANON_BODY_PATHS, so unauthenticated requests receive 401 before body read rather than bypassing the 64 KiB cap.",
+    "deploy/docker-compose.yml sets a 2g mem_limit on the agentbox-control container, and cli.py enforces uvicorn limit_concurrency based on AGENTBOX_MAX_CONNECTIONS (default 256), bounding simultaneous in-flight connections."
+  ],
+  "uncovered": []
+}

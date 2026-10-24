@@ -1,0 +1,12 @@
+Payload size: 25795 bytes (~25.2 KiB)
+Inserting 1200 rows with ~25.2 KiB payload...
+Database size: 31969280 bytes (30.49 MiB)
+recent('sb_other', limit=25): total=120, rows=25, lock hold time=113.31ms
+recent('sb_nonexistent', limit=25): total=0, lock hold time=42.22ms
+verify fetchall (1200 rows): lock hold time=1264.15ms, peak memory=58.45 MiB
+
+--- Extrapolation to 10,000 rows (200 MiB table, ratio: 8.33x) ---
+Estimated recent() lock hold time: 0.94s (~944ms)
+Estimated verify() lock hold time: 10.53s (~10535ms)
+Estimated verify() fetchall peak memory: 487.09 MiB
+Polling frequency of sandbox.html: every 3.0s
