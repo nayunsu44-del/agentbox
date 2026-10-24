@@ -1,0 +1,55 @@
+{
+ "run_id": "agentbox-run-6",
+ "repo": "nayunsu44-del/agentbox",
+ "target": "<WINDOWS_HOST_ROOT>/projects/agentbox",
+ "source_ref": {
+  "commit": "530b29e7",
+  "branch": "main",
+  "dirty": false,
+  "note": "Audited source is a detached git worktree of main at 530b29e (after fix PRs #24 and #25) in the parent's scratchpad; agents read it and tools/sbx.py mounts it read-only at /target. Only docs/security-audit/run-6/ is added on main."
+ },
+ "profile": "standard",
+ "scope_paths": [
+  "."
+ ],
+ "scope_note": "Focused follow-up: all seven units run-5 left deferred (top 4: same_origin scheme, container output reader caps, approval preview truthfulness, AuditLog._lock contention; plus the remaining 3: Docker data-root disk accounting, GUI burst covers() container_id binding, control-character filter sink completeness) plus four units for code changed by PRs #24 and #25 (_BodyLimit credential gate and deploy caps, DesktopControl lock split and WS threadpool/retention cleanup, GUI burst takeover lease gate in _snapshot/decide, TOOL_ARG_MAX/preview caps/_relex_changes). The LLM-provider data path remains a documented owner-accepted limitation and is out of scope.",
+ "budget": 30,
+ "budget_note": "Owner-set cap of 30 subagent invocations. Owner model choice: all subagents use flash (Model: 'flash'). Reconnaissance was done by the parent (0 agents spent): run-5 architecture plus exact delta for 346df29..530b29e. Parent-live checks (real Docker, desktop image) are outside the budget.",
+ "execution_policy": "sandboxed-source-and-local-only",
+ "execution_note": "Windows 11 host with Docker Desktop WSL2 Linux engine 29.9.2. Agent-run target code goes only through tools/sbx.py: docker run --network none, no docker socket, --read-only, audited worktree bind-mounted read-only at /target, writes only to agents/<id>/scratch at /scratch, /dev/shm tmpfs 16 MiB, --pull never, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB, 1 CPU, 64 pids, 32 MiB file size, 120 s wall clock, explicit env allowlist, image agentbox-audit-sbx:1. Checks needing the real Docker-backed control plane or the desktop image are run by the parent in disposable containers on loopback and labelled parent-live.",
+ "companions_selected": [],
+ "prior_runs": [
+  {
+   "path": "docs/security-audit/run-5",
+   "source_ref": "346df29",
+   "files": [
+    "coverage-ledger.json",
+    "findings.json"
+   ],
+   "note": "run-5 ended incomplete (budget_exhausted) with 7 deferred units; confirmed F1-F6 and needs_validation N1 were fixed in PRs #24 and #25."
+  },
+  {
+   "path": "docs/security-audit/run-4",
+   "source_ref": "9805d91",
+   "files": [
+    "coverage-ledger.json",
+    "findings.json"
+   ],
+   "note": "run-4 needs_validation N1 (same_origin scheme) and N3 (container output reader caps) are carried into run-6."
+  }
+ ],
+ "shared_file_owner": "parent",
+ "run_status": "in_progress",
+ "agents_spent": {
+  "recon": 0,
+  "hunters": 0,
+  "phase3": 0,
+  "phase5": 0,
+  "retries": 0,
+  "critics": 0,
+  "reverify": 0
+ },
+ "agents_spent_total": 0,
+ "phase": "phase1_recon_and_seed",
+ "deviations": []
+}
