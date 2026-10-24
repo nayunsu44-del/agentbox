@@ -39,17 +39,20 @@
   }
  ],
  "shared_file_owner": "parent",
- "run_status": "in_progress",
+ "run_status": "complete",
  "agents_spent": {
   "recon": 0,
-  "hunters": 0,
-  "phase3": 0,
-  "phase5": 0,
+  "hunters": 6,
+  "phase3": 6,
+  "phase5": 6,
   "retries": 0,
-  "critics": 0,
+  "critics": 2,
   "reverify": 0
  },
- "agents_spent_total": 0,
- "phase": "phase1_recon_and_seed",
- "deviations": []
+ "agents_spent_total": 20,
+ "phase": "done_phase6_reports",
+ "deviations": [
+  "h-locks-ws was messaged once in the same conversation (not a new invoke_subagent call) to benchmark AuditLog.recent() and AuditLog.verify() with realistic ~25 KiB payloads before finalizing its disposition, which produced the confirmed candidate agentbox/audit.py:AuditLog:table-growth-lock-contention-and-verify-memory."
+ ],
+ "run_status_reason": "complete: all 11 ledger units closed (5 covered, 3 confirmed, 3 needs_validation); both post-wave (critic-1) and final-clean (critic-2) critics returned stop=true with 0 missing units."
 }

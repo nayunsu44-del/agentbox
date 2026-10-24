@@ -228,7 +228,7 @@ R.append(
     f"1. **확정 {len(conf)}건(F1~F{len(conf)}) 수정 여부 및 범위 지시:**\n"
     f"   - **F1 (`GuiBursts.covers` 컨테이너 ID 바인딩 및 복원 경합, 중간):** `GuiBursts.covers(sid)`에서 `burst['container_id'] == sandboxes.get(sid)['container_id']`를 확인하고, `restore_sandbox`가 `sandboxes.restore` 뒤에도 열린 구간을 닫도록 고칠지.\n"
     f"   - **F2 (`AuditLog` 인덱스 부재 및 `verify()` 전체 테이블 `fetchall()` 잠금 점유, 중간):** `audit(sandbox_id, id)` 인덱스를 추가하고 `verify()`를 배치 조회 또는 별도 읽기 연결로 바꿀지.\n"
-    f"   - **F3 (승인 미리보기의 중괄호 `{a,b}`·틸드 `~` 미확장 오표시, 낮음):** `preview.py`에서 `{`·`~`에 대해 자동 계산 한계 주의 메모(`notes`)를 띄울지, 아니면 `_expand`를 `/bin/bash`로 맞출지(또는 둘 다 할지)."
+    f"   - **F3 (승인 미리보기의 중괄호 `{{a,b}}`·틸드 `~` 미확장 오표시, 낮음):** `preview.py`에서 `{{`·`~`에 대해 자동 계산 한계 주의 메모(`notes`)를 띄울지, 아니면 `_expand`를 `/bin/bash`로 맞출지(또는 둘 다 할지)."
 )
 R.append(
     "2. **검증 필요 3건(N1~N3)에 대한 하드닝 여부:**\n"

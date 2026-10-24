@@ -1,0 +1,18 @@
+{
+  "missing_units": [],
+  "reassign_ids": [],
+  "resolved_prior_leads": [
+    "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized",
+    "agentbox/api.py:preauth-request-body-read-before-principal"
+  ],
+  "stop": true,
+  "notes": [
+    "All 13 non-test files changed in PRs #24 and #25 (api.py, cli.py, config.py, desktop.py, desktop_ws.py, policy.py, preview.py, retention.py, sandbox.py, service.py, Caddyfile, docker-compose.yml, README.md) are comprehensively covered across 4 dedicated units with verified invariants.",
+    "All 7 deferred units from run-5 are accounted for and closed: 6 candidate units verified with concrete findings in findings.json (3 confirmed, 3 needs_validation) and 1 unit verified covered (PR #19 control-character filter completeness).",
+    "Prior leads agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized (resolved by PR #19 escape_controls) and agentbox/api.py:preauth-request-body-read-before-principal (resolved by PR #25 _BodyLimit credential gate) are confirmed resolved.",
+    "No unmapped entry points, unchecked parallel paths, or missing lifecycle transitions remain at commit 530b29e.",
+    "All 11 coverage ledger units have complete paths, concrete local checks, and sound justifications for all excluded companion blocks.",
+    "Zero uncovered boundaries were reported across hunter waves.",
+    "Full audit coverage criteria are satisfied; no missing units or reassign IDs remain."
+  ]
+}
