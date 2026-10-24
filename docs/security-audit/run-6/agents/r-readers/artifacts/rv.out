@@ -1,0 +1,44 @@
+=== Check 1: _Head streaming buffer cap vs unbuffered exec_run ===
+_Head fed: 1048576 bytes (1 MiB)
+_Head retained buffer: 65537 bytes
+_Head total tracked: 1048576 bytes
+_Head is truncated: True
+[PASS] _Head strictly bounds retained bytes in memory to _OUT_LIMIT + 1.
+_truncate processed raw buffer of 5242880 bytes in 0.0001s
+_truncate returned string length: 65556 chars
+[PASS] _truncate operates on an already buffered full-length byte string.
+
+=== Check 2: _parse_outbox memory amplification ===
+  1000 files: raw find output =     39.1 KiB -> 1000 dicts (   347.5 KiB memory, 8.9x amplification) in 0.0118s
+ 10000 files: raw find output =    390.6 KiB -> 10000 dicts (  3423.1 KiB memory, 8.8x amplification) in 0.1197s
+ 30000 files: raw find output =   1171.9 KiB -> 30000 dicts ( 10206.4 KiB memory, 8.7x amplification) in 0.3566s
+
+=== Check 3: preview _expand vs _walk cardinality bounds ===
+preview_command called on 25,000 matches:
+  affected items returned to client: 200 (capped at limit=200)
+  notes: ['영향 항목 25000개 중 앞의 200개만 표시.']
+  elapsed: 0.0157s
+  expand returned 25000 strings directly into control plane RAM.
+
+=== Check 4: Source line verification at commit 530b29e ===
+[VERIFIED] /target/agentbox/api.py:306 contains 'def call_tool('
+[VERIFIED] /target/agentbox/api.py:385 contains '@app.get("/sandboxes/{sid}/outbox")'
+[VERIFIED] /target/agentbox/service.py:293 contains 'def call_tool('
+[VERIFIED] /target/agentbox/service.py:136 contains 'if tool == "list_dir":'
+[VERIFIED] /target/agentbox/sandbox.py:427 contains 'out, err = _Head(), _Head()'
+[VERIFIED] /target/agentbox/sandbox.py:442 contains 'res = c.exec_run(["ls", "-la", "--", p]'
+[VERIFIED] /target/agentbox/sandbox.py:446 contains 'return {"path": p, "listing": _truncate(out)}'
+[VERIFIED] /target/agentbox/sandbox.py:454 contains 'head -c {limit + 1}'
+[VERIFIED] /target/agentbox/sandbox.py:455 contains '_timed(_READ_TIMEOUT'
+[VERIFIED] /target/agentbox/sandbox.py:382 contains '_timed(_MANIFEST_TIMEOUT'
+[VERIFIED] /target/agentbox/sandbox.py:384 contains 'head -c {_MANIFEST_CAP}'
+[VERIFIED] /target/agentbox/sandbox.py:548 contains 'res = c.exec_run(["sh", "-c", script]'
+[VERIFIED] /target/agentbox/sandbox.py:557 contains 'head -c {limit + 1}'
+[VERIFIED] /target/agentbox/sandbox.py:559 contains '_timed(_READ_TIMEOUT'
+[VERIFIED] /target/agentbox/sandbox.py:578 contains '_timed(_PREVIEW_TIMEOUT'
+[VERIFIED] /target/agentbox/sandbox.py:586 contains 'head -z -n "$2"'
+[VERIFIED] /target/agentbox/sandbox.py:116 contains 'out: list[dict[str, Any]] = []'
+[VERIFIED] /target/agentbox/sandbox_desktop.py:114 contains 'cat {_SHOT}'
+[VERIFIED] /target/agentbox/sandbox_desktop.py:117 contains 'png[:8] != b"\x89PNG\r\n\x1a\n"'
+
+ALL INDEPENDENT VERIFICATION CHECKS PASSED.

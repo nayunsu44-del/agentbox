@@ -98,8 +98,8 @@ def main():
     arts = obj.get("artifacts_to_promote", []) or []
     if arts:
         r = subprocess.run([sys.executable, "-I", f"{RUN}/tools/promote.py", vid, *arts],
-                           capture_output=True, text=True, encoding="utf-8")
-        print((r.stdout + r.stderr).strip())
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        print(((r.stdout or "") + (r.stderr or "")).strip())
     recs = findings()
     if phase == "3":
         if obj.get("decision") not in ("confirmed", "needs_validation", "rejected"):

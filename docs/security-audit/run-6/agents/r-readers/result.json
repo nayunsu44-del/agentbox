@@ -1,0 +1,9 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+ "reason": "Independently verified in the OS-enforced sandbox test harness (scratch/rv.out) and corroborated by parent-live real container output (readers_live.out): (1) SandboxManager.exec (sandbox.py:427) consumes container stdout/stderr streams via Docker API exec_start through _Head(), strictly bounding in-memory buffering to _OUT_LIMIT + 1 (65,537 bytes) and applying _timed(t, kill_after=5). (2) read_file (sandbox.py:454-455) and outbox_read (sandbox.py:557-559) enforce 'head -c limit+1' and _timed(_READ_TIMEOUT); workspace_manifest (sandbox.py:382-384) enforces 'head -c _MANIFEST_CAP' and _timed(_MANIFEST_TIMEOUT); and preview _walk (sandbox.py:586) caps directory entries with 'head -z -n $limit'. (3) In contrast, list_dir (sandbox.py:442) and outbox_list (sandbox.py:548) invoke c.exec_run without container-side _timed timeouts or stream byte caps, buffering the entire container output in control-plane RAM before post-read truncation. In outbox listings, _parse_outbox instantiates lists of dicts with 8.7x-11.1x memory amplification. (4) Preview _expand (sandbox.py:578) wraps container glob execution with _timed(_PREVIEW_TIMEOUT) but lacks a record or byte cap, buffering all matched filenames into Python memory. (5) DesktopTools.screenshot (sandbox_desktop.py:114) cats full PNG data into RAM before inspecting the PNG magic header. (6) All repository trace and evidence paths and line numbers are exact at audited commit 530b29e. The candidate remains needs_validation because demonstrating fatal control-plane memory exhaustion (OOM kill) or worker threadpool starvation under large-scale container output requires a live Docker daemon and depends on host memory limits and deployment topology.",
+ "artifact_to_promote": "rv.out",
+ "artifacts_to_promote": [
+  "rv.out"
+ ]
+}

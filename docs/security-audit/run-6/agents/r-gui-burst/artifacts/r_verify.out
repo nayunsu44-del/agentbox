@@ -1,0 +1,18 @@
+=== Step 1: Reproduce unpatched vulnerability ===
+Tool outcome status: 200
+Clicks recorded: [('container_2', 10, 20)]
+Burst recorded container_id: container_1
+Active sandbox container_id: container_2
+GuiBursts.covers('sb_test'): True
+Killed processes: []
+Close failed event count: 1
+Close failed error: 컨테이너가 바뀌어 비교하지 않음 (복원)
+Rogue PID in next burst pids: True
+Vulnerability confirmed!
+
+=== Step 2: Test Remediation ===
+Patched run agent outcome: None
+Patched run agent error: <class 'agentbox.service.ServiceError'>: 기다리는 동안 화면 제어가 바뀌어 GUI 구간이 닫혔음. 이 입력은 실행하지 않음. 다시 호출할 것
+Remediation verified successfully!
+
+ALL INDEPENDENT VERIFICATION TESTS PASSED.

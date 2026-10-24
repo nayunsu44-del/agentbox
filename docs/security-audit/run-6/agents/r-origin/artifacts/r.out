@@ -1,0 +1,19 @@
+=== Step 1: Verify source files and line references at 530b29e ===
+  [PASS] agentbox/api.py:221-223 same_origin exact match
+  [PASS] agentbox/api.py:235 screen_principal same_origin check exact match
+  [PASS] agentbox/web.py:168-175 logout route and sink exact match
+  [PASS] agentbox/web.py:242-248 decide approval route and sink exact match
+  [PASS] agentbox/desktop.py:60 set_cookie exact match
+  [PASS] deploy/Caddyfile:16 reverse_proxy and absence of HSTS exact match
+  [PASS] agentbox/cli.py:102 secure_cookie assignment exact match
+=== Step 2: Verify same_origin closure semantics ===
+  [PASS] http://box.example.com matches host box.example.com -> True (scheme ignored)
+  [PASS] missing origin matches host box.example.com -> True (origin absent)
+  [PASS] https://evil.example.com vs host box.example.com -> False
+  [PASS] origin: null vs host box.example.com -> False
+=== Step 3: Verify endpoints behavior with TestClient ===
+  [PASS] Cross-scheme POST /logout terminates session (status 303)
+  [PASS] Cookieless cross-scheme POST /logout issues Set-Cookie clearing cookie (status 303)
+  [PASS] Cross-scheme POST /ui/approvals/approve invoked decide (status 200, db status failed)
+  [PASS] Cross-domain POST /ui/approvals/approve rejected (status 403, db status remains pending)
+=== All Independent Verification Checks Passed ===

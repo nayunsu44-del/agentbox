@@ -1,0 +1,9 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/gui_bursts.py:GuiBursts.covers:container-identity-binding-gap-across-restore",
+ "reason": "Independently verified in OS-enforced sandbox test harness (r_verify.out) and corroborated by parent-live real container artifact (gui_burst_restore_live.out): GuiBursts.covers checks only 'sid in _gui_burst' without comparing container_id. When an agent GUI input initiates a burst snapshot concurrently with an administrative restore, bursts.open records pre-restore container C1, but sandboxes.restore updates active container to C2. The GUI tool executes on C2 under C1's baseline, and on burst close, _finish aborts change diffing and skips _stop_strays, allowing rogue background processes to survive on C2. Proposed fix in covers() correctly rejects execution with SandboxError on container mismatch.",
+ "artifact_to_promote": "r_verify.out",
+ "artifacts_to_promote": [
+  "r_verify.out"
+ ]
+}

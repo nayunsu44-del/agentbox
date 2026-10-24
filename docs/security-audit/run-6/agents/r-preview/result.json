@@ -1,0 +1,9 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets",
+ "reason": "Independently verified in container sandbox harness (r_verify.out) matching live container results: preview_command with container callbacks misreports targets under brace expansion ('rm {a,b}.txt') and tilde expansion ('rm ~/test_tilde.txt') as '삭제 시도 (현재 존재하지 않음)' with empty notes because /bin/sh (dash) does not evaluate brace or tilde expansion on positional argument $1, while SandboxManager.exec executes commands via /bin/bash where existing files are deleted. All trace and evidence lines, preconditions, execution steps, severity ratings, and remediation logic verified against audited commit 530b29e.",
+ "artifact_to_promote": "r_verify.out",
+ "artifacts_to_promote": [
+  "r_verify.out"
+ ]
+}

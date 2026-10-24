@@ -1,0 +1,9 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+ "reason": "Independently verified in sandbox: same_origin compares only netloc, accepting downgraded HTTP Origin against HTTPS and missing Origin. POST /logout terminates session and cookieless /logout deletes cookie. POST /ui/approvals/{aid}/approve executes approval while cross-domain Origin is rejected with 403. Candidate remains needs_validation due to decisive external blockers: browser Schemeful Same-Site policy enforcement on cross-scheme cookie attachment and deployment HSTS status.",
+ "artifact_to_promote": "r.out",
+ "artifacts_to_promote": [
+  "r.out"
+ ]
+}
