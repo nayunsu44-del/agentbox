@@ -1,0 +1,19 @@
+{
+  "missing_units": [],
+  "reassign_ids": [],
+  "resolved_prior_leads": [
+    "agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized",
+    "agentbox/api.py:preauth-request-body-read-before-principal"
+  ],
+  "stop": true,
+  "proposed_units": [],
+  "notes": [
+    "All 13 non-test files changed in PRs #24 and #25 are covered with verified security invariants in the current ledger.",
+    "All 7 deferred units from run-5 are covered: 6 produced candidate fingerprints for Phase 3/5 validation, and 1 (control-character filter) is verified covered.",
+    "Prior lead agentbox/templates/_approvals.html:exec-command-bidi-controls-unneutralized was verified resolved by PR #19 escape_controls.",
+    "Prior lead agentbox/api.py:preauth-request-body-read-before-principal was verified resolved by PR #25 pre-read credential gate.",
+    "No unmapped entry points, unchecked parallel paths, or missing lifecycle modes remain in the audited source at 530b29e.",
+    "All 11 ledger units have complete paths, concrete local checks, and valid justifications for all exclusions.",
+    "Hunters reported 0 uncovered boundaries. Full subagent budget is appropriately reserved for Phase 3 candidates, Phase 5 records, and critic reviews."
+  ]
+}

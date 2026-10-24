@@ -1,0 +1,18 @@
+=== Verification Check 1: Reproduce GuiBursts.covers container identity gap ===
+Tool outcome status: 200
+Clicks executed: [('c2', 5, 5)]
+Burst container_id: c1
+Current sandbox container_id: c2
+GuiBursts.covers('sb1'): True
+Processes killed: []
+Close failed event logged: True
+Close failed error message: 컨테이너가 바뀌어 비교하지 않음 (복원)
+Is rogue process 999 in new burst baseline? True
+Verification Check 1 PASSED: Vulnerability successfully reproduced.
+
+=== Verification Check 2: Verify Proposed Fix in GuiBursts.covers ===
+Tool error: 기다리는 동안 화면 제어가 바뀌어 GUI 구간이 닫혔음. 이 입력은 실행하지 않음. 다시 호출할 것
+Clicks executed: []
+Verification Check 2 PASSED: Fix successfully rejected execution on mismatched container.
+
+ALL VERIFICATION CHECKS PASSED.

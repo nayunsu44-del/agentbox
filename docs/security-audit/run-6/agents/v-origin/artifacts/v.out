@@ -1,0 +1,31 @@
+=== Verifier v-origin Check Starting ===
+=== Verification Check 1: Direct same_origin() logic ===
+  [PASS] No origin header present: got True, expected True
+  [PASS] Empty origin header: got True, expected True
+  [PASS] Origin: null: got False, expected False
+  [PASS] Same scheme & host (HTTPS): got True, expected True
+  [PASS] Downgraded HTTP scheme vs HTTPS host (scheme mismatch!): got True, expected True
+  [PASS] Different domain (evil.example): got False, expected False
+  [PASS] Matching host:port: got True, expected True
+  [PASS] Port mismatch: origin with port: got False, expected False
+  [PASS] Port mismatch: host with port: got False, expected False
+  [PASS] Userinfo trick (netloc is agentbox.example@evil.example): got False, expected False
+Direct logic tests passed.
+
+=== Verification Check 2: ASGI endpoints under HTTPS fixture ===
+  POST /logout with matching https Origin: status=303
+  POST /logout with downgraded http Origin: status=303
+  POST /logout with NO Origin header: status=303
+  POST /logout without cookie: status=303, Set-Cookie=agentbox_session=""; expires=Sat, 24 Oct 2026 07:44:30 GMT; Max-Age=0; Path=/; SameSite=lax
+  POST /logout with evil.example Origin: status=403
+  POST /logout with Origin: null: status=403
+  POST /ui/approvals/approve with http://agentbox.example Origin: status=200
+  POST /ui/approvals/approve with evil.example Origin: status=403
+Endpoint verification passed.
+
+=== Verification Check 3: Cookie and Proxy Configuration ===
+  Caddyfile Strict-Transport-Security configured: False
+  DesktopControl set_cookie uses SameSite=strict: True
+Transport and proxy check passed.
+
+=== ALL VERIFICATION CHECKS COMPLETED SUCCESSFULLY ===

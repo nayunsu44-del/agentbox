@@ -1,0 +1,66 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+ "title": "Unbounded buffering and missing container-side timeouts in list_dir, outbox_list, and preview glob expand",
+ "description": "While exec streams output through _Head (capping memory to 64 KiB) and read_file, outbox_read, and workspace_manifest apply container-side head caps and timeouts, list_dir and outbox_list invoke c.exec_run without container-side _timed timeouts or stream-limiting byte caps, buffering arbitrary output in the control-plane process. Furthermore, preview _expand lacks output cardinality/byte limits, allowing an agent with a populated workspace or outbox to exhaust control-plane RAM or block worker threads indefinitely.",
+ "claimed_root_cause": "Container output consumption disciplines were applied inconsistently: exec uses _Head streaming (_OUT_LIMIT=64 KiB) and _timed, read_file/outbox_read use head -c and _timed, workspace_manifest uses head -c and _timed, and preview _walk uses head -z and _timed. However, list_dir (ls -la) and outbox_list (find -printf) lack both container-side timeouts and output byte bounds, while preview _expand has a 10s timeout but no output byte cap or record limit. An agent-populated directory with hundreds of thousands of files causes c.exec_run to buffer all demuxed bytes in memory, parse them into unbounded Python structures, and potentially stall tool_pool and HTTP worker threads.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/service.py",
+   "line": 293,
+   "scope": "AgentBox.call_tool",
+   "description": "Agent calls list_dir or triggers approval preview (via exec) on an agent-populated directory, or human views outbox via GET /sandboxes/{sid}/outbox."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 442,
+   "scope": "SandboxManager.list_dir",
+   "description": "list_dir calls c.exec_run([\"ls\", \"-la\", \"--\", p], demux=True) without _timed and without _Head streaming, waiting for all container output to buffer into control-plane RAM."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 548,
+   "scope": "SandboxManager.outbox_list",
+   "description": "outbox_list executes find without _timed or head cap, passing raw output to _parse_outbox which instantiates uncurbed Python lists of dicts."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox.py",
+   "line": 116,
+   "scope": "_parse_outbox",
+   "description": "Control plane process buffers unbounded byte arrays and creates thousands of Python objects, risking memory exhaustion in the 2 GB control container or threadpool worker exhaustion."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 424,
+   "description": "exec streams output into _Head with _OUT_LIMIT cap and _timed(t, kill_after=5)."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 442,
+   "description": "list_dir runs c.exec_run([\"ls\", \"-la\", \"--\", p]) with no _timed timeout and no byte cap."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 548,
+   "description": "outbox_list runs c.exec_run with find -printf without _timed or output truncation before _parse_outbox."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 578,
+   "description": "_expand runs container glob without head -z or output limit, unlike _walk which uses head -z."
+  }
+ ],
+ "blockers": [
+  "Demonstrating full control-plane memory exhaustion or threadpool hang under large-scale container output requires running against a live Docker daemon with a real container, which is excluded from the subagent sandbox environment."
+ ],
+ "validation_plan": {
+  "local": "In a live test with Docker running: (1) create a sandbox container, (2) populate /workspace/outbox with 200,000 files using a fast shell loop, (3) call GET /sandboxes/{sid}/outbox and POST /sandboxes/{sid}/tools/list_dir with path /workspace/outbox, (4) observe control plane memory consumption spike and monitor process RSS; (5) test replacing outbox with a hanging device or slow pipe to observe thread starvation.",
+  "deployment": "Review production control-plane logs and metrics under high file counts for OOM kills (mem_limit: 2g) or 504/timeout errors on list_dir and outbox endpoints."
+ }
+}

@@ -1,0 +1,670 @@
+[
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+  "title": "Scheme-blind Origin netloc comparison allows cross-scheme CSRF against cookie-authenticated routes",
+  "description": "same_origin compares only the netloc of the Origin header with the Host header and accepts missing Origin headers. When agentbox is deployed behind a TLS-terminating reverse proxy (such as Caddy) without HSTS, or on a host with co-located HTTP services, requests originating from an insecure http:// scheme on the same host match the netloc check and can perform state-changing operations (such as session termination via /logout or approval decisions via /ui/approvals) using the browser's session cookie.",
+  "claimed_root_cause": "agentbox/api.py:221-223: same_origin() returns True when urlsplit(origin).netloc == headers.get('host') or when Origin is absent. The closure receives only headers and does not verify whether the Origin scheme matches the request scheme (e.g., https). deploy/Caddyfile:1-17 does not set Strict-Transport-Security, so plain-HTTP contexts on the same host are not upgraded to HTTPS by the browser.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/web.py",
+    "line": 168,
+    "scope": "logout",
+    "description": "Cookie-authenticated POST /logout (or /ui/approvals/{aid}/{decision} at web.py:242) is received from a browser context without anti-CSRF tokens or Sec-Fetch validation."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 235,
+    "scope": "screen_principal",
+    "description": "Browser routes validate request authenticity using same_origin(request.headers) after resolving the session cookie; /logout invokes same_origin directly at web.py:169."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 223,
+    "scope": "same_origin",
+    "description": "urlsplit(origin).netloc == headers.get('host') ignores the origin scheme (http vs https) and accepts missing Origin headers, allowing plaintext http:// origins to pass origin validation."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/web.py",
+    "line": 171,
+    "scope": "logout",
+    "description": "With same_origin evaluated to True, box.end_ui_session terminates the authenticated session (or r.delete_cookie at line 175 forces browser session clearance; on /ui/approvals at line 248 box.decide executes human approval)."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/api.py",
+    "line": 223,
+    "description": "same_origin() evaluates 'not origin or urlsplit(origin).netloc == headers.get(\"host\")'. Scheme is not compared, and absent Origin evaluates to True."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 235,
+    "description": "screen_principal() validates incoming browser requests using same_origin(request.headers), allowing downgraded-scheme requests to authenticate."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 169,
+    "description": "logout() directly invokes same_origin(request.headers) at web.py:169 and proceeds to delete_cookie at line 175 unconditionally, allowing a cross-scheme POST to force client-side logout even when no cookie is sent."
+   },
+   {
+    "file": "agentbox/desktop.py",
+    "line": 60,
+    "description": "set_cookie() issues the session cookie with HttpOnly=True and SameSite=\"strict\". In TLS mode, Secure=True is set. Whether modern browsers attach this cookie on cross-scheme requests depends on Schemeful Same-Site enforcement."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 16,
+    "description": "Caddy reverse proxy passes requests without injecting Strict-Transport-Security (HSTS) headers, leaving plaintext HTTP access on the same host un-upgraded."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 102,
+    "description": "s.secure_cookie = s.secure_cookie or tls or behind: the Secure attribute is forced for direct-TLS and behind-TLS-proxy deployments, which are the deployments where the http/https scheme fork exists."
+   },
+   {
+    "file": "docs/security-audit/run-6/agents/parent-live/artifacts/same_origin_live.out",
+    "line": 2,
+    "description": "parent-live execution verified that https://box.example.com accepts GET /ui/verify with Origin: http://box.example.com (status 200) and rejects evil.example.com (status 403)."
+   },
+   {
+    "file": "agents/v-origin/artifacts/v.out",
+    "line": 1,
+    "description": "Verifier v-origin independent sandboxed TestClient reproduction: direct same_origin tests pass for downgraded HTTP origin (http://agentbox.example vs HTTPS host) and missing Origin; POST /logout accepts cross-scheme origin (status 303) and terminates session; cookieless cross-scheme POST /logout emits Set-Cookie clearing cookie; POST /ui/approvals/approve accepts cross-scheme origin (status 200); cross-domain and null origins are rejected with 403."
+   }
+  ],
+  "blockers": [
+   "Browser behavior (decisive): whether real-world browsers used by operators (Safari, Firefox, Chrome, and embedded WebViews) strictly enforce Schemeful Same-Site policy (RFC 6265bis) to withhold 'SameSite=Strict; Secure' cookies on cross-scheme (http:// to https://) requests against the same domain. In sandboxed test environments, headless execution cannot observe browser-level cookie attachment policies.",
+   "Network position and TLS termination: whether plaintext http:// traffic on the same host can be reached by an operator or injected by an on-path attacker. deploy/Caddyfile lacks Strict-Transport-Security (HSTS), but whether the production deployment uses upstream HSTS, CDN preloading, or an external load balancer is an operator-controlled environment fact."
+  ],
+  "validation_plan": {
+   "local": "Deploy agentbox behind a local TLS reverse proxy on https://localhost with a valid test certificate and an authenticated browser session. In multiple real-world browsers (Safari, Firefox, Chromium), open a page served from http://localhost and trigger form POSTs to /logout and /ui/approvals/{aid}/approve. Record whether each browser attaches the 'agentbox_session' cookie on the cross-scheme POST, whether status 303/200 is returned, and whether the server session or approval mutation executes.",
+   "deployment": "Operator confirms: (1) whether the production domain sends Strict-Transport-Security (HSTS) with includeSubDomains or is on the HSTS preload list; (2) whether plaintext HTTP port 80 is accessible or unconditionally redirected to HTTPS; (3) the specific browser engines and versions used by operators accessing the admin UI."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/audit.py:AuditLog:table-growth-lock-contention-and-verify-memory",
+  "title": "Unindexed audit table scan in recent() and full-table fetchall in verify() hold global AuditLog._lock, causing availability stalls and memory exhaustion as table grows",
+  "description": "The audit table schema defines no index on sandbox_id, yet GET /ui/audit (polled every 3 seconds by the sandbox UI) invokes AuditLog.recent(), which executes unindexed 'SELECT COUNT(*) FROM audit WHERE sandbox_id = ?' and 'SELECT ... WHERE sandbox_id = ?' queries under the global in-process AuditLog._lock. When an agent grows the table with realistic tool call payloads and previews (up to 128 KiB each), these queries must scan every leaf and overflow page. Furthermore, AuditLog.verify() executes 'SELECT ... FROM audit ORDER BY id' and calls .fetchall() under AuditLog._lock, holding the lock while loading all rows into Python memory at once (~488 MiB for 10,000 rows). Because AuditLog.append() (used by all tool logging and fail-closed log_human operations) serializes on AuditLog._lock, these operations block all human and agent actions for seconds, and verify() risks container OOM termination.",
+  "root_cause": "AuditLog._lock is a coarse-grained process-wide lock held across long-running database read operations. The audit table lacks an index on sandbox_id, forcing full table scans on frequent UI polling (every 3s), and AuditLog.verify() unconditionally fetches all rows across the table's entire history into memory under the same lock rather than streaming, chunking, or querying via a non-blocking read connection in WAL mode.",
+  "intended_behavior": "UI polling via recent() should be satisfied rapidly using an index on audit(sandbox_id) without scanning unrelated overflow pages. Verification in verify() should stream or paginate rows using fetchmany() outside the append lock, and should not hold the primary write lock across full-table queries.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/templates/sandbox.html",
+    "line": 19,
+    "scope": "sandbox.html",
+    "description": "Operator viewing sandbox page triggers automatic polling of GET /ui/audit?sandbox_id={sid} every 3 seconds via htmx"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/web.py",
+    "line": 293,
+    "scope": "audit_frag",
+    "description": "audit_frag invokes box.audit.recent(sandbox_id=sandbox_id, limit=400)"
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/audit.py",
+    "line": 325,
+    "scope": "AuditLog.recent",
+    "description": "AuditLog.recent acquires self._lock and executes unindexed SELECT COUNT(*) and SELECT ... WHERE sandbox_id = ? scanning every leaf and overflow page"
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/audit.py",
+    "line": 293,
+    "scope": "AuditLog.append",
+    "description": "Every concurrent AuditLog.append call, including fail-closed log_human operator actions and agent tool calls, blocks on with self._lock"
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/audit.py",
+    "line": 27,
+    "description": "audit table schema defines only id as primary key without any index on sandbox_id"
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 325,
+    "description": "AuditLog.recent executes unindexed table scan under self._lock for every poll"
+   },
+   {
+    "file": "agentbox/audit.py",
+    "line": 340,
+    "description": "AuditLog.verify executes fetchall() of the entire audit table under self._lock, buffering all payloads in Python memory"
+   },
+   {
+    "file": "agentbox/templates/sandbox.html",
+    "line": 19,
+    "description": "Audit timeline polls /ui/audit every 3s, causing continuous lock contention as row count and payload sizes grow"
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 705,
+    "description": "Human operations serialized through log_human block on self._lock while long-running queries or fetchall hold the lock"
+   },
+   {
+    "file": "agents/v-audit-lock/artifacts/v.out",
+    "line": 13,
+    "description": "Independent reproduction benchmark showing unindexed recent() average lock hold of 175.15ms (vs 28.86ms indexed, 6.07x speedup) and verify() hold of 5.63s with 58.64 MiB peak heap for 1,200 rows"
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "data_state",
+    "description": "The audit table has accumulated thousands of rows containing realistic tool payloads and approval previews (16-32 KiB each) within the 90-day retention window"
+   },
+   {
+    "kind": "user_interaction",
+    "description": "A human operator opens the web UI sandbox view (triggering 3s polling) or clicks verify chain"
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "An unprivileged agent generating ordinary tool executions (e.g. exec, write_file) with 16-25 KiB arguments or previews populates the audit table up to tens of thousands of rows. When a human administrator views the sandbox UI (which polls /ui/audit every 3s) or triggers /ui/verify, the unindexed table scan and full table fetchall hold the global AuditLog._lock for seconds at a time and allocate hundreds of megabytes of memory, degrading control-plane responsiveness and blocking all tool logging and human admin actions.",
+   "payloads": [
+    "python3 /scratch/v_bench.py"
+   ],
+   "instructions": [
+    "Create an AuditLog database with 1,200 rows containing realistic ~25 KiB tool call/preview payloads (~30.5 MiB database size) with valid hash chain.",
+    "Invoke AuditLog.recent('sb_target', limit=25) to measure unindexed leaf/overflow page scan duration under self._lock.",
+    "Invoke AuditLog.verify() to measure lock hold time and peak heap memory allocation during self.conn.execute(...).fetchall() under self._lock.",
+    "Compare against an indexed table (CREATE INDEX audit_sandbox_id ON audit(sandbox_id)) to verify contention reduction."
+   ],
+   "observed_result": "In an isolated 512 MiB sandbox with 1,200 rows of 25.2 KiB payloads (30.49 MiB DB), unindexed recent('sb_target', limit=25) held AuditLog._lock for an average of 175.15ms (reduced to 28.86ms with an index on sandbox_id, a 6.07x speedup). Full table verify() on the valid chain held AuditLog._lock for 5628.31ms (5.63s) with a peak heap memory allocation of 58.64 MiB. Extrapolated to 10,000 rows (~200 MiB table), verify() holds AuditLog._lock for ~46.9s while consuming ~488.6 MiB of memory (approaching 512 MiB container limits), and 3-second UI polling holds the lock for ~1.46s per poll (occupying over 48% of total available time), blocking all concurrent audit.append and log_human calls."
+  },
+  "remediation": {
+   "strategy": "1. Add an index on audit(sandbox_id) in SCHEMA (CREATE INDEX IF NOT EXISTS audit_sandbox_id ON audit(sandbox_id)) so that recent() queries for a specific sandbox only read relevant rows rather than scanning the entire table and all overflow pages.\n2. In AuditLog.verify(), avoid holding self._lock across the entire fetchall() or iterate through rows in bounded batches (or fetch only necessary columns such as id, ts, prev_hash, hash, payload with fetchmany) outside the lock, or run verification queries on a separate read connection under SQLite WAL mode without blocking the in-process append lock.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/audit.py",
+     "fixed_code": "CREATE TABLE IF NOT EXISTS audit (\n    id          INTEGER PRIMARY KEY,\n    ts          TEXT NOT NULL,\n    sandbox_id  TEXT,\n    actor       TEXT NOT NULL,\n    event       TEXT NOT NULL,\n    tool        TEXT,\n    payload     TEXT NOT NULL,\n    prev_hash   TEXT NOT NULL,\n    hash        TEXT NOT NULL\n);\nCREATE INDEX IF NOT EXISTS audit_sandbox_id ON audit(sandbox_id);\n"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "Any active agent operating over several hours or days naturally generates thousands of audit entries with previews and tool arguments, and the web UI polls /ui/audit automatically every 3 seconds whenever a human operator views the sandbox page."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Global lock contention on AuditLog._lock stalls all concurrent tool executions and human administrative operations for seconds at a time; whole-table fetchall() during verify() loads hundreds of megabytes into Python memory, risking out-of-memory container termination in constrained environments."
+   },
+   "overall_severity": "medium"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Independently verified and measured via controlled local execution in the isolated OS-enforced sandbox, demonstrating 175.15ms unindexed recent() hold time (6.07x speedup with index) and 5.63s / 58.64 MiB verify() hold time and peak memory."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/gui_bursts.py:GuiBursts.covers:container-identity-binding-gap-across-restore",
+  "title": "GuiBursts.covers omits container identity check, allowing agent GUI tools to execute on restored containers under stale baselines and escape stray kill",
+  "description": "GuiBursts.covers (gui_bursts.py:68-71) checks only whether the sandbox ID exists in self._gui_burst without verifying that the burst's recorded container_id matches the sandbox's current container_id from sandboxes.get(sid). When an agent GUI input initiates a burst snapshot concurrently with an administrative restore_sandbox operation, restore_sandbox's end_desktop call runs before bursts.open creates the new burst entry. bursts.open records the pre-restore container C1, but sandboxes.restore then replaces the active container with C2. Because covers() checks only 'sid in self._gui_burst', the agent's GUI tool call executes on the restored container C2 under C1's baseline. When the burst subsequently closes, _finish detects the container mismatch, aborts change diffing, and logs gui_burst_close_failed without invoking _stop_strays, allowing any background processes spawned by the agent on C2 to persist unmonitored and join future burst baselines.",
+  "root_cause": "GuiBursts.covers (gui_bursts.py:68-71) only evaluates 'self.sandboxes.settings.gui_snapshot_interval <= 0 or sid in self._gui_burst' without binding the burst to the current container identity (self.sandboxes.get(sid)['container_id']), and restore_sandbox (service.py:573-581) does not call bursts.end() after replacing the container in sandboxes.restore().",
+  "intended_behavior": "GuiBursts.covers(sid) must verify that the recorded burst['container_id'] matches self.sandboxes.get(sid)['container_id']. If the container has changed, covers() must return False, causing _run_tool (service.py:148-152) to raise SandboxError and reject the execution. In addition, restore_sandbox() must call bursts.end(sid, 'sandbox_restored') after completing sandboxes.restore() to clear any bursts opened during the restore window.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/service.py",
+    "line": 306,
+    "scope": "AgentBox.call_tool",
+    "description": "Agent dispatches a GUI input tool call (e.g. click, type, key) on a desktop sandbox while an administrative restore_sandbox operation is in flight or pending."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 267,
+    "scope": "AgentBox._snapshot",
+    "description": "_snapshot closes any existing burst (line 266) and begins committing the current container C1. Concurrently, restore_sandbox (service.py:574-577) runs end_desktop (which finds _gui_burst empty and does not clear the upcoming burst) and enters sandboxes.restore to replace C1 with C2."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/gui_bursts.py",
+    "line": 76,
+    "scope": "GuiBursts.open",
+    "description": "_snapshot completes the commit of C1 and invokes bursts.open(sid, snap['id']). bursts.open records container_id C1 into self._gui_burst[sid] before sandboxes.restore completes updating the active container to C2 in the database."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 148,
+    "scope": "AgentBox._run_tool",
+    "description": "_run_tool executes under gui_lock and checks self.bursts.covers(sid). Because covers() only checks 'sid in self._gui_burst' and does not compare burst['container_id'] to sandboxes.get(sid)['container_id'], it returns True despite the active container now being C2."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/gui_bursts.py",
+    "line": 136,
+    "scope": "GuiBursts._finish",
+    "description": "The GUI tool executes on C2, allowing the agent to launch rogue background processes. When the burst closes, _finish checks replaced = self.sandboxes.get(sid)['container_id'] != burst.get('container_id'). Because C2 != C1, replaced is True, so _finish logs gui_burst_close_failed and returns immediately without running _stop_strays or diff_manifest. The agent's background processes survive on C2 and silently join the baseline of the next burst."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 71,
+    "description": "GuiBursts.covers checks only 'self.sandboxes.settings.gui_snapshot_interval <= 0 or sid in self._gui_burst', omitting any validation that burst['container_id'] matches the current sandbox container."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 148,
+    "description": "_run_tool relies exclusively on self.bursts.covers(sid) under gui_lock to guard GUI inputs against running outside a valid burst."
+   },
+   {
+    "file": "agentbox/gui_bursts.py",
+    "line": 136,
+    "description": "_finish skips _stop_strays and diff_manifest whenever replaced is True, leaving processes started on C2 alive when closed under C1's burst."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 578,
+    "description": "restore_sandbox calls bursts.reset_timers() after sandboxes.restore() but never calls bursts.end(), leaving any burst opened during restore active in self._gui_burst."
+   },
+   {
+    "file": "agents/parent-live/artifacts/gui_burst_restore_live.out",
+    "line": 1,
+    "description": "Real desktop container live test confirmed that after restore_sandbox replaces C1 with C2, bursts.covers(sid) returns True, and on burst close, rogue background process 'sleep 300' survived stray kill while gui_burst_close_failed was logged with '컨테이너가 바뀌어 비교하지 않음 (복원)'."
+   },
+   {
+    "file": "agents/v-gui-burst/artifacts/v.out",
+    "line": 1,
+    "description": "Deterministic test harness execution verified: GUI click executes on C2 under C1 burst baseline, zero processes killed on close, and rogue process 999 joins new baseline. Fix verification confirmed that checking container_id in covers() successfully rejects execution with SandboxError."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Agent token with authorization to call GUI input tool endpoints (click, type, key) on a sandbox with the desktop template."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "An agent GUI input tool call executing _snapshot races against restore_sandbox such that bursts.open runs after restore_sandbox's end_desktop call but before the active container update."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "An untrusted agent invokes GUI tool calls on its sandbox while the human administrator or control plane restores the sandbox from a snapshot.",
+   "payloads": [
+    "POST /sandboxes/sb1/tools/click with JSON body {\"x\": 5, \"y\": 5}"
+   ],
+   "instructions": [
+    "Run the sandbox test script scratch/verify.py using tools/sbx.py.",
+    "Thread t1 calls box.call_tool('sb1', 'click', {'x': 5, 'y': 5}), entering _snapshot on container C1.",
+    "Thread t2 calls box.restore_sandbox('sb1', 'snap_0'), executing end_desktop and entering sandboxes.restore.",
+    "Thread t1 completes snapshot commit and invokes bursts.open, recording C1 in _gui_burst['sb1'].",
+    "Thread t2 finishes restore, updating the database active container to C2.",
+    "Thread t1 calls _run_tool, where bursts.covers('sb1') evaluates to True because it checks only 'sid in _gui_burst'.",
+    "The click executes on container C2, spawning a background process (pid 999).",
+    "Upon burst closure (idle or next tool), _finish detects container replacement (C2 != C1), logs gui_burst_close_failed, and returns without killing rogue processes.",
+    "The subsequent burst baseline on C2 includes pid 999 as an authorized process."
+   ],
+   "observed_result": "Tool executed with status 200 on container C2 under a burst with container_id C1. bursts.covers('sb1') returned True. On burst closure, zero processes were killed, gui_burst_close_failed was logged with '컨테이너가 바뀌어 비교하지 않음 (복원)', and rogue process 999 successfully joined the baseline of the next burst on C2. Live container run confirmed stray process 'sleep 300' survived burst close on C2."
+  },
+  "remediation": {
+   "strategy": "Modify GuiBursts.covers(sid) to verify that burst.get('container_id') == self.sandboxes.get(sid)['container_id']. If the container ID does not match, return False so _run_tool rejects the execution with SandboxError. In addition, call self.bursts.end(sid, 'sandbox_restored') in restore_sandbox() after sandboxes.restore() completes.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/gui_bursts.py",
+     "fixed_code": "    def covers(self, sid: str) -> bool:\n        \"\"\"지금 GUI 입력을 실행해도 열린 구간이 그 변경을 받는지. gui_lock을 잡은 채로 부른다.\n        스냅샷 판단은 잠금 전에 하므로, 잠금을 기다리는 사이 인수·반환으로 구간이 닫히면 여기서 걸러진다.\"\"\"\n        if self.sandboxes.settings.gui_snapshot_interval <= 0:\n            return True\n        burst = self._gui_burst.get(sid)\n        if not burst:\n            return False\n        try:\n            return burst.get(\"container_id\") == self.sandboxes.get(sid)[\"container_id\"]\n        except Exception:\n            return False\n"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "medium",
+    "reason": "Occurs whenever an agent is issuing GUI tools during an administrative restore operation, which is standard procedure when recovering a compromised desktop sandbox."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Defeats the GUI stray process kill policy and audit change recording on the restored container, allowing untrusted agent-spawned background processes to survive restore and enter future baselines without audit detection."
+   },
+   "overall_severity": "medium"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Source review confirmed the missing container comparison in covers(), parent-live demonstrated stray process survival on a real desktop container, and independent local sandboxed reproduction confirmed the vulnerability and fix."
+  }
+ },
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+  "title": "Unbounded buffering and missing container-side timeouts in list_dir, outbox_list, and preview glob expand",
+  "description": "Four control-plane readers take container-produced output through non-streaming c.exec_run without streaming byte caps or container-side timeouts: SandboxManager.list_dir (sandbox.py:442) runs ls -la with no container-side timeout or byte cap, where _truncate (sandbox.py:446) reduces the string only after the entire output is buffered in control-plane RAM; SandboxManager.outbox_list (sandbox.py:548) runs find -printf with no _timed wrapper or head cap, passing raw output to _parse_outbox (sandbox.py:116) which instantiates unbounded lists of dicts (demonstrating an 11-12x memory retention amplification); SandboxManager._expand (sandbox.py:578) runs a container glob loop with a 10s timeout (_PREVIEW_TIMEOUT) but no head -z cap (unlike _walk at sandbox.py:586 which caps output with head -z -n \"$2\"), buffering all matched filenames into Python strings; and DesktopTools.screenshot (sandbox_desktop.py:114) cats the entire PNG into memory before checking the PNG magic. In contrast, exec (sandbox.py:427) streams output through _Head (capping memory to 64 KiB) and uses _timed(kill_after=5), read_file and outbox_read (sandbox.py:454, 557) enforce head -c and _timed(_READ_TIMEOUT), and workspace_manifest (sandbox.py:384) enforces head -c and _timed(_MANIFEST_TIMEOUT). Parent-live execution on a real Docker container confirmed that exec_run buffers an entire 2 MiB stream in memory before _truncate, whereas exec_start with _Head keeps only 65,537 bytes. However, demonstrating full control-plane memory exhaustion (OOM kill) or threadpool starvation requires large-scale real container execution and depends on deployment topology.",
+  "claimed_root_cause": "Container output consumption disciplines were applied inconsistently across SandboxManager and DesktopTools readers: exec uses _Head streaming (_OUT_LIMIT=64 KiB) with _timed(t, kill_after=5); read_file and outbox_read use head -c with _timed(_READ_TIMEOUT); workspace_manifest uses head -c with _timed(_MANIFEST_TIMEOUT); and preview _walk uses head -z with _timed(_PREVIEW_TIMEOUT). However, list_dir and outbox_list use plain c.exec_run without _timed timeouts or stream-limiting byte caps, buffering arbitrary output in control-plane memory before post-read truncation. Furthermore, preview _expand uses _timed(_PREVIEW_TIMEOUT) but omits a head -z record cap, decoding unbounded container paths into Python strings, and screenshot cats full images into control-plane RAM before verifying PNG magic.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 306,
+    "scope": "call_tool (POST /sandboxes/{sid}/tools/{tool})",
+    "description": "Agent token invokes list_dir or triggers approval preview via exec on an agent-populated directory (or human calls GET /sandboxes/{sid}/outbox at api.py:385)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 293,
+    "scope": "AgentBox.call_tool",
+    "description": "Routes tool request on the shared tool_pool thread without request-level byte or memory limits."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 136,
+    "scope": "AgentBox._run_tool",
+    "description": "Dispatches list_dir to SandboxManager.list_dir (or _preview to preview_command at service.py:354)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 442,
+    "scope": "SandboxManager.list_dir",
+    "description": "Invokes c.exec_run([\"ls\", \"-la\", \"--\", p], demux=True) with no container-side _timed wrapper and no stream byte cap, buffering all container output in control-plane memory before _truncate at line 446."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 116,
+    "scope": "_parse_outbox",
+    "description": "In outbox listings (sandbox.py:548), parses uncurbed find output into lists of Python dicts with ~11-12x memory amplification, risking memory exhaustion in the control-plane container."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 427,
+    "description": "exec streams output into _Head with _OUT_LIMIT cap (64 KiB) and _timed(t, kill_after=5) at line 425."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 442,
+    "description": "list_dir runs c.exec_run([\"ls\", \"-la\", \"--\", p]) with no _timed timeout and no byte cap, before _truncate runs on line 446."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 454,
+    "description": "read_file enforces head -c limit+1 and _timed(_READ_TIMEOUT) at line 455."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 382,
+    "description": "workspace_manifest enforces head -c _MANIFEST_CAP and _timed(_MANIFEST_TIMEOUT)."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 548,
+    "description": "outbox_list runs c.exec_run with find -printf without _timed or head byte caps before calling _parse_outbox."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 557,
+    "description": "outbox_read enforces head -c limit+1 and _timed(_READ_TIMEOUT) at line 559."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 578,
+    "description": "_expand runs container glob without head -z or output limit, unlike _walk which uses head -z at line 586."
+   },
+   {
+    "file": "agentbox/sandbox_desktop.py",
+    "line": 114,
+    "description": "screenshot cats full image file without streaming byte cap before PNG magic check at line 117."
+   },
+   {
+    "file": "agents/parent-live/artifacts/readers_live.out",
+    "line": 3,
+    "description": "Parent-live test on disposable container confirmed exec_run(demux=True) buffers full 2 MiB stream in docker-py, while exec_start with _Head caps retained buffer to 65537 bytes."
+   },
+   {
+    "file": "agents/v-readers/artifacts/v.out",
+    "line": 1,
+    "description": "Subagent verification test demonstrated _Head caps memory to 64 KiB, _parse_outbox retains 30,000 dicts with 11.1x memory amplification, and preview _expand buffers 20,000 match strings without caps."
+   }
+  ],
+  "blockers": [
+   "Demonstrating full control-plane memory exhaustion (OOM kill) or worker threadpool starvation under large-scale container output requires running against a live Docker daemon with a real container, which is excluded from the subagent sandbox environment.",
+   "Whether peak memory from large listings causes fatal service failure depends on deployment configuration and host topology: compose sets mem_limit: 2g, AGENTBOX_DISK is unset by default (allowing unconstrained container filesystem growth up to host disk limits), and host cgroup behavior is environment-specific."
+  ],
+  "validation_plan": {
+   "local": "On a host running Docker with AGENTBOX_DISK=2g: (1) create a sandbox container, (2) populate /workspace/outbox with 200,000 files using a fast shell loop, (3) record VmHWM from /proc/<pid>/status of the control-plane process, call GET /sandboxes/{sid}/outbox and POST /sandboxes/{sid}/tools/list_dir with path /workspace/outbox, (4) record VmHWM again to measure memory retention from unbuffered exec_run and _parse_outbox, comparing with capped exec (ls -la /workspace); (5) test replacing outbox with a FIFO or slow character pipe to observe whether tool_pool and HTTP worker threads hang.",
+   "deployment": "Deploy agentbox with docker compose (mem_limit: 2g). Generate directories with hundreds of thousands of files across several sandboxes, trigger simultaneous list_dir and outbox listings, and observe container RSS, cgroup memory limits, and whether OOM kills terminate the control plane or in-flight approval workflows."
+  }
+ },
+ {
+  "verdict": "confirmed",
+  "fingerprint": "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets",
+  "title": "Approval impact preview misreports rm targets under brace and tilde expansion as nonexistent",
+  "description": "The human approval preview card computes file impact by tokenizing the command with shlex and passing operands to container callbacks (_expand and _walk). In sandbox.py:_expand, the pattern is evaluated in container /bin/sh (dash), where positional parameter evaluation does not undergo brace expansion (e.g. {a,b}.txt) or tilde expansion (~/file). When _expand tests existence via [ -e \"$p\" ], no file literally named \"{a,b}.txt\" or \"/workspace/~/file\" exists, returning an empty match list. preview_command (preview.py:110-111) maps this to {'path': op, 'effect': '삭제 시도 (현재 존재하지 않음)'} and appends no warning note. When the human approves the action believing the target does not exist, sandbox.py:425 executes the command via /bin/bash, which performs full brace and tilde expansion and deletes the real files.",
+  "root_cause": "The preview command parsing and container path expansion logic diverges from the execution shell. preview_command in preview.py tokenizes commands with POSIX shlex and delegates expansion to _expand, which invokes /bin/sh (dash) with positional argument $1. POSIX dash does not support brace expansion and does not expand tildes within variable expansions, returning empty matches for {a,b} and ~ operands. Furthermore, preview.py:88 warns only on $, `, <(, and eval, failing to flag brace or tilde characters. The system erroneously asserts that targets do not exist rather than warning that shell expansion could not be calculated.",
+  "intended_behavior": "Approval impact preview should either execute expansion using the same shell (bash) and environment as execution, or detect shell-specific expansion constructs such as { and ~ and add an explicit warning note (notes) that the exact affected files could not be computed automatically, prompting the operator to inspect the raw command before approval.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/api.py",
+    "line": 305,
+    "scope": "call_tool route (POST /sandboxes/{sid}/tools/{tool})",
+    "description": "Agent submits an exec tool request with rm command using brace or tilde expansion under its own sandbox token."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 354,
+    "scope": "AgentBox._call_tool",
+    "description": "Policy routes destructive command to require_approval and invokes _preview."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 595,
+    "scope": "SandboxManager.preview",
+    "description": "Delegates to preview_command with container callbacks _expand and _walk."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/preview.py",
+    "line": 109,
+    "scope": "preview_command",
+    "description": "Iterates over rm operands and invokes expand(op) for brace/tilde pattern."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 578,
+    "scope": "SandboxManager._expand",
+    "description": "Runs /bin/sh (dash) script where $1 does not undergo brace or tilde expansion, returning empty match list."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/preview.py",
+    "line": 111,
+    "scope": "preview_command",
+    "description": "Appends '삭제 시도 (현재 존재하지 않음)' to affected list; line 88 checks only $, `, <(, and eval, so notes remains empty."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/templates/_approvals.html",
+    "line": 14,
+    "scope": "_approvals.html template",
+    "description": "Operator sees approval card listing target as '현재 존재하지 않음' with no warning note and no del deletion styling."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 425,
+    "scope": "SandboxManager.exec",
+    "description": "Upon human approval, command executes via /bin/bash where brace and tilde expansions occur, deleting the existing files."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/preview.py",
+    "line": 111,
+    "description": "preview_command maps empty expand(op) result to '삭제 시도 (현재 존재하지 않음)' without warning notes because line 88 does not check for { or ~."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 578,
+    "description": "_expand executes via /bin/sh (dash) where positional parameter $1 does not perform brace or tilde expansion before [ -e \"$p\" ]."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 425,
+    "description": "exec executes commands via /bin/bash where brace and tilde expansions are evaluated prior to execution."
+   },
+   {
+    "file": "agents/v-preview/artifacts/v.out",
+    "line": 1,
+    "description": "Independent verification in sandbox confirming that preview_command returns '삭제 시도 (현재 존재하지 않음)' with notes=[] for 'rm {a,b}.txt' and 'rm ~/test_tilde.txt', while bash execution deletes both files."
+   },
+   {
+    "file": "agents/parent-live/artifacts/preview_brace_tilde_live.out",
+    "line": 1,
+    "description": "Parent live test on running Docker sandbox confirming preview returns nonexistent status and empty notes for {a,b}.txt and ~/tilde_target.txt, while SandboxManager.exec deletes all three targets."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "A valid agent token for the sandbox (assumed prompt-injected) capable of submitting exec tool requests."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "Human operator approves the pending exec request relying on the inaccurate system-computed impact card showing nonexistent targets."
+   },
+   {
+    "kind": "data_state",
+    "description": "Target files exist in /workspace (e.g. a.txt, b.txt) or agent home directory, and command specifies them using shell brace expansion or tilde expansion."
+   },
+   {
+    "kind": "system_configuration",
+    "description": "Default policy routes exec commands containing rm to require_approval."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "Prompt-injected agent submits exec tool call POST /sandboxes/{sid}/tools/exec with command 'rm {a,b}.txt' or 'rm ~/target.txt' where target files exist in /workspace or home directory.",
+   "payloads": [
+    "rm {a,b}.txt",
+    "rm ~/test_tilde.txt"
+   ],
+   "instructions": [
+    "Create existing files 'a.txt' and 'b.txt' in /workspace.",
+    "Run preview_command('rm {a,b}.txt', 200, expand, walk) with container _expand callback.",
+    "Observe affected table: [{'path': '{a,b}.txt', 'effect': '삭제 시도 (현재 존재하지 않음)'}] with notes: [].",
+    "Execute command via /bin/bash as done in SandboxManager.exec and observe that 'a.txt' and 'b.txt' are deleted."
+   ],
+   "observed_result": "Preview reported affected: [{'path': '{a,b}.txt', 'effect': '삭제 시도 (현재 존재하지 않음)'}] with notes: []. Bash execution deleted both a.txt and b.txt, confirming the approval preview misreports real deletion targets as nonexistent without any warning."
+  },
+  "remediation": {
+   "strategy": "In preview.py:88, include '{' and '~' in the check for shell substitution/expansion constructs, and warn the operator that shell-specific expansion cannot be automatically calculated so the command text must be inspected manually before approval.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/preview.py",
+     "fixed_code": "    if any(s in command for s in (\"$\", \"`\", \"<(\", \"eval \", \"{\", \"~\")):\n        notes.append(\"변수·명령 치환이나 중괄호·틸드 확장이 있어 실제로 무엇이 실행될지 자동 계산이 정확하지 않을 수 있음. 명령 원문을 확인할 것.\")"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Requires prompt-injected agent to use brace or tilde expansion in destructive rm command and human operator to rely on the nonexistent status in the impact preview card without checking the raw command."
+   },
+   "impact": {
+    "score": "low",
+    "reason": "Action-binding defect where human approval is solicited under the false impression of an apparent no-op; impact is bounded to files in the agent's own sandbox /workspace, and decide() takes a pre-execution snapshot."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "Reproduced and verified locally in the approved sandbox against the audited codebase, matching live container execution observations from parent-live."
+  }
+ },
+ {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/service.py:disk_low-unmonitored-docker-data-root",
+  "title": "disk_low measures SQLite db_path.parent rather than Docker daemon storage root allowing complete host disk exhaustion",
+  "description": "AgentBox.disk_low checks free disk space strictly via shutil.disk_usage(self.settings.db_path.parent). In deployments where the agentbox database volume (AGENTBOX_HOME) and Docker's data root (/var/lib/docker) reside on separate filesystems, container layer growth and docker commit snapshot images (up to 50 per sandbox) consume Docker storage without decreasing free space on db_path.parent. The 507 guard never trips, allowing agents to exhaust host Docker disk, cause daemon failures, and prevent administrative log_human operations which fail closed with 503.",
+  "claimed_root_cause": "The disk guard in AgentBox.disk_low (service.py:421-437) assumes all disk growth occurs on the filesystem containing db_path.parent. However, Docker container writable layers and commit images (sandbox.py:356-370) grow inside Docker's data root (e.g. /var/lib/docker). In deploy/docker-compose.yml, AGENTBOX_HOME (/var/lib/agentbox) is a separate bind mount. When db_path.parent and Docker data root are on distinct partitions, or when an admitted exec runs dd/fallocate for up to exec_timeout (since AGENTBOX_DISK is empty by default so containers have no storage_opt size quota), host Docker storage can be completely filled without triggering disk_low.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/service.py",
+    "line": 296,
+    "scope": "AgentBox.call_tool",
+    "description": "Agent calls an admitted tool (e.g. exec writing large files to /workspace, or write_file triggering snapshot)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 428,
+    "scope": "AgentBox.disk_low",
+    "description": "disk_low evaluates shutil.disk_usage(s.db_path.parent).free against s.min_free_bytes; because Docker storage is on a separate filesystem, db_path.parent free space remains high and disk_low returns False."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/sandbox.py",
+    "line": 361,
+    "scope": "SandboxManager.snapshot",
+    "description": "c.commit commits container writable layer into a new Docker image in Docker data root, accumulating up to snapshot_quota (50) images per sandbox."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 269,
+    "scope": "SandboxManager._run_container",
+    "description": "Container has no storage_opt disk quota (disk_limit is empty by default), allowing unrestricted accumulation of data in Docker's storage root until the host filesystem is exhausted."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 428,
+    "description": "disk_low measures shutil.disk_usage(s.db_path.parent).free exclusively."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 42,
+    "description": "disk_limit defaults to empty string, disabling container storage_opt size limits."
+   },
+   {
+    "file": "agentbox/config.py",
+    "line": 46,
+    "description": "snapshot_quota defaults to 50 snapshots per sandbox without aggregate disk quota."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 361,
+    "description": "snapshot calls c.commit(), creating full container layer image copies in Docker root."
+   },
+   {
+    "file": "deploy/docker-compose.yml",
+    "line": 31,
+    "description": "AGENTBOX_HOME is mounted to /var/lib/agentbox separately from Docker host root."
+   },
+   {
+    "file": "agents/v-disk-low/artifacts/v.out",
+    "line": 1,
+    "description": "Sandboxed verification reproducing that AgentBox.disk_low strictly measures shutil.disk_usage(s.db_path.parent), and returns False when Docker data-root is simulated as exhausted while db_path.parent has available space."
+   },
+   {
+    "file": "agents/parent-live/artifacts/disk_low_live.out",
+    "line": 1,
+    "description": "Live disposable sandbox verification confirming DockerRootDir=/var/lib/docker with settings.disk_limit='' while disk_low samples only settings.home and settings.db_path.parent."
+   }
+  ],
+  "blockers": [
+   "Simulating separate filesystem mounts for AGENTBOX_HOME and Docker root (/var/lib/docker) along with live docker commit image accumulation requires access to a host Docker daemon and multiple mount points, which is unavailable in the isolated sandbox.",
+   "Exhausting host Docker disk on live test infrastructure is destructive and forbidden under audit execution boundaries; confirming complete host exhaustion requires an operator-owned multi-volume test deployment."
+  ],
+  "validation_plan": {
+   "local": "On a dedicated non-production host running Docker with AGENTBOX_HOME on a loopback mount or separate partition from /var/lib/docker: (1) configure min_free_bytes=256MB, (2) run an agent script that creates files in /workspace and triggers snapshots up to snapshot_quota, (3) verify that disk_low continues returning False while Docker data root disk usage increases until /var/lib/docker is exhausted.",
+   "deployment": "Check host partition layout in production deployments to verify whether /var/lib/docker and AGENTBOX_HOME are on separate volumes, and monitor Docker daemon root volume free space independently of the application database volume."
+  }
+ }
+]

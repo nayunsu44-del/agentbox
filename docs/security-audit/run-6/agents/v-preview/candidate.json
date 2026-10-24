@@ -1,0 +1,124 @@
+{
+ "proposed_verdict": "confirmed",
+ "fingerprint": "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets",
+ "title": "Approval impact preview misreports rm targets under brace and tilde expansion as nonexistent",
+ "description": "The human approval preview card computes file impact by tokenizing the command with shlex and passing operands to container callbacks (_expand and _walk). In sandbox.py:_expand, the pattern is evaluated in container /bin/sh (dash), where brace expansion (e.g. {a,b}.txt, {1..100}) and positional parameter tilde expansion (~/file) are not performed. When _expand tests existence via [ -e \"$p\" ], no file literally named \"{a,b}.txt\" or \"/workspace/~/file\" exists, returning an empty match list. preview_command (preview.py:110-111) maps this to {'path': op, 'effect': '삭제 시도 (현재 존재하지 않음)'} and appends no warning note. When the human approves the action believing the target does not exist, sandbox.py:425 executes the command via /bin/bash, which performs full brace and tilde expansion and deletes the real files.",
+ "root_cause": "The preview command parsing and container path expansion logic diverges from the execution shell. preview_command in preview.py tokenizes commands with POSIX shlex and delegates expansion to _expand, which invokes /bin/sh (dash) with positional argument $1. POSIX dash does not support brace expansion and does not expand tildes within variable expansions, returning empty matches for {a,b} and ~ operands. Furthermore, preview.py:88 warns only on $, `, <, and eval, failing to flag brace or tilde characters. The system erroneously asserts that targets do not exist rather than warning that shell expansion could not be calculated.",
+ "intended_behavior": "Approval impact preview should either execute expansion using the same shell (bash) and environment as execution, or detect shell-specific expansion constructs such as { and ~ and add an explicit warning note (notes) that the exact affected files could not be computed automatically, prompting the operator to inspect the raw command before approval.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/service.py",
+   "line": 318,
+   "scope": "AgentBox._call_tool",
+   "description": "Agent submits an exec tool request with rm command using brace or tilde expansion."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 354,
+   "scope": "AgentBox._call_tool",
+   "description": "Policy routes destructive command to require_approval and invokes _preview."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 595,
+   "scope": "SandboxManager.preview",
+   "description": "Delegates to preview_command with container _expand and _walk callbacks."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/preview.py",
+   "line": 109,
+   "scope": "preview_command",
+   "description": "Loops over rm operands and calls expand(op) for brace/tilde pattern."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 578,
+   "scope": "SandboxManager._expand",
+   "description": "Runs /bin/sh (dash) script where $1 does not expand braces or tildes, returning empty list."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/preview.py",
+   "line": 111,
+   "scope": "preview_command",
+   "description": "Appends '삭제 시도 (현재 존재하지 않음)' to affected list with no warning note."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/templates/_approvals.html",
+   "line": 14,
+   "scope": "approvals.html template",
+   "description": "Operator is presented with an approval card stating target does not exist, and upon approval bash deletes real files."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/preview.py",
+   "line": 111,
+   "description": "preview_command maps empty expand(op) result to '삭제 시도 (현재 존재하지 않음)' without warning note."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 578,
+   "description": "_expand executes via /bin/sh (dash) script where positional $1 lacks brace and tilde expansion."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 425,
+   "description": "exec runs under /bin/bash where brace and tilde expansions take place upon execution."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authorization_role",
+   "description": "Agent must have token to call tools on its sandbox."
+  },
+  {
+   "kind": "user_interaction",
+   "description": "Human operator must approve the pending exec request based on the inaccurate impact card."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "Agent issues exec tool call: POST /sandboxes/{sid}/tools/exec with command 'rm {a,b}.txt' where 'a.txt' and 'b.txt' exist in /workspace.",
+  "payloads": [
+   "rm {a,b}.txt",
+   "rm ~/test_agentbox_audit_tilde.txt"
+  ],
+  "instructions": [
+   "Create files 'a.txt' and 'b.txt' in /workspace.",
+   "Run preview_command('rm {a,b}.txt', 200, expand, walk) using container _expand.",
+   "Observe that preview card lists 'affected': [{'path': '{a,b}.txt', 'effect': '삭제 시도 (현재 존재하지 않음)'}] and empty 'notes'.",
+   "Execute 'bash -c \"umask 002\\nrm {a,b}.txt\"' as in sandbox.py:425 and observe that 'a.txt' and 'b.txt' are deleted."
+  ],
+  "observed_result": "Preview reported affected: [{'path': '{a,b}.txt', 'effect': '삭제 시도 (현재 존재하지 않음)'}], notes: []. Bash execution deleted both a.txt and b.txt, leaving remaining files: []."
+ },
+ "remediation": {
+  "strategy": "In preview.py:88, include '{' and '~' in the check for shell substitution/expansion constructs, or update _expand to use bash with nullglob or flag unexpanded braces so that notes warns the operator that file impact could not be automatically calculated.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/preview.py",
+    "fixed_code": "    if any(s in command for s in (\"$\", \"`\", \"<(\", \"eval \", \"{\", \"~\")):\n        notes.append(\"변수·명령 치환이나 중괄호·틸드 확장이 있어 실제로 무엇이 실행될지 자동 계산이 정확하지 않을 수 있음. 명령 원문을 확인할 것.\")"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "low",
+   "reason": "Requires prompt-injected agent to use brace or tilde expansion in rm command and human operator to rely on nonexistent status on card."
+  },
+  "impact": {
+   "score": "low",
+   "reason": "Action-binding card misreports existence of target files to the human operator before destructive deletion."
+  },
+  "overall_severity": "low"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "Demonstrated through exact sandboxed reproduction matching container shell and preview implementation."
+ }
+}

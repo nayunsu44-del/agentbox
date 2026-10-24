@@ -1,0 +1,8 @@
+=== parent-live: disk_low vs Docker data-root check on disposable sandbox ===
+settings.disk_limit='' (storage_opt applied=False)
+DockerRootDir=/var/lib/docker
+GraphDriver= has_UpperDir under DockerRootDir=False
+container df -T /workspace:
+Filesystem     Type     1K-blocks    Used Available Use% Mounted on
+overlay        overlay 1055762868 4265968 997793428   1% /
+AgentBox.disk_low checks only settings.home and settings.db_path.parent (free_bytes_sampled=1021740470272 > min_free_bytes=268435456)

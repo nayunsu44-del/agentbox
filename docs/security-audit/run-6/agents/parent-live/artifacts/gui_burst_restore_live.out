@@ -1,0 +1,6 @@
+=== parent-live: GuiBursts.covers container identity binding across restore on live desktop container ===
+opened_on_c1=True c1_ equals_c2=False
+after sb.restore() + bursts.reset_timers(sid): bursts.covers(sid)=True
+stray 'sleep 300' on C2 before bursts.close(): count=1
+stray 'sleep 300' on C2 after bursts.close(): count=1 (survived _stop_strays=True)
+logged_events=[["gui_burst_close_failed", {"snapshot_id": "snap_b26a9c8f", "reason": "idle", "error": "컨테이너가 바뀌어 비교하지 않음 (복원)"}]]

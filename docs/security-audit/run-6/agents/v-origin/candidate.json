@@ -1,0 +1,62 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+ "title": "Scheme-blind Origin netloc comparison allows cross-scheme CSRF against cookie-authenticated routes",
+ "description": "same_origin compares only the netloc of the Origin header with the Host header and accepts missing Origin headers. When agentbox is deployed behind a TLS-terminating reverse proxy (such as Caddy) without HSTS, or on a host with co-located HTTP services, requests originating from an insecure http:// scheme on the same host match the netloc check and can perform state-changing operations (such as session termination via /logout or approval decisions via /ui/approvals) using the browser's session cookie.",
+ "claimed_root_cause": "agentbox/api.py:221-223: same_origin() returns True when urlsplit(origin).netloc == headers.get('host') or when Origin is absent. The closure receives only headers and does not verify whether the Origin scheme matches the request scheme (e.g., https). deploy/Caddyfile:1-17 does not set Strict-Transport-Security, so plain-HTTP contexts on the same host are not upgraded to HTTPS by the browser.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/web.py",
+   "line": 169,
+   "scope": "logout",
+   "description": "Browser submits a cross-scheme POST /logout (or other state-changing browser route like /ui/approvals/{aid}/approve) from an http:// origin on the same host."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/api.py",
+   "line": 221,
+   "scope": "same_origin",
+   "description": "same_origin() extracts the Origin header, parses netloc with urlsplit, and compares it to Host, ignoring the http vs https scheme mismatch."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/desktop.py",
+   "line": 60,
+   "scope": "set_cookie",
+   "description": "Session cookie is configured with SameSite=Strict and Secure, leaving protection against cross-scheme requests dependent on browser-level Schemeful Same-Site enforcement."
+  },
+  {
+   "kind": "sink",
+   "file": "deploy/Caddyfile",
+   "line": 16,
+   "scope": "reverse_proxy",
+   "description": "Reverse proxy config lacks Strict-Transport-Security (HSTS), allowing insecure plaintext HTTP access on the same host to persist."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/api.py",
+   "line": 223,
+   "description": "same_origin() evaluates 'not origin or urlsplit(origin).netloc == headers.get(\"host\")'. Scheme is not compared, and absent Origin evaluates to True."
+  },
+  {
+   "file": "agentbox/api.py",
+   "line": 235,
+   "description": "screen_principal() validates incoming browser requests using same_origin(request.headers), allowing downgraded-scheme requests to authenticate."
+  },
+  {
+   "file": "deploy/Caddyfile",
+   "line": 16,
+   "description": "Caddy reverse proxy passes requests without injecting Strict-Transport-Security headers, allowing plaintext HTTP on the same host."
+  }
+ ],
+ "blockers": [
+  "Live browser verification is required to determine whether real-world Chromium, Firefox, and Safari browsers enforce Schemeful Same-Site policy strictly enough to suppress 'SameSite=Strict; Secure' cookies on cross-scheme (http:// to https://) requests against the same domain or localhost.",
+  "Verification on a live Docker deployment with Caddy reverse proxy to confirm whether port 80 HTTP traffic can trigger session termination (/logout) or administrative actions (/ui/approvals) via cross-scheme forgery in the absence of HSTS."
+ ],
+ "validation_plan": {
+  "local": "Start agentbox locally behind an HTTPS proxy using dummy session cookies. Using a browser (Chromium and Firefox), load a page served from http://localhost and trigger a fetch/form POST to https://localhost/logout and https://localhost/ui/approvals/{aid}/approve. Observe whether the browser attaches the agentbox_session cookie and whether the server processes the request with status 303/200.",
+  "deployment": "Deploy the official stack via deploy/docker-compose.yml with Caddy. Authenticate an administrative browser session over HTTPS. Navigate to an insecure HTTP site on the same host/domain and attempt a cross-scheme POST to /logout or an approval endpoint. Observe whether the session is terminated or the approval processed without origin rejection."
+ }
+}

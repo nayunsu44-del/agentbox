@@ -1,0 +1,129 @@
+{
+ "verdict": "confirmed",
+ "fingerprint": "agentbox/gui_bursts.py:GuiBursts.covers:container-identity-binding-gap-across-restore",
+ "title": "GuiBursts.covers omits container identity check, allowing agent GUI tools to execute on restored containers under stale baselines and escape stray kill",
+ "description": "GuiBursts.covers (gui_bursts.py:68-71) checks only whether the sandbox ID exists in self._gui_burst without verifying that the burst's recorded container_id matches the sandbox's current container_id from sandboxes.get(sid). When an agent GUI input initiates a burst snapshot concurrently with an administrative restore_sandbox operation, restore_sandbox's end_desktop call runs before bursts.open creates the new burst entry. bursts.open records the pre-restore container C1, but sandboxes.restore then replaces the active container with C2. Because covers() checks only 'sid in self._gui_burst', the agent's GUI tool call executes on the restored container C2 under C1's baseline. When the burst subsequently closes, _finish detects the container mismatch, aborts change diffing, and logs gui_burst_close_failed without invoking _stop_strays, allowing any background processes spawned by the agent on C2 to persist unmonitored and join future burst baselines.",
+ "root_cause": "GuiBursts.covers (gui_bursts.py:68-71) only evaluates 'self.sandboxes.settings.gui_snapshot_interval <= 0 or sid in self._gui_burst' without binding the burst to the current container identity (self.sandboxes.get(sid)['container_id']), and restore_sandbox (service.py:573-581) does not call bursts.end() after replacing the container in sandboxes.restore().",
+ "intended_behavior": "GuiBursts.covers(sid) must verify that the recorded burst['container_id'] matches self.sandboxes.get(sid)['container_id']. If the container has changed, covers() must return False, causing _run_tool (service.py:148-152) to raise SandboxError and reject the execution. In addition, restore_sandbox() must call bursts.end(sid, 'sandbox_restored') after completing sandboxes.restore() to clear any bursts opened during the restore window.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/service.py",
+   "line": 306,
+   "scope": "AgentBox.call_tool",
+   "description": "Agent dispatches a GUI input tool call (e.g. click, type, key) on a desktop sandbox while an administrative restore_sandbox operation is in flight or pending."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 267,
+   "scope": "AgentBox._snapshot",
+   "description": "_snapshot closes any existing burst (line 266) and begins committing the current container C1. Concurrently, restore_sandbox (service.py:574-577) runs end_desktop (which finds _gui_burst empty and does not clear the upcoming burst) and enters sandboxes.restore to replace C1 with C2."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/gui_bursts.py",
+   "line": 76,
+   "scope": "GuiBursts.open",
+   "description": "_snapshot completes the commit of C1 and invokes bursts.open(sid, snap['id']). bursts.open records container_id C1 into self._gui_burst[sid] before sandboxes.restore completes updating the active container to C2 in the database."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 148,
+   "scope": "AgentBox._run_tool",
+   "description": "_run_tool executes under gui_lock and checks self.bursts.covers(sid). Because covers() only checks 'sid in self._gui_burst' and does not compare burst['container_id'] to sandboxes.get(sid)['container_id'], it returns True despite the active container now being C2."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/gui_bursts.py",
+   "line": 136,
+   "scope": "GuiBursts._finish",
+   "description": "The GUI tool executes on C2, allowing the agent to launch rogue background processes. When the burst closes, _finish checks replaced = self.sandboxes.get(sid)['container_id'] != burst.get('container_id'). Because C2 != C1, replaced is True, so _finish logs gui_burst_close_failed and returns immediately without running _stop_strays or diff_manifest. The agent's background processes survive on C2 and silently join the baseline of the next burst."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/gui_bursts.py",
+   "line": 71,
+   "description": "GuiBursts.covers checks only 'self.sandboxes.settings.gui_snapshot_interval <= 0 or sid in self._gui_burst', omitting any validation that burst['container_id'] matches the current sandbox container."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 148,
+   "description": "_run_tool relies exclusively on self.bursts.covers(sid) under gui_lock to guard GUI inputs against running outside a valid burst."
+  },
+  {
+   "file": "agentbox/gui_bursts.py",
+   "line": 136,
+   "description": "_finish skips _stop_strays and diff_manifest whenever replaced is True, leaving processes started on C2 alive when closed under C1's burst."
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 578,
+   "description": "restore_sandbox calls bursts.reset_timers() after sandboxes.restore() but never calls bursts.end(), leaving any burst opened during restore active in self._gui_burst."
+  },
+  {
+   "file": "agents/parent-live/artifacts/gui_burst_restore_live.out",
+   "line": 1,
+   "description": "Real desktop container live test confirmed that after restore_sandbox replaces C1 with C2, bursts.covers(sid) returns True, and on burst close, rogue background process 'sleep 300' survived stray kill while gui_burst_close_failed was logged with '컨테이너가 바뀌어 비교하지 않음 (복원)'."
+  },
+  {
+   "file": "agents/v-gui-burst/artifacts/v.out",
+   "line": 1,
+   "description": "Deterministic test harness execution verified: GUI click executes on C2 under C1 burst baseline, zero processes killed on close, and rogue process 999 joins new baseline. Fix verification confirmed that checking container_id in covers() successfully rejects execution with SandboxError."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "Agent token with authorization to call GUI input tool endpoints (click, type, key) on a sandbox with the desktop template."
+  },
+  {
+   "kind": "timing_dependency",
+   "description": "An agent GUI input tool call executing _snapshot races against restore_sandbox such that bursts.open runs after restore_sandbox's end_desktop call but before the active container update."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "An untrusted agent invokes GUI tool calls on its sandbox while the human administrator or control plane restores the sandbox from a snapshot.",
+  "payloads": [
+   "POST /sandboxes/sb1/tools/click with JSON body {\"x\": 5, \"y\": 5}"
+  ],
+  "instructions": [
+   "Run the sandbox test script scratch/verify.py using tools/sbx.py.",
+   "Thread t1 calls box.call_tool('sb1', 'click', {'x': 5, 'y': 5}), entering _snapshot on container C1.",
+   "Thread t2 calls box.restore_sandbox('sb1', 'snap_0'), executing end_desktop and entering sandboxes.restore.",
+   "Thread t1 completes snapshot commit and invokes bursts.open, recording C1 in _gui_burst['sb1'].",
+   "Thread t2 finishes restore, updating the database active container to C2.",
+   "Thread t1 calls _run_tool, where bursts.covers('sb1') evaluates to True because it checks only 'sid in _gui_burst'.",
+   "The click executes on container C2, spawning a background process (pid 999).",
+   "Upon burst closure (idle or next tool), _finish detects container replacement (C2 != C1), logs gui_burst_close_failed, and returns without killing rogue processes.",
+   "The subsequent burst baseline on C2 includes pid 999 as an authorized process."
+  ],
+  "observed_result": "Tool executed with status 200 on container C2 under a burst with container_id C1. bursts.covers('sb1') returned True. On burst closure, zero processes were killed, gui_burst_close_failed was logged with '컨테이너가 바뀌어 비교하지 않음 (복원)', and rogue process 999 successfully joined the baseline of the next burst on C2. Live container run confirmed stray process 'sleep 300' survived burst close on C2."
+ },
+ "remediation": {
+  "strategy": "Modify GuiBursts.covers(sid) to verify that burst.get('container_id') == self.sandboxes.get(sid)['container_id']. If the container ID does not match, return False so _run_tool rejects the execution with SandboxError. In addition, call self.bursts.end(sid, 'sandbox_restored') in restore_sandbox() after sandboxes.restore() completes.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/gui_bursts.py",
+    "fixed_code": "    def covers(self, sid: str) -> bool:\n        \"\"\"지금 GUI 입력을 실행해도 열린 구간이 그 변경을 받는지. gui_lock을 잡은 채로 부른다.\n        스냅샷 판단은 잠금 전에 하므로, 잠금을 기다리는 사이 인수·반환으로 구간이 닫히면 여기서 걸러진다.\"\"\"\n        if self.sandboxes.settings.gui_snapshot_interval <= 0:\n            return True\n        burst = self._gui_burst.get(sid)\n        if not burst:\n            return False\n        try:\n            return burst.get(\"container_id\") == self.sandboxes.get(sid)[\"container_id\"]\n        except Exception:\n            return False\n"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "medium",
+   "reason": "Occurs whenever an agent is issuing GUI tools during an administrative restore operation, which is standard procedure when recovering a compromised desktop sandbox."
+  },
+  "impact": {
+   "score": "medium",
+   "reason": "Defeats the GUI stray process kill policy and audit change recording on the restored container, allowing untrusted agent-spawned background processes to survive restore and enter future baselines without audit detection."
+  },
+  "overall_severity": "medium"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "Source review confirmed the missing container comparison in covers(), parent-live demonstrated stray process survival on a real desktop container, and independent local sandboxed reproduction confirmed the vulnerability and fix."
+ }
+}

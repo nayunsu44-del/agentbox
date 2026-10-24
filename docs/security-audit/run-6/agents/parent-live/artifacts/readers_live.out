@@ -1,0 +1,4 @@
+=== parent-live: container output readers check on disposable container ===
+container_image=agentbox-desktop:0.1 network_mode=none
+exec_run(demux=True) 2MiB stream buffered in docker-py: 2097152 bytes (uncapped in-memory buffer before _truncate)
+exec_start(stream=True, demux=True) with _Head(): kept=65537 bytes, total=2097152 bytes, truncated=True

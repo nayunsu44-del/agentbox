@@ -1,0 +1,117 @@
+{
+ "verdict": "confirmed",
+ "fingerprint": "agentbox/audit.py:AuditLog:table-growth-lock-contention-and-verify-memory",
+ "title": "Unindexed audit table scan in recent() and full-table fetchall in verify() hold global AuditLog._lock, causing availability stalls and memory exhaustion as table grows",
+ "description": "The audit table schema defines no index on sandbox_id, yet GET /ui/audit (polled every 3 seconds by the sandbox UI) invokes AuditLog.recent(), which executes unindexed 'SELECT COUNT(*) FROM audit WHERE sandbox_id = ?' and 'SELECT ... WHERE sandbox_id = ?' queries under the global in-process AuditLog._lock. When an agent grows the table with realistic tool call payloads and previews (up to 128 KiB each), these queries must scan every leaf and overflow page. Furthermore, AuditLog.verify() executes 'SELECT ... FROM audit ORDER BY id' and calls .fetchall() under AuditLog._lock, holding the lock while loading all rows into Python memory at once (~488 MiB for 10,000 rows). Because AuditLog.append() (used by all tool logging and fail-closed log_human operations) serializes on AuditLog._lock, these operations block all human and agent actions for seconds, and verify() risks container OOM termination.",
+ "root_cause": "AuditLog._lock is a coarse-grained process-wide lock held across long-running database read operations. The audit table lacks an index on sandbox_id, forcing full table scans on frequent UI polling (every 3s), and AuditLog.verify() unconditionally fetches all rows across the table's entire history into memory under the same lock rather than streaming, chunking, or querying via a non-blocking read connection in WAL mode.",
+ "intended_behavior": "UI polling via recent() should be satisfied rapidly using an index on audit(sandbox_id) without scanning unrelated overflow pages. Verification in verify() should stream or paginate rows using fetchmany() outside the append lock, and should not hold the primary write lock across full-table queries.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/templates/sandbox.html",
+   "line": 19,
+   "scope": "sandbox.html",
+   "description": "Operator viewing sandbox page triggers automatic polling of GET /ui/audit?sandbox_id={sid} every 3 seconds via htmx"
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/web.py",
+   "line": 293,
+   "scope": "audit_frag",
+   "description": "audit_frag invokes box.audit.recent(sandbox_id=sandbox_id, limit=400)"
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/audit.py",
+   "line": 325,
+   "scope": "AuditLog.recent",
+   "description": "AuditLog.recent acquires self._lock and executes unindexed SELECT COUNT(*) and SELECT ... WHERE sandbox_id = ? scanning every leaf and overflow page"
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/audit.py",
+   "line": 293,
+   "scope": "AuditLog.append",
+   "description": "Every concurrent AuditLog.append call, including fail-closed log_human operator actions and agent tool calls, blocks on with self._lock"
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/audit.py",
+   "line": 27,
+   "description": "audit table schema defines only id as primary key without any index on sandbox_id"
+  },
+  {
+   "file": "agentbox/audit.py",
+   "line": 325,
+   "description": "AuditLog.recent executes unindexed table scan under self._lock for every poll"
+  },
+  {
+   "file": "agentbox/audit.py",
+   "line": 340,
+   "description": "AuditLog.verify executes fetchall() of the entire audit table under self._lock, buffering all payloads in Python memory"
+  },
+  {
+   "file": "agentbox/templates/sandbox.html",
+   "line": 19,
+   "description": "Audit timeline polls /ui/audit every 3s, causing continuous lock contention as row count and payload sizes grow"
+  },
+  {
+   "file": "agentbox/service.py",
+   "line": 705,
+   "description": "Human operations serialized through log_human block on self._lock while long-running queries or fetchall hold the lock"
+  },
+  {
+   "file": "agents/v-audit-lock/artifacts/v.out",
+   "line": 13,
+   "description": "Independent reproduction benchmark showing unindexed recent() average lock hold of 175.15ms (vs 28.86ms indexed, 6.07x speedup) and verify() hold of 5.63s with 58.64 MiB peak heap for 1,200 rows"
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "data_state",
+   "description": "The audit table has accumulated thousands of rows containing realistic tool payloads and approval previews (16-32 KiB each) within the 90-day retention window"
+  },
+  {
+   "kind": "user_interaction",
+   "description": "A human operator opens the web UI sandbox view (triggering 3s polling) or clicks verify chain"
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "An unprivileged agent generating ordinary tool executions (e.g. exec, write_file) with 16-25 KiB arguments or previews populates the audit table up to tens of thousands of rows. When a human administrator views the sandbox UI (which polls /ui/audit every 3s) or triggers /ui/verify, the unindexed table scan and full table fetchall hold the global AuditLog._lock for seconds at a time and allocate hundreds of megabytes of memory, degrading control-plane responsiveness and blocking all tool logging and human admin actions.",
+  "payloads": [
+   "python3 /scratch/v_bench.py"
+  ],
+  "instructions": [
+   "Create an AuditLog database with 1,200 rows containing realistic ~25 KiB tool call/preview payloads (~30.5 MiB database size) with valid hash chain.",
+   "Invoke AuditLog.recent('sb_target', limit=25) to measure unindexed leaf/overflow page scan duration under self._lock.",
+   "Invoke AuditLog.verify() to measure lock hold time and peak heap memory allocation during self.conn.execute(...).fetchall() under self._lock.",
+   "Compare against an indexed table (CREATE INDEX audit_sandbox_id ON audit(sandbox_id)) to verify contention reduction."
+  ],
+  "observed_result": "In an isolated 512 MiB sandbox with 1,200 rows of 25.2 KiB payloads (30.49 MiB DB), unindexed recent('sb_target', limit=25) held AuditLog._lock for an average of 175.15ms (reduced to 28.86ms with an index on sandbox_id, a 6.07x speedup). Full table verify() on the valid chain held AuditLog._lock for 5628.31ms (5.63s) with a peak heap memory allocation of 58.64 MiB. Extrapolated to 10,000 rows (~200 MiB table), verify() holds AuditLog._lock for ~46.9s while consuming ~488.6 MiB of memory (approaching 512 MiB container limits), and 3-second UI polling holds the lock for ~1.46s per poll (occupying over 48% of total available time), blocking all concurrent audit.append and log_human calls."
+ },
+ "remediation": {
+  "strategy": "1. Add an index on audit(sandbox_id) in SCHEMA (CREATE INDEX IF NOT EXISTS audit_sandbox_id ON audit(sandbox_id)) so that recent() queries for a specific sandbox only read relevant rows rather than scanning the entire table and all overflow pages.\n2. In AuditLog.verify(), avoid holding self._lock across the entire fetchall() or iterate through rows in bounded batches (or fetch only necessary columns such as id, ts, prev_hash, hash, payload with fetchmany) outside the lock, or run verification queries on a separate read connection under SQLite WAL mode without blocking the in-process append lock.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/audit.py",
+    "fixed_code": "CREATE TABLE IF NOT EXISTS audit (\n    id          INTEGER PRIMARY KEY,\n    ts          TEXT NOT NULL,\n    sandbox_id  TEXT,\n    actor       TEXT NOT NULL,\n    event       TEXT NOT NULL,\n    tool        TEXT,\n    payload     TEXT NOT NULL,\n    prev_hash   TEXT NOT NULL,\n    hash        TEXT NOT NULL\n);\nCREATE INDEX IF NOT EXISTS audit_sandbox_id ON audit(sandbox_id);\n"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "medium",
+   "reason": "Any active agent operating over several hours or days naturally generates thousands of audit entries with previews and tool arguments, and the web UI polls /ui/audit automatically every 3 seconds whenever a human operator views the sandbox page."
+  },
+  "impact": {
+   "score": "medium",
+   "reason": "Global lock contention on AuditLog._lock stalls all concurrent tool executions and human administrative operations for seconds at a time; whole-table fetchall() during verify() loads hundreds of megabytes into Python memory, risking out-of-memory container termination in constrained environments."
+  },
+  "overall_severity": "medium"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "Independently verified and measured via controlled local execution in the isolated OS-enforced sandbox, demonstrating 175.15ms unindexed recent() hold time (6.07x speedup with index) and 5.63s / 58.64 MiB verify() hold time and peak memory."
+ }
+}

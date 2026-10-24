@@ -1,0 +1,27 @@
+=== Verification Check: Candidate v-preview ===
+Fixtures created in /scratch/test_env/workspace: ['a.txt', 'b.txt']
+Fixtures created in /scratch/test_env/home: ['test_tilde.txt']
+
+[Case 1: Brace expansion]
+Command: rm {a,b}.txt
+Files existing in workspace before: a.txt exists=True, b.txt exists=True
+Preview affected: [{'path': '{a,b}.txt', 'effect': '삭제 시도 (현재 존재하지 않음)'}]
+Preview notes: []
+Bash execution exit code: 0
+Files existing in workspace after: a.txt exists=False, b.txt exists=False
+DIVERGENCE CONFIRMED: Preview reported '{a,b}.txt' as nonexistent with notes=[], but bash deleted both a.txt and b.txt!
+
+[Case 2: Tilde expansion]
+Command: rm ~/test_tilde.txt
+Tilde file exists before: True
+Preview affected: [{'path': '~/test_tilde.txt', 'effect': '삭제 시도 (현재 존재하지 않음)'}]
+Preview notes: []
+Bash execution exit code: 0
+Tilde file exists after: False
+DIVERGENCE CONFIRMED: Preview reported '~/test_tilde.txt' as nonexistent with notes=[], but bash deleted ~/test_tilde.txt!
+
+[Case 3: Remediation verification]
+Remediation check for 'rm {a,b}.txt': flags shell construct = True
+Remediation check for 'rm ~/test_tilde.txt': flags shell construct = True
+
+=== All verification assertions passed successfully ===

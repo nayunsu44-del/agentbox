@@ -1,0 +1,5 @@
+=== parent-live: same_origin scheme comparison check at 530b29e ===
+https://box.example.com GET /ui/verify with Origin: http://box.example.com -> status=200
+https://box.example.com GET /ui/verify with Origin: https://box.example.com -> status=200
+https://box.example.com:8443 GET /ui/verify with Origin: http://box.example.com:8443 -> status=200
+https://box.example.com GET /ui/verify with Origin: https://evil.example.com -> status=403

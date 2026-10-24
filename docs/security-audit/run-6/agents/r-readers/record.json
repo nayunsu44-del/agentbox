@@ -1,0 +1,104 @@
+{
+ "verdict": "needs_validation",
+ "fingerprint": "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+ "title": "Unbounded buffering and missing container-side timeouts in list_dir, outbox_list, and preview glob expand",
+ "description": "Four control-plane readers take container-produced output through non-streaming c.exec_run without streaming byte caps or container-side timeouts: SandboxManager.list_dir (sandbox.py:442) runs ls -la with no container-side timeout or byte cap, where _truncate (sandbox.py:446) reduces the string only after the entire output is buffered in control-plane RAM; SandboxManager.outbox_list (sandbox.py:548) runs find -printf with no _timed wrapper or head cap, passing raw output to _parse_outbox (sandbox.py:116) which instantiates unbounded lists of dicts (demonstrating an 11-12x memory retention amplification); SandboxManager._expand (sandbox.py:578) runs a container glob loop with a 10s timeout (_PREVIEW_TIMEOUT) but no head -z cap (unlike _walk at sandbox.py:586 which caps output with head -z -n \"$2\"), buffering all matched filenames into Python strings; and DesktopTools.screenshot (sandbox_desktop.py:114) cats the entire PNG into memory before checking the PNG magic. In contrast, exec (sandbox.py:427) streams output through _Head (capping memory to 64 KiB) and uses _timed(kill_after=5), read_file and outbox_read (sandbox.py:454, 557) enforce head -c and _timed(_READ_TIMEOUT), and workspace_manifest (sandbox.py:384) enforces head -c and _timed(_MANIFEST_TIMEOUT). Parent-live execution on a real Docker container confirmed that exec_run buffers an entire 2 MiB stream in memory before _truncate, whereas exec_start with _Head keeps only 65,537 bytes. However, demonstrating full control-plane memory exhaustion (OOM kill) or threadpool starvation requires large-scale real container execution and depends on deployment topology.",
+ "claimed_root_cause": "Container output consumption disciplines were applied inconsistently across SandboxManager and DesktopTools readers: exec uses _Head streaming (_OUT_LIMIT=64 KiB) with _timed(t, kill_after=5); read_file and outbox_read use head -c with _timed(_READ_TIMEOUT); workspace_manifest uses head -c with _timed(_MANIFEST_TIMEOUT); and preview _walk uses head -z with _timed(_PREVIEW_TIMEOUT). However, list_dir and outbox_list use plain c.exec_run without _timed timeouts or stream-limiting byte caps, buffering arbitrary output in control-plane memory before post-read truncation. Furthermore, preview _expand uses _timed(_PREVIEW_TIMEOUT) but omits a head -z record cap, decoding unbounded container paths into Python strings, and screenshot cats full images into control-plane RAM before verifying PNG magic.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/api.py",
+   "line": 306,
+   "scope": "call_tool (POST /sandboxes/{sid}/tools/{tool})",
+   "description": "Agent token invokes list_dir or triggers approval preview via exec on an agent-populated directory (or human calls GET /sandboxes/{sid}/outbox at api.py:385)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 293,
+   "scope": "AgentBox.call_tool",
+   "description": "Routes tool request on the shared tool_pool thread without request-level byte or memory limits."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 136,
+   "scope": "AgentBox._run_tool",
+   "description": "Dispatches list_dir to SandboxManager.list_dir (or _preview to preview_command at service.py:354)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 442,
+   "scope": "SandboxManager.list_dir",
+   "description": "Invokes c.exec_run([\"ls\", \"-la\", \"--\", p], demux=True) with no container-side _timed wrapper and no stream byte cap, buffering all container output in control-plane memory before _truncate at line 446."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox.py",
+   "line": 116,
+   "scope": "_parse_outbox",
+   "description": "In outbox listings (sandbox.py:548), parses uncurbed find output into lists of Python dicts with ~11-12x memory amplification, risking memory exhaustion in the control-plane container."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 427,
+   "description": "exec streams output into _Head with _OUT_LIMIT cap (64 KiB) and _timed(t, kill_after=5) at line 425."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 442,
+   "description": "list_dir runs c.exec_run([\"ls\", \"-la\", \"--\", p]) with no _timed timeout and no byte cap, before _truncate runs on line 446."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 454,
+   "description": "read_file enforces head -c limit+1 and _timed(_READ_TIMEOUT) at line 455."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 382,
+   "description": "workspace_manifest enforces head -c _MANIFEST_CAP and _timed(_MANIFEST_TIMEOUT)."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 548,
+   "description": "outbox_list runs c.exec_run with find -printf without _timed or head byte caps before calling _parse_outbox."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 557,
+   "description": "outbox_read enforces head -c limit+1 and _timed(_READ_TIMEOUT) at line 559."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 578,
+   "description": "_expand runs container glob without head -z or output limit, unlike _walk which uses head -z at line 586."
+  },
+  {
+   "file": "agentbox/sandbox_desktop.py",
+   "line": 114,
+   "description": "screenshot cats full image file without streaming byte cap before PNG magic check at line 117."
+  },
+  {
+   "file": "agents/parent-live/artifacts/readers_live.out",
+   "line": 3,
+   "description": "Parent-live test on disposable container confirmed exec_run(demux=True) buffers full 2 MiB stream in docker-py, while exec_start with _Head caps retained buffer to 65537 bytes."
+  },
+  {
+   "file": "agents/v-readers/artifacts/v.out",
+   "line": 1,
+   "description": "Subagent verification test demonstrated _Head caps memory to 64 KiB, _parse_outbox retains 30,000 dicts with 11.1x memory amplification, and preview _expand buffers 20,000 match strings without caps."
+  }
+ ],
+ "blockers": [
+  "Demonstrating full control-plane memory exhaustion (OOM kill) or worker threadpool starvation under large-scale container output requires running against a live Docker daemon with a real container, which is excluded from the subagent sandbox environment.",
+  "Whether peak memory from large listings causes fatal service failure depends on deployment configuration and host topology: compose sets mem_limit: 2g, AGENTBOX_DISK is unset by default (allowing unconstrained container filesystem growth up to host disk limits), and host cgroup behavior is environment-specific."
+ ],
+ "validation_plan": {
+  "local": "On a host running Docker with AGENTBOX_DISK=2g: (1) create a sandbox container, (2) populate /workspace/outbox with 200,000 files using a fast shell loop, (3) record VmHWM from /proc/<pid>/status of the control-plane process, call GET /sandboxes/{sid}/outbox and POST /sandboxes/{sid}/tools/list_dir with path /workspace/outbox, (4) record VmHWM again to measure memory retention from unbuffered exec_run and _parse_outbox, comparing with capped exec (ls -la /workspace); (5) test replacing outbox with a FIFO or slow character pipe to observe whether tool_pool and HTTP worker threads hang.",
+  "deployment": "Deploy agentbox with docker compose (mem_limit: 2g). Generate directories with hundreds of thousands of files across several sandboxes, trigger simultaneous list_dir and outbox listings, and observe container RSS, cgroup memory limits, and whether OOM kills terminate the control plane or in-flight approval workflows."
+ }
+}

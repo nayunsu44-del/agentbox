@@ -1,0 +1,5 @@
+=== parent-live: SandboxManager.preview vs SandboxManager.exec on live container ===
+preview('rm {a,b}.txt') -> affected=[{"path": "{a,b}.txt", "effect": "삭제 시도 (현재 존재하지 않음)"}] notes=[]
+preview('rm ~/tilde_target.txt') -> affected=[{"path": "~/tilde_target.txt", "effect": "삭제 시도 (현재 존재하지 않음)"}] notes=[]
+exec('rm {a,b}.txt') -> exit_code=0 a_exists=False b_exists=False
+exec('rm ~/tilde_target.txt') -> exit_code=0 tilde_target_exists=False

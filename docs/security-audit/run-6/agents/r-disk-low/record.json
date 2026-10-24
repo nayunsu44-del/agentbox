@@ -1,0 +1,82 @@
+{
+ "verdict": "needs_validation",
+ "fingerprint": "agentbox/service.py:disk_low-unmonitored-docker-data-root",
+ "title": "disk_low measures SQLite db_path.parent rather than Docker daemon storage root allowing complete host disk exhaustion",
+ "description": "AgentBox.disk_low checks free disk space strictly via shutil.disk_usage(self.settings.db_path.parent). In deployments where the agentbox database volume (AGENTBOX_HOME) and Docker's data root (/var/lib/docker) reside on separate filesystems, container layer growth and docker commit snapshot images (up to 50 per sandbox) consume Docker storage without decreasing free space on db_path.parent. The 507 guard never trips, allowing agents to exhaust host Docker disk, cause daemon failures, and prevent administrative log_human operations which fail closed with 503.",
+ "claimed_root_cause": "The disk guard in AgentBox.disk_low (service.py:421-437) assumes all disk growth occurs on the filesystem containing db_path.parent. However, Docker container writable layers and commit images (sandbox.py:356-370) grow inside Docker's data root (e.g. /var/lib/docker). In deploy/docker-compose.yml, AGENTBOX_HOME (/var/lib/agentbox) is a separate bind mount. When db_path.parent and Docker data root are on distinct partitions, or when an admitted exec runs dd/fallocate for up to exec_timeout (since AGENTBOX_DISK is empty by default so containers have no storage_opt size quota), host Docker storage can be completely filled without triggering disk_low.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/service.py",
+   "line": 296,
+   "scope": "AgentBox.call_tool",
+   "description": "Agent calls an admitted tool (e.g. exec writing large files to /workspace, or write_file triggering snapshot)."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 428,
+   "scope": "AgentBox.disk_low",
+   "description": "disk_low evaluates shutil.disk_usage(s.db_path.parent).free against s.min_free_bytes; because Docker storage is on a separate filesystem, db_path.parent free space remains high and disk_low returns False."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/sandbox.py",
+   "line": 361,
+   "scope": "SandboxManager.snapshot",
+   "description": "c.commit commits container writable layer into a new Docker image in Docker data root, accumulating up to snapshot_quota (50) images per sandbox."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/sandbox.py",
+   "line": 269,
+   "scope": "SandboxManager._run_container",
+   "description": "Container has no storage_opt disk quota (disk_limit is empty by default), allowing unrestricted accumulation of data in Docker's storage root until the host filesystem is exhausted."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/service.py",
+   "line": 428,
+   "description": "disk_low measures shutil.disk_usage(s.db_path.parent).free exclusively."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 42,
+   "description": "disk_limit defaults to empty string, disabling container storage_opt size limits."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 46,
+   "description": "snapshot_quota defaults to 50 snapshots per sandbox without aggregate disk quota."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 361,
+   "description": "snapshot calls c.commit(), creating full container layer image copies in Docker root."
+  },
+  {
+   "file": "deploy/docker-compose.yml",
+   "line": 31,
+   "description": "AGENTBOX_HOME is mounted to /var/lib/agentbox separately from Docker host root."
+  },
+  {
+   "file": "agents/v-disk-low/artifacts/v.out",
+   "line": 1,
+   "description": "Sandboxed verification reproducing that AgentBox.disk_low strictly measures shutil.disk_usage(s.db_path.parent), and returns False when Docker data-root is simulated as exhausted while db_path.parent has available space."
+  },
+  {
+   "file": "agents/parent-live/artifacts/disk_low_live.out",
+   "line": 1,
+   "description": "Live disposable sandbox verification confirming DockerRootDir=/var/lib/docker with settings.disk_limit='' while disk_low samples only settings.home and settings.db_path.parent."
+  }
+ ],
+ "blockers": [
+  "Simulating separate filesystem mounts for AGENTBOX_HOME and Docker root (/var/lib/docker) along with live docker commit image accumulation requires access to a host Docker daemon and multiple mount points, which is unavailable in the isolated sandbox.",
+  "Exhausting host Docker disk on live test infrastructure is destructive and forbidden under audit execution boundaries; confirming complete host exhaustion requires an operator-owned multi-volume test deployment."
+ ],
+ "validation_plan": {
+  "local": "On a dedicated non-production host running Docker with AGENTBOX_HOME on a loopback mount or separate partition from /var/lib/docker: (1) configure min_free_bytes=256MB, (2) run an agent script that creates files in /workspace and triggers snapshots up to snapshot_quota, (3) verify that disk_low continues returning False while Docker data root disk usage increases until /var/lib/docker is exhausted.",
+  "deployment": "Check host partition layout in production deployments to verify whether /var/lib/docker and AGENTBOX_HOME are on separate volumes, and monitor Docker daemon root volume free space independently of the application database volume."
+ }
+}

@@ -1,0 +1,29 @@
+=== Verification of v-disk-low (agentbox/service.py:disk_low-unmonitored-docker-data-root) ===
+[CHECK 1] settings.disk_limit default: '' (empty string=True)
+[CHECK 2] settings.snapshot_quota default: 50
+[CHECK 3] settings.min_free_bytes default: 268435456 bytes (256.0 MiB)
+[CHECK 4] settings.db_path.parent: /scratch/data == settings.home: /scratch/data
+[CHECK 5] SandboxManager._run_container checks settings.disk_limit: True
+          storage_opt gated by disk_limit: True
+[CHECK 6] AgentBox.disk_low source lines:
+              def disk_low(self) -> bool:
+                  """DB가 있는 디스크의 남은 공간이 min_free_bytes보다 적은지. 에이전트가 늘리는 기록(도구 호출, 승인 시도)은
+                  이때 받지 않아서, 남은 공간을 사람의 삭제·승인·반환이 쓴다 (보안 검수 run-4 N2). 상태가 바뀔 때만 기록한다."""
+                  s = self.sandboxes.settings
+                  if s.min_free_bytes <= 0:
+                      return False
+                  try:
+                      free = shutil.disk_usage(s.db_path.parent).free
+                  except OSError:
+                      return False
+                  low = free < s.min_free_bytes
+                  with self._busy_lock:
+                      changed, self._low_disk = low != self._low_disk, low
+                  if changed:
+                      self.log_best_effort(None, None, "disk_low" if low else "disk_ok",
+                                           {"free_bytes": free, "min_free_bytes": s.min_free_bytes})
+                  return low
+[CHECK 7] disk_low result with docker_root full (0 bytes free) and db_path.parent having 10 GiB free: False
+[CHECK 8] disk_low result when db_path.parent has 100 MiB free (< min_free_bytes): True
+=== Verification SUCCESSFUL: disk_low strictly and exclusively monitors db_path.parent ===
+In deployments where Docker data-root is on a separate filesystem, Docker disk exhaustion cannot trip disk_low.

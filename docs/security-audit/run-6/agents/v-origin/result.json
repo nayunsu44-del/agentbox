@@ -1,0 +1,124 @@
+{
+ "decision": "needs_validation",
+ "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+ "reason": "Verified in sandbox: same_origin performs netloc-only comparison without scheme check, accepting downgraded HTTP Origin against HTTPS and missing Origin. Cross-scheme POST /logout (ending session) and POST /ui/approvals/{aid}/approve (executing approval) succeed under TestClient, and cookieless /logout clears browser cookie. Remains needs_validation due to decisive external blockers: browser Schemeful Same-Site policy enforcement on cross-scheme cookie attachment across real-world browsers, and deployment HSTS status.",
+ "artifact_to_promote": [
+  "v.out"
+ ],
+ "artifacts_to_promote": [
+  "v.out"
+ ],
+ "checks_to_record": [
+  {
+   "agent_id": "v-origin",
+   "reviewed_paths": [
+    "agentbox/api.py",
+    "agentbox/web.py"
+   ],
+   "invariant": "same_origin verifies both scheme and host origin on cookie-authenticated browser endpoints and rejects missing or downgraded-scheme Origin headers",
+   "method": "local",
+   "result": "Independently reproduced in sbx via TestClient: same_origin returns True for Origin http://agentbox.example against HTTPS server and True when Origin is omitted. POST /logout and POST /ui/approvals/approve accept cross-scheme requests without rejection, while cross-domain (evil.example) and null Origin return 403.",
+   "artifact": "agents/v-origin/artifacts/v.out"
+  },
+  {
+   "agent_id": "v-origin",
+   "reviewed_paths": [
+    "agentbox/cli.py",
+    "agentbox/desktop.py",
+    "agentbox/desktop_ws.py",
+    "deploy/Caddyfile"
+   ],
+   "invariant": "Cookie security attributes and proxy headers enforce secure transport and prevent downgraded cross-scheme session abuse",
+   "method": "source",
+   "result": "DesktopControl sets SameSite=Strict and Secure cookies when TLS is enabled, but same_origin only inspects headers without verifying request scheme. deploy/Caddyfile configures reverse_proxy without Strict-Transport-Security (HSTS). Browser Schemeful Same-Site enforcement remains decisive unobservable blocker.",
+   "artifact": null
+  }
+ ],
+ "record": {
+  "verdict": "needs_validation",
+  "fingerprint": "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+  "title": "Scheme-blind Origin netloc comparison allows cross-scheme CSRF against cookie-authenticated routes",
+  "description": "same_origin compares only the netloc of the Origin header with the Host header and accepts missing Origin headers. When agentbox is deployed behind a TLS-terminating reverse proxy (such as Caddy) without HSTS, or on a host with co-located HTTP services, requests originating from an insecure http:// scheme on the same host match the netloc check and can perform state-changing operations (such as session termination via /logout or approval decisions via /ui/approvals) using the browser's session cookie.",
+  "claimed_root_cause": "agentbox/api.py:221-223: same_origin() returns True when urlsplit(origin).netloc == headers.get('host') or when Origin is absent. The closure receives only headers and does not verify whether the Origin scheme matches the request scheme (e.g., https). deploy/Caddyfile:1-17 does not set Strict-Transport-Security, so plain-HTTP contexts on the same host are not upgraded to HTTPS by the browser.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/web.py",
+    "line": 168,
+    "scope": "logout",
+    "description": "Cookie-authenticated POST /logout (or /ui/approvals/{aid}/{decision} at web.py:242) is received from a browser context without anti-CSRF tokens or Sec-Fetch validation."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 235,
+    "scope": "screen_principal",
+    "description": "Browser routes validate request authenticity using same_origin(request.headers) after resolving the session cookie; /logout invokes same_origin directly at web.py:169."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/api.py",
+    "line": 223,
+    "scope": "same_origin",
+    "description": "urlsplit(origin).netloc == headers.get('host') ignores the origin scheme (http vs https) and accepts missing Origin headers, allowing plaintext http:// origins to pass origin validation."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/web.py",
+    "line": 171,
+    "scope": "logout",
+    "description": "With same_origin evaluated to True, box.end_ui_session terminates the authenticated session (or r.delete_cookie at line 175 forces browser session clearance; on /ui/approvals at line 248 box.decide executes human approval)."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/api.py",
+    "line": 223,
+    "description": "same_origin() evaluates 'not origin or urlsplit(origin).netloc == headers.get(\"host\")'. Scheme is not compared, and absent Origin evaluates to True."
+   },
+   {
+    "file": "agentbox/api.py",
+    "line": 235,
+    "description": "screen_principal() validates incoming browser requests using same_origin(request.headers), allowing downgraded-scheme requests to authenticate."
+   },
+   {
+    "file": "agentbox/web.py",
+    "line": 169,
+    "description": "logout() directly invokes same_origin(request.headers) at web.py:169 and proceeds to delete_cookie at line 175 unconditionally, allowing a cross-scheme POST to force client-side logout even when no cookie is sent."
+   },
+   {
+    "file": "agentbox/desktop.py",
+    "line": 60,
+    "description": "set_cookie() issues the session cookie with HttpOnly=True and SameSite=\"strict\". In TLS mode, Secure=True is set. Whether modern browsers attach this cookie on cross-scheme requests depends on Schemeful Same-Site enforcement."
+   },
+   {
+    "file": "deploy/Caddyfile",
+    "line": 16,
+    "description": "Caddy reverse proxy passes requests without injecting Strict-Transport-Security (HSTS) headers, leaving plaintext HTTP access on the same host un-upgraded."
+   },
+   {
+    "file": "agentbox/cli.py",
+    "line": 102,
+    "description": "s.secure_cookie = s.secure_cookie or tls or behind: the Secure attribute is forced for direct-TLS and behind-TLS-proxy deployments, which are the deployments where the http/https scheme fork exists."
+   },
+   {
+    "file": "docs/security-audit/run-6/agents/parent-live/artifacts/same_origin_live.out",
+    "line": 2,
+    "description": "parent-live execution verified that https://box.example.com accepts GET /ui/verify with Origin: http://box.example.com (status 200) and rejects evil.example.com (status 403)."
+   },
+   {
+    "file": "agents/v-origin/artifacts/v.out",
+    "line": 1,
+    "description": "Verifier v-origin independent sandboxed TestClient reproduction: direct same_origin tests pass for downgraded HTTP origin (http://agentbox.example vs HTTPS host) and missing Origin; POST /logout accepts cross-scheme origin (status 303) and terminates session; cookieless cross-scheme POST /logout emits Set-Cookie clearing cookie; POST /ui/approvals/approve accepts cross-scheme origin (status 200); cross-domain and null origins are rejected with 403."
+   }
+  ],
+  "blockers": [
+   "Browser behavior (decisive): whether real-world browsers used by operators (Safari, Firefox, Chrome, and embedded WebViews) strictly enforce Schemeful Same-Site policy (RFC 6265bis) to withhold 'SameSite=Strict; Secure' cookies on cross-scheme (http:// to https://) requests against the same domain. In sandboxed test environments, headless execution cannot observe browser-level cookie attachment policies.",
+   "Network position and TLS termination: whether plaintext http:// traffic on the same host can be reached by an operator or injected by an on-path attacker. deploy/Caddyfile lacks Strict-Transport-Security (HSTS), but whether the production deployment uses upstream HSTS, CDN preloading, or an external load balancer is an operator-controlled environment fact."
+  ],
+  "validation_plan": {
+   "local": "Deploy agentbox behind a local TLS reverse proxy on https://localhost with a valid test certificate and an authenticated browser session. In multiple real-world browsers (Safari, Firefox, Chromium), open a page served from http://localhost and trigger form POSTs to /logout and /ui/approvals/{aid}/approve. Record whether each browser attaches the 'agentbox_session' cookie on the cross-scheme POST, whether status 303/200 is returned, and whether the server session or approval mutation executes.",
+   "deployment": "Operator confirms: (1) whether the production domain sends Strict-Transport-Security (HSTS) with includeSubDomains or is on the HSTS preload list; (2) whether plaintext HTTP port 80 is accessible or unconditionally redirected to HTTPS; (3) the specific browser engines and versions used by operators accessing the admin UI."
+  }
+ }
+}

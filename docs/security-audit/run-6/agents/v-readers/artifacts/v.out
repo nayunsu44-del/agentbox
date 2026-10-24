@@ -1,0 +1,62 @@
+=== v-readers: verification check for container output readers ===
+Timestamp: 2026-10-24T07:45:07Z
+Python: 3.12.3 on linux
+
+--- Check 1: _Head streaming buffer cap vs unbuffered exec_run ---
+_Head buffer cap after 1 MiB input:
+  len(buf): 65537 bytes (cap = _OUT_LIMIT + 1 = 65537)
+  total seen: 1048576 bytes
+  truncated: True
+  len(text): 65555 characters
+
+Simulating list_dir memory buffering with 4 MiB output:
+  Mock ls output size: 4194300 bytes (4.00 MiB)
+  list_dir exec_run received: 4194300 bytes buffered in control plane RAM
+  _truncate(out) returned: 65556 characters
+  Observation: Full 4 MiB buffer is allocated in RAM before _truncate reduces string.
+
+--- Check 2: _parse_outbox cardinality and unbounded retention ---
+    1000 files: raw find output =    42.0 KiB -> 1000 dicts (  467.8 KiB Python objects, 11.1x memory) in 0.0028s
+   10000 files: raw find output =   419.9 KiB -> 10000 dicts ( 4677.8 KiB Python objects, 11.1x memory) in 0.0327s
+   30000 files: raw find output =  1259.8 KiB -> 30000 dicts (14033.3 KiB Python objects, 11.1x memory) in 0.0985s
+
+--- Check 3: preview _expand vs _walk output bounds ---
+Simulating preview_command with 20000 matches from expand(pattern):
+  preview_command returned:
+    affected items in return: 200 (capped to limit=200)
+    notes: ['영향 항목 20000개 중 앞의 200개만 표시.']
+    elapsed: 0.0289s
+  Notice: expand() returned all 20000 strings into memory, even though affected is truncated to 200.
+
+--- Check 4: Source code inspection of readers at commit 530b29e ---
+exec reader: sandbox.py:418 -> uses _Head(): line 427: out, err = _Head(), _Head()
+list_dir: sandbox.py:439 -> exec_run at line 442: res = c.exec_run(["ls", "-la", "--", p], user=AGENT_UID, workdir=WORKSPACE, demux=True)
+read_file: sandbox.py:448 -> head cap at line 454: f'head -c {limit + 1} -- "$1"')
+           exec_run with _timed at line 455
+outbox_list: sandbox.py:539 -> find script at line 547
+             exec_run at line 548: res = c.exec_run(["sh", "-c", script], user=AGENT_UID, demux=True)
+outbox_read: sandbox.py:551 -> head cap at line 557
+             exec_run with _timed at line 559
+_expand: sandbox.py:574 -> exec_run at line 578
+_walk:   sandbox.py:583 -> head -z cap at line 586
+screenshot: sandbox_desktop.py:112 -> line 114
+
+--- Check 5: Review parent-live evidence ---
+Parent-live artifact contents (readers_live.out):
+  === parent-live: container output readers check on disposable container ===
+  container_image=agentbox-desktop:0.1 network_mode=none
+  exec_run(demux=True) 2MiB stream buffered in docker-py: 2097152 bytes (uncapped in-memory buffer before _truncate)
+  exec_start(stream=True, demux=True) with _Head(): kept=65537 bytes, total=2097152 bytes, truncated=True
+Parent-live confirms that exec_run buffers full 2 MiB stream in docker-py, while exec_start with _Head caps retained bytes to 65537.
+
+=== Conclusion ===
+Verification confirmed the source-level inconsistency in container output readers:
+1. exec uses streaming _Head (64 KiB cap) and _timed(t, kill_after=5).
+2. read_file and outbox_read use head -c and _timed(_READ_TIMEOUT).
+3. workspace_manifest uses head -c and _timed(_MANIFEST_TIMEOUT).
+4. preview _walk uses head -z -n $limit and _timed(_PREVIEW_TIMEOUT).
+5. list_dir and outbox_list lack both container-side timeouts and output byte caps.
+6. preview _expand has _PREVIEW_TIMEOUT (10s) but lacks record and byte caps before buffering full glob matches.
+7. screenshot cats full PNG image without streaming byte cap.
+However, demonstrating fatal control-plane memory exhaustion (OOM kill) or threadpool hang under large-scale container output requires running against a live Docker daemon with real containers, which is excluded from the subagent sandbox environment.
+Verdict remains needs_validation.
