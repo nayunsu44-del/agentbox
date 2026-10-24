@@ -218,12 +218,21 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
             raise HTTPException(403, "사람 토큰만 쓸 수 있는 API")
         return p
 
-    def same_origin(headers) -> bool:
-        origin = headers.get("origin")
-        return not origin or urlsplit(origin).netloc == headers.get("host")
+    def secure_cookie(request) -> bool:
+        url = getattr(request, "url", None)
+        return settings.secure_cookie or (url is not None and url.scheme in ("https", "wss"))
 
-    def secure_cookie(request: Request) -> bool:
-        return settings.secure_cookie or request.url.scheme == "https"
+    def same_origin(req_or_headers) -> bool:
+        headers = getattr(req_or_headers, "headers", req_or_headers)
+        origin = headers.get("origin")
+        if not origin:
+            return True
+        parsed = urlsplit(origin)
+        if parsed.netloc != headers.get("host"):
+            return False
+        if secure_cookie(req_or_headers) and parsed.scheme != "https":
+            return False
+        return True
 
     def screen_principal(request: Request, authorization: str = Header(default="")) -> Principal:
         """브라우저 경로 전용: Authorization 헤더 또는 브라우저 세션 쿠키."""
@@ -232,7 +241,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         got = box.desktop.session_scope(request.cookies.get(D.COOKIE))
         if not got:
             raise HTTPException(401, "세션 없음. 'agentbox ui'로 로그인 링크를 받을 것")
-        if not same_origin(request.headers):
+        if not same_origin(request):
             raise HTTPException(403, "다른 출처의 요청")
         return Principal("human", session=got[0], scope=got[1])
 
@@ -442,7 +451,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         cookie = ws.cookies.get(D.COOKIE)
         # 세션 확인은 SQLite를 읽는다. 이벤트 루프에서 기다리면 서버 전체가 멈추니 스레드에서 (보안 검수 run-5)
         session = await run_in_threadpool(box.desktop.session, cookie, sid) if cookie else None
-        if not session or not same_origin(ws.headers) or mode not in ("view", "control"):
+        if not session or not same_origin(ws) or mode not in ("view", "control"):
             await ws.close(code=4401)
             return
         if not box.desktop.may_connect(sid, session, mode):

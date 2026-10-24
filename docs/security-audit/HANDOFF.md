@@ -301,4 +301,10 @@ pytest                                                 # 160 passed
   - PR #24가 고친 `DesktopControl` 잠금 분리(`_db_lock` vs `_lock`)·웹소켓 스레드풀 오프로드·`retention.prune` COMMIT 뒤 아카이브 보존, `_snapshot`/`call_tool`/`decide`의 화면 인수 중 GUI 구간 열기 차단, `TOOL_ARG_MAX`(16KiB)·`_relex_changes`·미리보기 40회/50메모 상한·대기 승인 행 128KiB 상한이 모두 지켜짐을 확인했다.
   - PR #25가 고친 `_BodyLimit` 본문 읽기 전 자격 증명 확인(`authenticated` 콜백, `/login` 64KiB 상한)과 배포 설정 상한이 지켜짐을 확인했다.
   - PR #19의 제어문자 필터(`display.escape_controls`, 웹 `finalize=_shown` 및 CLI `_safe`)가 모든 출력 지점을 덮어 run-4의 미해결 리드(`exec-command-bidi-controls-unneutralized`)가 해소됨을 확인했다.
-- **코드 미수정:** 소유자 지시에 따라 이번 감사에서는 보고서까지만 작성하고 `agentbox/` 코드는 수정하지 않았다. 확정 F1~F3 및 검증 필요 N1~N3의 수정 여부는 소유자 판단 뒤 별도 지시로 진행한다.
+- **후속 수정 완료:** 보고 직후 소유자 지시("수정해서 사용에 영향없는건 보고 없이 수정해")에 따라 정상 사용에 영향을 주지 않는 확정 3건(F1~F3)과 검증 필요 하드닝 3건(N1~N3)을 모두 수정하고 `tests/test_m5_unit.py`에 회귀 테스트 6건을 추가해 검증했다:
+  - `agentbox/gui_bursts.py`·`agentbox/service.py`: `GuiBursts.covers(sid)`의 `container_id` 일치 확인 및 `restore_sandbox`의 `self.bursts.end(sid, "sandbox_restored")` 호출.
+  - `agentbox/audit.py`: `idx_audit_sandbox_id ON audit (sandbox_id, id)` 복합 인덱스 추가 및 `verify()`·`verify_archives()`의 200행 배치 조회·`_lock` 외부 해시 계산(`_verify_live`).
+  - `agentbox/preview.py`·`agentbox/sandbox.py`: `{`·`~` 확장 주의 문구 및 미매칭 피연산자 안내 문구 보강, `_expand`의 `~`/`~/` → `$HOME` 확장 및 `head -z -n` 상한.
+  - `agentbox/api.py`·`agentbox/web.py`·`deploy/Caddyfile`: `secure_cookie` 활성 환경에서 `same_origin`의 `https` 스킴 검증 및 Caddy HSTS 헤더 추가.
+  - `agentbox/sandbox.py`·`agentbox/sandbox_desktop.py`: `list_dir`의 `_exec_head`(`_timed` + `_Head` 스트리밍 상한), `outbox_list`의 `_timed` + `head -c` 상한, `screenshot`의 심볼릭 링크 차단 및 16MiB `head -c` 상한.
+  - `agentbox/sandbox.py`·`agentbox/service.py`: `DockerRootDir` 감지 및 `disk_low()`의 `docker_root` 여유 공간 병행 확인.

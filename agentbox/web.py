@@ -156,7 +156,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
 
     @app.post("/login", include_in_schema=False)
     def login(request: Request, token: str = Form(...)):
-        if not same_origin(request.headers):
+        if not same_origin(request):
             raise HTTPException(403, "다른 출처의 요청")
         # 바이트로 비교한다. 문자열 비교는 ASCII가 아닌 입력에 TypeError(500)를 내고 기록도 남기지 않는다
         if not secrets.compare_digest(token.strip().encode(), human_token.encode()):
@@ -166,7 +166,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
 
     @app.post("/logout", include_in_schema=False)
     def logout(request: Request):
-        if not same_origin(request.headers):
+        if not same_origin(request):
             raise HTTPException(403, "다른 출처의 요청")
         s = box.end_ui_session(request.cookies.get(D.COOKIE))
         if s:

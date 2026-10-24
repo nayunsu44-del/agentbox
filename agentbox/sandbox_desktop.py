@@ -34,6 +34,7 @@ _TIMED_OUT = (124, 137)   # timeout(1)이 끊었을 때의 종료 코드 (TERM, 
 DESKTOP_USER = "desktop"
 DESKTOP_ENV = {"DISPLAY": ":0", "XAUTHORITY": "/home/desktop/.Xauthority", "HOME": "/home/desktop"}
 _SHOT = "/home/desktop/.cache/agentbox-shot.png"
+_SHOT_MAX = 16 * 1024 * 1024   # 캡처 PNG 상한 (소켓·큰 파일로 바꿔치기해 메모리를 불리는 것 방지)
 _BUTTONS = {"left": "1", "middle": "2", "right": "3"}
 _KEY_RE = re.compile(r"^[A-Za-z0-9_+]{1,40}$")
 # 창 id(인자)마다 그 창을 만든 X 클라이언트의 pid를 X 서버에 묻는다 (X-Resource 확장, XResQueryClientIds).
@@ -111,10 +112,12 @@ class DesktopTools:
 
     def screenshot(self, sid: str) -> dict[str, Any]:
         c = self._desktop(sid)
-        res = self._x(c, ["sh", "-c", f'mkdir -p "$(dirname {_SHOT})" && scrot -o -z {_SHOT} && cat {_SHOT}; '
-                                      f'r=$?; rm -f {_SHOT}; exit $r'])
+        res = self._x(c, ["sh", "-c",
+                          f'mkdir -p "$(dirname {_SHOT})" && rm -f {_SHOT} && scrot -o -z {_SHOT} '
+                          f'&& [ -f {_SHOT} ] && [ ! -L {_SHOT} ] && head -c {_SHOT_MAX + 1} {_SHOT}; '
+                          f'r=$?; rm -f {_SHOT}; exit $r'])
         png = res.output[0] or b""
-        if res.exit_code != 0 or png[:8] != b"\x89PNG\r\n\x1a\n":
+        if res.exit_code != 0 or len(png) > _SHOT_MAX or png[:8] != b"\x89PNG\r\n\x1a\n":
             raise SandboxError(_truncate(res.output[1]) or "스크린샷 실패")
         width, height = struct.unpack(">II", png[16:24])
         return {"png": png, "width": width, "height": height, "sha256": hashlib.sha256(png).hexdigest()}

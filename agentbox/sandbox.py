@@ -38,6 +38,7 @@ _READ_TIMEOUT = 30
 _MANIFEST_TIMEOUT = 30
 _PREVIEW_TIMEOUT = 10   # 승인 미리보기의 glob 펼치기·find 한 번. 넘으면 미리보기 실패로 사람에게 넘긴다
 _WRITE_CHUNK = 64 * 1024     # 인자 하나의 커널 상한(128KB)보다 작게, base64 뒤 기준
+_OUTBOX_CAP = 512 * 1024     # 결과함 목록 출력 상한 (수만 개 파일로 컨트롤 플레인 메모리를 늘리지 못하게)
 OUTBOX = WORKSPACE + "/outbox"
 _BAD_NAME = re.compile(r"[\x00-\x1f\x7f/\\]")
 
@@ -176,7 +177,10 @@ class SandboxManager(DesktopTools):
 
     # ---- SB-6 격리 백엔드 감지 -----------------------------------------
     def _detect_runtime(self) -> str:
-        available = set((self.client.info().get("Runtimes") or {}).keys()) or {"runc"}
+        info = self.client.info() or {}
+        root = info.get("DockerRootDir")
+        self.docker_root: Path | None = Path(root) if root else None
+        available = set((info.get("Runtimes") or {}).keys()) or {"runc"}
         want = self.settings.runtime
         if want and want != "auto":
             if want not in available:
@@ -415,35 +419,46 @@ class SandboxManager(DesktopTools):
         return self.get(sid)
 
     # ---- 도구 ----------------------------------------------------------
+    def _exec_head(self, c, argv: list[str], *, user: str = AGENT_UID,
+                   workdir: str | None = WORKSPACE) -> tuple[int, str, str]:
+        """스트림으로 앞쪽 _OUT_LIMIT 바이트만 받고 나머지는 버린다 (컨트롤 플레인 메모리 상한)."""
+        api = getattr(getattr(self, "client", None), "api", None)
+        if api is None:
+            res = c.exec_run(argv, user=user, workdir=workdir, demux=True)
+            out, err = res.output
+            return res.exit_code, _truncate(out), _truncate(err)
+        ex = api.exec_create(c.id, argv, user=user, workdir=workdir)
+        out, err = _Head(), _Head()
+        for o, e in api.exec_start(ex["Id"], stream=True, demux=True):
+            out.add(o)
+            err.add(e)
+        return api.exec_inspect(ex["Id"])["ExitCode"], out.text(), err.text()
+
     def exec(self, sid: str, command: str) -> dict[str, Any]:
         c = self._require_running(sid)
         t = self.settings.exec_timeout
         # umask 002: 데스크톱 계정도 에이전트가 만든 파일을 고칠 수 있게
         # 출력은 스트림으로 받아 앞부분만 남긴다. 한꺼번에 받으면 제한 시간 동안 나온 전부가
         # 컨트롤 플레인 메모리에 쌓인다 (cat /dev/zero 하나로 수백 MB).
-        api = self.client.api
-        ex = api.exec_create(c.id, _timed(t, "bash", "-c", "umask 002\n" + command, kill_after=5),
-                             user=AGENT_UID, workdir=WORKSPACE)
-        out, err = _Head(), _Head()
-        for o, e in api.exec_start(ex["Id"], stream=True, demux=True):
-            out.add(o)
-            err.add(e)
-        code = api.exec_inspect(ex["Id"])["ExitCode"]
+        code, out, err = self._exec_head(
+            c, _timed(t, "bash", "-c", "umask 002\n" + command, kill_after=5)
+        )
         return {
             "exit_code": code,
-            "stdout": out.text(),
-            "stderr": err.text(),
+            "stdout": out,
+            "stderr": err,
             "timed_out": code in (124, 137),
         }
 
     def list_dir(self, sid: str, path: str) -> dict[str, Any]:
         c = self._require_running(sid)
         p = safe_path(path)
-        res = c.exec_run(["ls", "-la", "--", p], user=AGENT_UID, workdir=WORKSPACE, demux=True)
-        out, err = res.output
-        if res.exit_code != 0:
-            raise SandboxError(_truncate(err) or f"ls 실패 ({res.exit_code})")
-        return {"path": p, "listing": _truncate(out)}
+        code, out, err = self._exec_head(c, _timed(_READ_TIMEOUT, "ls", "-la", "--", p))
+        if code in (124, 137):
+            raise SandboxError(f"폴더 목록 시간 초과 ({_READ_TIMEOUT}초): {p}")
+        if code != 0:
+            raise SandboxError(err or f"ls 실패 ({code})")
+        return {"path": p, "listing": out}
 
     def read_file(self, sid: str, path: str) -> dict[str, Any]:
         c = self._require_running(sid)
@@ -544,8 +559,9 @@ class SandboxManager(DesktopTools):
         """
         c = self._require_running(sid)
         script = (f'[ -d {OUTBOX} ] && [ ! -L {OUTBOX} ] || exit 0; '
-                  f"find {OUTBOX} -mindepth 1 -maxdepth 1 -type f -printf '%s\\t%T@\\t%f\\0'")
-        res = c.exec_run(["sh", "-c", script], user=AGENT_UID, demux=True)
+                  f"find {OUTBOX} -mindepth 1 -maxdepth 1 -type f -printf '%s\\t%T@\\t%f\\0' "
+                  f"| head -c {_OUTBOX_CAP}")
+        res = c.exec_run(_timed(_READ_TIMEOUT, "sh", "-c", script), user=AGENT_UID, demux=True)
         return _parse_outbox(res.output[0] or b"")
 
     def outbox_read(self, sid: str, name: str) -> bytes:
@@ -571,11 +587,14 @@ class SandboxManager(DesktopTools):
     # 경로는 공백·줄바꿈을 품을 수 있다. 인자를 단어로 쪼개지 않고(IFS=) NUL로 나눠 받아야 한 경로가 한 줄이 된다.
     # 그러지 않으면 'rm "final report.docx"'의 영향 표가 있는 파일을 '없음'으로 보이거나 엉뚱한 파일을 보인다
     # (보안 검수 run-4 F4)
-    def _expand(self, c, pattern: str) -> list[str]:
-        """컨테이너 안에서 glob만 펼친다. 명령 치환은 일어나지 않는다."""
-        script = ('cd /workspace; IFS=; for p in $1; do if [ -e "$p" ] || [ -L "$p" ]; then printf "%s\\000" "$p"; '
-                  'fi; done')
-        res = c.exec_run(_timed(_PREVIEW_TIMEOUT, "sh", "-c", script, "_", pattern), user=AGENT_UID, demux=True)
+    def _expand(self, c, pattern: str, limit: int = 200) -> list[str]:
+        """컨테이너 안에서 틸드(~)와 glob만 펼친다. 명령 치환은 일어나지 않는다."""
+        script = ('cd /workspace; IFS=; '
+                  'case "$1" in "~") pat="$HOME";; "~/"*) pat="$HOME/${1#~/}";; *) pat="$1";; esac; '
+                  'for p in $pat; do if [ -e "$p" ] || [ -L "$p" ]; then printf "%s\\000" "$p"; fi; done '
+                  '| head -z -n "$2"')
+        res = c.exec_run(_timed(_PREVIEW_TIMEOUT, "sh", "-c", script, "_", pattern, str(limit + 1)),
+                         user=AGENT_UID, demux=True)
         _preview_ok(res)
         out = (res.output[0] or b"").decode("utf-8", errors="replace")
         return [p for p in out.split("\0") if p]
@@ -592,5 +611,5 @@ class SandboxManager(DesktopTools):
 
     def preview(self, sid: str, command: str, limit: int = 200) -> dict[str, Any]:
         c = self._container(sid)
-        return preview_command(command, limit, lambda pattern: self._expand(c, pattern),
+        return preview_command(command, limit, lambda pattern: self._expand(c, pattern, limit),
                                lambda path, n: self._walk(c, path, n))

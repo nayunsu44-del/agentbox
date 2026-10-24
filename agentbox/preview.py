@@ -85,8 +85,8 @@ def preview_command(command: str, limit: int, expand: Callable[[str], list[str]]
             return False
         calls += 1
         return True
-    if any(s in command for s in ("$", "`", "<(", "eval ")):
-        notes.append("변수·명령 치환이 있어 실제로 무엇이 실행될지 자동 계산이 정확하지 않을 수 있음. 명령 원문을 확인할 것.")
+    if any(s in command for s in ("$", "`", "<(", "eval ", "{", "~")):
+        notes.append("변수·명령 치환이나 중괄호·틸드 확장이 있어 실제로 무엇이 실행될지 자동 계산이 정확하지 않을 수 있음. 명령 원문을 확인할 것.")
     for seg in _split_segments(command):
         if not seg:
             continue
@@ -108,7 +108,10 @@ def preview_command(command: str, limit: int, expand: Callable[[str], list[str]]
                     continue
                 matches = expand(op)
                 if not matches:
-                    affected.append({"path": op, "effect": "삭제 시도 (현재 존재하지 않음)"})
+                    effect = ("삭제 시도 (중괄호·틸드 확장 — 명령 원문 확인)"
+                              if ("{" in op and "}" in op) or op.startswith("~")
+                              else "삭제 시도 (현재 존재하지 않음)")
+                    affected.append({"path": op, "effect": effect})
                 for m in matches:
                     if m == SOURCE or m.startswith(SOURCE + "/"):
                         affected.append({"path": m, "effect": "삭제 시도 → 실패 예정 (원본은 읽기 전용)"})

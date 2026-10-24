@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS audit (
     prev_hash   TEXT NOT NULL,
     hash        TEXT NOT NULL
 );
+CREATE INDEX IF NOT EXISTS idx_audit_sandbox_id ON audit (sandbox_id, id);
 CREATE TRIGGER IF NOT EXISTS audit_no_update BEFORE UPDATE ON audit
 BEGIN SELECT RAISE(ABORT, 'audit log is append-only'); END;
 CREATE TRIGGER IF NOT EXISTS audit_no_delete BEFORE DELETE ON audit
@@ -333,20 +334,49 @@ class AuditLog:
             return self.conn.execute("SELECT 1 FROM audit WHERE id = ? AND sandbox_id = ?",
                                      (rid, sandbox_id)).fetchone() is not None
 
+    _VERIFY_BATCH = 200
+
+    def _verify_live(self, anchor: tuple[int, str] | None, prev: str, expected: int,
+                     total: int = 0) -> VerifyResult | None:
+        """현재 audit 표를 _VERIFY_BATCH 행씩 끊어 검사한다. 해시 계산은 _lock 밖에서 돌려 다른 요청의
+        append()가 길게 막히지 않게 하고, 한꺼번에 전체 표를 메모리에 올리지 않는다 (보안 검수 run-6 F2)."""
+        through = anchor[0] if anchor and anchor[0] > 0 else None
+        cursor_id = anchor[0] if anchor else 0
+        cur_prev, cur_exp, cur_total = prev, expected, total
+        saw_any = False
+        while True:
+            with self._lock:
+                if latest_anchor(self.conn) != anchor:
+                    return None  # 검사 도중 retention.prune이 기준점을 바꿨다
+                rows = self.conn.execute(
+                    f"SELECT {AUDIT_COLUMNS} FROM audit WHERE id > ? ORDER BY id LIMIT ?",
+                    (cursor_id, self._VERIFY_BATCH),
+                ).fetchall()
+            if not rows:
+                break
+            saw_any = True
+            broken, cur_prev, cur_exp, n = check_chain(rows, cur_prev, cur_exp)
+            cur_total += n
+            if broken:
+                broken.checked = cur_total
+                broken.pruned_through = through
+                return broken
+            cursor_id = rows[-1][0]
+            if len(rows) < self._VERIFY_BATCH:
+                break
+        if anchor and not saw_any:   # 정리는 같은 트랜잭션에서 audit_pruned 항목을 남기므로 비어 있을 수 없다
+            return VerifyResult(False, total, expected, "정리 뒤의 항목이 하나도 없음 (항목 삭제 의심)", through)
+        return VerifyResult(True, cur_total, pruned_through=through)
+
     def verify(self) -> VerifyResult:
         """기준점(마지막 정리)부터 체인을 다시 계산한다. 정리한 적이 없으면 처음부터."""
-        with self._lock:
-            anchor = latest_anchor(self.conn)
-            rows = self.conn.execute(f"SELECT {AUDIT_COLUMNS} FROM audit ORDER BY id").fetchall()
-        prev, start = (anchor[1], anchor[0] + 1) if anchor else (GENESIS, 1)
-        through = anchor[0] if anchor and anchor[0] > 0 else None
-        if anchor and not rows:   # 정리는 같은 트랜잭션에서 audit_pruned 항목을 남기므로 비어 있을 수 없다
-            return VerifyResult(False, 0, start, "정리 뒤의 항목이 하나도 없음 (항목 삭제 의심)", through)
-        broken, _, _, n = check_chain(rows, prev, start)
-        if broken:
-            broken.pruned_through = through
-            return broken
-        return VerifyResult(True, n, pruned_through=through)
+        while True:
+            with self._lock:
+                anchor = latest_anchor(self.conn)
+            prev, start = (anchor[1], anchor[0] + 1) if anchor else (GENESIS, 1)
+            res = self._verify_live(anchor, prev, start)
+            if res is not None:
+                return res
 
     def verify_archives(self, paths: list[Path | str]) -> VerifyResult:
         """아카이브(오래된 것부터)와 지금 표를 처음부터 이어 검사한다. 아카이브마다 정리 기록(기준점)의
@@ -354,7 +384,6 @@ class AuditLog:
         with self._lock:
             anchors = self.conn.execute(
                 "SELECT last_id, last_hash, archive_sha256 FROM audit_anchor ORDER BY seq").fetchall()
-            rows = self.conn.execute(f"SELECT {AUDIT_COLUMNS} FROM audit ORDER BY id").fetchall()
         if len(paths) != len(anchors):
             return VerifyResult(False, 0, None, f"정리 기록은 {len(anchors)}번인데 아카이브는 {len(paths)}개")
         prev, expected, total = GENESIS, 1, 0
@@ -369,11 +398,8 @@ class AuditLog:
                 return broken
             if expected - 1 != last_id or prev != last_hash:
                 return VerifyResult(False, total, None, f"아카이브의 마지막 행이 기준점과 다름: {path}")
-        if anchors and not rows:
-            return VerifyResult(False, total, expected, "정리 뒤의 항목이 하나도 없음 (항목 삭제 의심)")
-        broken, _, _, n = check_chain(rows, prev, expected)
-        total += n
-        if broken:
-            broken.checked = total
-            return broken
-        return VerifyResult(True, total, pruned_through=anchors[-1][0] if anchors and anchors[-1][0] > 0 else None)
+        anchor = (anchors[-1][0], anchors[-1][1]) if anchors else None
+        res = self._verify_live(anchor, prev, expected, total)
+        if res is None:
+            return VerifyResult(False, total, None, "검사하는 사이 정리 기록이 바뀜. 다시 실행할 것")
+        return res

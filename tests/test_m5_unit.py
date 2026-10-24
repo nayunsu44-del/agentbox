@@ -386,3 +386,153 @@ def test_gui_approval_decided_during_takeover_takes_no_snapshot(tmp_path):
     assert sb.snaps == [] and sb.clicks == []
     assert "sb" not in box.bursts._gui_burst
     box.bursts._burst_pool.shutdown()
+
+
+# ---- 보안 검수 run-6 회귀 테스트 ----------------------------------------------------
+def test_gui_burst_covers_rejects_replaced_container_and_restore_ends_burst():
+    """보안 검수 run-6 F1: 복원 도중 옛 컨테이너에서 열린 GUI 구간은 컨테이너 ID가 바뀐 뒤 covers()가 거부하고,
+    restore_sandbox가 끝날 때 bursts.end로 닫아 새 컨테이너의 첫 GUI 입력이 스냅샷을 건너뛰지 않게 한다."""
+    from agentbox.service import AgentBox
+
+    sb = _GuiSb()
+    sb.container_id = "c1"
+    sb.get = lambda sid: {"id": sid, "container_id": sb.container_id, "status": "running"}
+    sb.restore = lambda sid, snap_id: (setattr(sb, "container_id", "c2") or {"id": sid, "container_id": "c2"})
+    box = AgentBox(_Audit(), Policy({"default": "allow"}), sb, approvals=None, desktop=DesktopControl())
+    assert box.bursts.open("sb", "snap_0")
+    assert box.bursts.covers("sb")
+    sb.container_id = "c2"
+    assert not box.bursts.covers("sb")
+    # 복원 중 열린 옛 구간도 restore_sandbox 끝에서 닫힌다
+    sb.container_id = "c1"
+    box.bursts.open("sb", "snap_0")
+    box.restore_sandbox("sb", "snap_0")
+    assert "sb" not in box.bursts._gui_burst and box.bursts.needs_snapshot("sb")
+    box.bursts._burst_pool.shutdown()
+
+
+def test_audit_sandbox_index_and_batched_verify(tmp_path, monkeypatch):
+    """보안 검수 run-6 F2: sandbox_id 조회는 복합 인덱스(idx_audit_sandbox_id)를 타고, verify()는 _VERIFY_BATCH씩
+    끊어 _lock 밖에서 해시를 검사한다."""
+    import sqlite3
+
+    from agentbox.audit import AuditLog
+
+    db = tmp_path / "audit.db"
+    log = AuditLog(db)
+    monkeypatch.setattr(AuditLog, "_VERIFY_BATCH", 5)
+    for i in range(17):
+        log.append(actor="agent", event="tool_call", sandbox_id=f"sb_{i % 3}", payload={"i": i})
+    plan = log.conn.execute(
+        "EXPLAIN QUERY PLAN SELECT id FROM audit WHERE sandbox_id = ? ORDER BY id DESC LIMIT 10", ("sb_1",)
+    ).fetchall()
+    assert any("idx_audit_sandbox_id" in str(r) for r in plan)
+    v = log.verify()
+    assert v.ok and v.checked == 17
+    raw = sqlite3.connect(db)
+    raw.execute("DROP TRIGGER audit_no_update")
+    raw.execute("UPDATE audit SET payload = '{\"i\":999}' WHERE id = 13")
+    raw.commit()
+    v2 = log.verify()
+    assert not v2.ok and v2.broken_at == 13 and v2.checked == 12
+
+
+def test_preview_warns_on_brace_and_tilde_expansion():
+    """보안 검수 run-6 F3: 중괄호({a,b})나 틸드(~) 확장이 든 rm 명령은 주의 문구를 띄우고,
+    펼쳐지지 않은 원문을 '현재 존재하지 않음'으로 단정하지 않는다."""
+    from agentbox.preview import preview_command
+
+    p = preview_command("rm {a,b}.txt ~/secret.txt", 200, lambda pat: [], lambda path, n: [path])
+    assert any("중괄호·틸드" in n for n in p["notes"])
+    effects = {item["path"]: item["effect"] for item in p["affected"]}
+    assert "중괄호·틸드 확장" in effects["{a,b}.txt"]
+    assert "중괄호·틸드 확장" in effects["~/secret.txt"]
+
+
+def test_same_origin_rejects_http_origin_when_secure_cookie_active(tmp_path, monkeypatch):
+    """보안 검수 run-6 N1: Secure 쿠키(HTTPS) 환경에서는 같은 호스트라도 평문 http:// Origin을 거부한다."""
+    import hashlib
+    from fastapi import HTTPException
+    from starlette.requests import Request
+
+    if not hasattr(hashlib, "pbkdf2_hmac"):
+        monkeypatch.setattr(hashlib, "pbkdf2_hmac",
+                            lambda name, pw, salt, iters: hashlib.sha256(pw + salt).digest(), raising=False)
+
+    def req(scheme: str, origin: str) -> Request:
+        return Request({
+            "type": "http",
+            "method": "POST",
+            "scheme": scheme,
+            "path": "/logout",
+            "headers": [(b"host", b"box.example"), (b"origin", origin.encode())],
+        })
+
+    app, _, _ = _fake_app(tmp_path, monkeypatch)
+    logout = next(r.endpoint for r in app.routes if getattr(r, "path", None) == "/logout")
+    assert logout(req("http", "http://box.example")).status_code == 303
+    with pytest.raises(HTTPException) as e:
+        logout(req("https", "http://box.example"))
+    assert e.value.status_code == 403
+    assert logout(req("https", "https://box.example")).status_code == 303
+
+    monkeypatch.setenv("AGENTBOX_SECURE_COOKIE", "1")
+    app_sec, _, _ = _fake_app(tmp_path / "sec", monkeypatch)
+    logout_sec = next(r.endpoint for r in app_sec.routes if getattr(r, "path", None) == "/logout")
+    with pytest.raises(HTTPException) as e2:
+        logout_sec(req("http", "http://box.example"))
+    assert e2.value.status_code == 403
+    assert logout_sec(req("http", "https://box.example")).status_code == 303
+
+
+def test_container_readers_cap_output_and_timeout():
+    """보안 검수 run-6 N2: list_dir·outbox_list·_expand·screenshot이 컨테이너 쪽 시간 제한과 바이트·개수 상한을 건다."""
+    from docker.models.containers import ExecResult
+
+    from agentbox.sandbox import SandboxError, SandboxManager
+
+    class C:
+        id = "c1"
+
+        def __init__(self):
+            self.argv = []
+
+        def exec_run(self, argv, **kw):
+            self.argv.append(argv)
+            return ExecResult(0, (b"total 0\\n", b"") if kw.get("demux") else b"")
+
+    c = C()
+    sm = SandboxManager.__new__(SandboxManager)
+    sm.client = None
+    sm._require_running = sm._container = sm._desktop = lambda sid: c
+    assert sm.list_dir("sb", "/workspace")["path"] == "/workspace"
+    assert sm.outbox_list("sb") == []
+    assert sm._expand(c, "*.txt", 50) == ["total 0\\n"]
+    assert all(a[0] == "timeout" for a in c.argv) and len(c.argv) == 3
+    assert "head -c" in c.argv[1][-1]
+    assert 'head -z -n "$2"' in c.argv[2][6] and c.argv[2][-1] == "51"
+    with pytest.raises(SandboxError):
+        sm.screenshot("sb")
+    assert "head -c" in c.argv[3][-1]
+
+
+def test_disk_low_checks_docker_root_dir(tmp_path, monkeypatch):
+    """보안 검수 run-6 N3: DB 파티션에 여유가 있어도 Docker 저장소(docker_root) 파티션이 부족하면 disk_low가 켜진다."""
+    import shutil
+    from collections import namedtuple
+
+    from agentbox.service import AgentBox
+
+    Usage = namedtuple("Usage", ["total", "used", "free"])
+    sb = _GuiSb()
+    sb.settings.min_free_bytes = 1000
+    sb.settings.home = tmp_path / "home"
+    sb.docker_root = tmp_path / "docker"
+    monkeypatch.setattr(
+        shutil,
+        "disk_usage",
+        lambda p: Usage(10000, 9500, 500) if p == sb.docker_root else Usage(10000, 1000, 9000),
+    )
+    box = AgentBox(_Audit(), Policy({"default": "allow"}), sb, approvals=None, desktop=DesktopControl())
+    assert box.disk_low()
+    box.bursts._burst_pool.shutdown()

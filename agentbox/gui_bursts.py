@@ -67,8 +67,16 @@ class GuiBursts:
 
     def covers(self, sid: str) -> bool:
         """지금 GUI 입력을 실행해도 열린 구간이 그 변경을 받는지. gui_lock을 잡은 채로 부른다.
-        스냅샷 판단은 잠금 전에 하므로, 잠금을 기다리는 사이 인수·반환으로 구간이 닫히면 여기서 걸러진다."""
-        return self.sandboxes.settings.gui_snapshot_interval <= 0 or sid in self._gui_burst
+        스냅샷 판단은 잠금 전에 하므로, 잠금을 기다리는 사이 인수·반환·복원으로 구간이 닫히거나 컨테이너가 바뀌면 여기서 걸러진다."""
+        if self.sandboxes.settings.gui_snapshot_interval <= 0:
+            return True
+        burst = self._gui_burst.get(sid)
+        if not burst:
+            return False
+        try:
+            return burst.get("container_id") == self.sandboxes.get(sid)["container_id"]
+        except Exception:
+            return False
 
     def open(self, sid: str, snapshot_id: str) -> bool:
         try:

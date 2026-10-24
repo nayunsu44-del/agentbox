@@ -5,6 +5,7 @@
 # 파일 넣기(/sandboxes/{id}/files)만 큰 본문을 받고, 나머지 JSON·폼 경로는 작게 끊는다 (보안 검수 run-5 N1).
 # 파일 넣기 상한(기본 256MB)을 agentbox의 AGENTBOX_MAX_UPLOAD_BODY보다 작게 잡으면 큰 파일을 넣을 수 없다.
 {$AGENTBOX_SITE} {
+	header Strict-Transport-Security "max-age=31536000"
 	@upload path_regexp ^/sandboxes/[^/]+/files$
 	@other not path_regexp ^/sandboxes/[^/]+/files$
 	request_body @upload {

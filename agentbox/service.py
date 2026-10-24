@@ -419,8 +419,9 @@ class AgentBox:
                                             "돌려받은 뒤 다시 호출할 것 (GET /sandboxes/{id}/desktop/state)."})
 
     def disk_low(self) -> bool:
-        """DB가 있는 디스크의 남은 공간이 min_free_bytes보다 적은지. 에이전트가 늘리는 기록(도구 호출, 승인 시도)은
-        이때 받지 않아서, 남은 공간을 사람의 삭제·승인·반환이 쓴다 (보안 검수 run-4 N2). 상태가 바뀔 때만 기록한다."""
+        """DB나 Docker 저장소가 있는 디스크의 남은 공간이 min_free_bytes보다 적은지. 에이전트가 늘리는 기록(도구 호출,
+        승인 시도)은 이때 받지 않아서, 남은 공간을 사람의 삭제·승인·반환이 쓴다 (보안 검수 run-4 N2, run-6 N3).
+        상태가 바뀔 때만 기록한다."""
         s = self.sandboxes.settings
         if s.min_free_bytes <= 0:
             return False
@@ -428,6 +429,12 @@ class AgentBox:
             free = shutil.disk_usage(s.db_path.parent).free
         except OSError:
             return False
+        docker_root = getattr(self.sandboxes, "docker_root", None)
+        if docker_root:
+            try:
+                free = min(free, shutil.disk_usage(docker_root).free)
+            except OSError:
+                pass
         low = free < s.min_free_bytes
         with self._busy_lock:
             changed, self._low_disk = low != self._low_disk, low
@@ -575,7 +582,7 @@ class AgentBox:
             self.log_human("restore_request", sid, _with_session({"snapshot_id": snap_id}, session))
             self.end_desktop(sid, "sandbox_restored")
             rec = self.sandboxes.restore(sid, snap_id)
-            self.bursts.reset_timers(sid)  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
+            self.bursts.end(sid, "sandbox_restored")  # 바꾸는 사이에 들어온 GUI 입력도 새 컨테이너에서 새 구간을 열게
             self.log_human("restored", sid, _with_session({"snapshot_id": snap_id,
                                                            "container_id": rec["container_id"]}, session))
             return rec

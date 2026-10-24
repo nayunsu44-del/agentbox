@@ -1,6 +1,6 @@
 # agentbox 보안 감사 run-6 보고서
 
-감사 기준은 `main` 커밋 `530b29e`(run-5 수정 PR #24·#25 반영 이후)이다. 프로필은 `standard`, 서브에이전트 호출 상한은 소유자가 정한 **30**(모두 `flash` 모델)이다. run-5에서 보류한 7단위(상위 4단위 + 나머지 3단위)와 PR #24·#25가 바꾼 코드 4단위를 합친 **11단위 전체 후속 감사**다. 소유자 지시에 따라 이번 감사에서는 확정 건에 대해 보고서까지만 작성하고 코드 수정은 하지 않았다.
+감사 기준은 `main` 커밋 `530b29e`(run-5 수정 PR #24·#25 반영 이후)이다. 프로필은 `standard`, 서브에이전트 호출 상한은 소유자가 정한 **30**(모두 `flash` 모델)이다. run-5에서 보류한 7단위(상위 4단위 + 나머지 3단위)와 PR #24·#25가 바꾼 코드 4단위를 합친 **11단위 전체 후속 감사**다. 1차 보고 뒤 소유자 지시('사용에 영향 없는 건 보고 없이 수정')에 따라 확정 3건(F1~F3)과 검증 필요 하드닝 3건(N1~N3)을 모두 수정하고 회귀 테스트를 추가했다.
 
 ## 1. 요약
 
@@ -17,7 +17,7 @@
 - **정찰:** 에이전트 호출 없이 부모가 직접 수행했다. run-5 구조 요약에 `346df29..530b29e`(PR #24·#25)에서 바뀐 13개 소스 파일의 변경분과 현재 줄 번호를 반영했다(`architecture.md` 0.1절).
 - **범위 단위(11단위):** run-5 보류 상위 4단위(`same_origin` 스킴 비교, 컨테이너 출력 판독기 상한, 승인 미리보기의 정확성, `AuditLog._lock` 경합) + PR #24·#25 변경 4단위 + 나머지 보류 3단위(Docker data-root 증가와 `disk_low`, 복원 전후 `GuiBursts.covers` 컨테이너 ID 바인딩, PR #19 제어문자 필터 완전성). 1차 파동 뒤 사후 비평(`critic-1`)이 빠진 단위가 없음을 확인하고 `stop: true`를 반환했다.
 
-## 3. 확정 항목 (코드 미수정 — 보고 전용)
+## 3. 확정 항목 (모두 수정 완료)
 
 | ID | 심각도 | 제목 | 주 경로 | 권장 수정 방향 |
 |---|---|---|---|---|
@@ -46,13 +46,12 @@
 - 헌팅한 11단위 중 5단위는 보안 불변식이 지켜짐을 확인해 `covered`로 닫았고, 6단위는 후보를 내어 3단계·5단계 검증을 거쳐 확정 3건(`confirmed`)과 검증 필요 3건(`needs_validation`)으로 닫았다.
 - 사후 비평(`critic-1`)과 최종 비평(`critic-2`) 모두 빠진 단위 없이 `stop: true`를 반환했다.
 
-## 7. 소유자 판단이 필요한 사항
+## 7. 후속 수정 결과 (소유자 지시 반영)
 
-1. **확정 3건(F1~F3) 수정 여부 및 범위 지시:**
-   - **F1 (`GuiBursts.covers` 컨테이너 ID 바인딩 및 복원 경합, 중간):** `GuiBursts.covers(sid)`에서 `burst['container_id'] == sandboxes.get(sid)['container_id']`를 확인하고, `restore_sandbox`가 `sandboxes.restore` 뒤에도 열린 구간을 닫도록 고칠지.
-   - **F2 (`AuditLog` 인덱스 부재 및 `verify()` 전체 테이블 `fetchall()` 잠금 점유, 중간):** `audit(sandbox_id, id)` 인덱스를 추가하고 `verify()`를 배치 조회 또는 별도 읽기 연결로 바꿀지.
-   - **F3 (승인 미리보기의 중괄호 `{a,b}`·틸드 `~` 미확장 오표시, 낮음):** `preview.py`에서 `{`·`~`에 대해 자동 계산 한계 주의 메모(`notes`)를 띄울지, 아니면 `_expand`를 `/bin/bash`로 맞출지(또는 둘 다 할지).
-2. **검증 필요 3건(N1~N3)에 대한 하드닝 여부:**
-   - **N1 (`same_origin` 스킴 비교):** 배포 앞단(Caddy)에 맡길지, 코드에서 `secure_cookie(request)`일 때 `Origin`의 `https://` 스킴까지 함께 요구할지.
-   - **N2 (컨테이너 출력 판독기 `_Head` 스트리밍 상한):** `list_dir`·`desktop_processes`·`screenshot` 등 `c.exec_run` 호출도 `_Head` 스트리밍(또는 `head -c`)으로 통일할지.
-   - **N3 (`disk_low`의 Docker `data-root` 미감시):** 단일 파일시스템 배포를 전제로 문서화할지, 아니면 `DockerRootDir`(또는 설정 가능한 추가 감시 경로)를 `disk_low()` 검사 경로에 추가할지.
+정상 사용에 영향을 주지 않는 범위에서 확정 3건(F1~F3)과 검증 필요 하드닝 3건(N1~N3)을 모두 수정하고 `tests/test_m5_unit.py`에 회귀 테스트 6개를 추가했다:
+- **F1 (`agentbox/audit.py`):** `SCHEMA`에 `CREATE INDEX IF NOT EXISTS idx_audit_sandbox_id ON audit (sandbox_id, id)`를 추가하고, `verify()`·`verify_archives()`가 `_VERIFY_BATCH = 200`행씩 끊어 읽고 해시 계산은 `self._lock` 밖에서 수행하도록 수정했다.
+- **F2 (`agentbox/gui_bursts.py`, `agentbox/service.py`):** `GuiBursts.covers(sid)`가 `burst.get('container_id') == self.sandboxes.get(sid)['container_id']`까지 확인하고, `restore_sandbox`가 `sandboxes.restore` 뒤에 `self.bursts.end(sid, 'sandbox_restored')`를 호출해 복원 중 열린 옛 구간을 닫도록 수정했다.
+- **F3 (`agentbox/preview.py`, `agentbox/sandbox.py`):** `preview_command`가 명령에 `{` 또는 `~`가 있으면 주의 문구를 남기고 매칭이 없을 때 `'삭제 시도 (중괄호·틸드 확장 — 명령 원문 확인)'`으로 표시하며, `_expand`가 앞쪽 `~`/`~/`를 `$HOME`으로 펼치도록 수정했다.
+- **N1 (`agentbox/api.py`, `agentbox/web.py`, `deploy/Caddyfile`):** `secure_cookie(request)`가 참(`AGENTBOX_SECURE_COOKIE=1` 또는 `https`/`wss` 요청)일 때 `same_origin()`이 `Origin`의 `https` 스킴까지 요구하도록 하고, `deploy/Caddyfile`에 `Strict-Transport-Security` 헤더를 추가했다(로컬 평문 HTTP 개발 환경은 기존대로 동작).
+- **N2 (`agentbox/sandbox.py`, `agentbox/sandbox_desktop.py`):** `list_dir`가 `_exec_head`(`_timed` + `_Head` 64KiB 스트리밍 상한)를 쓰고, `outbox_list`(`_timed` + `head -c 524288`), `_expand`(`head -z -n`), `screenshot`(`rm -f` + 일반 파일 확인 + `head -c 16MiB`)에 상한을 걸었다.
+- **N3 (`agentbox/sandbox.py`, `agentbox/service.py`):** `SandboxManager._detect_runtime()`이 `client.info()`의 `DockerRootDir`를 저장하고, `AgentBox.disk_low()`가 접근 가능한 `docker_root`의 남은 공간도 함께 확인하도록 수정했다.
