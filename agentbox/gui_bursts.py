@@ -52,13 +52,17 @@ class GuiBursts:
     def mark_snapshot(self, sid: str) -> None:
         self._gui_snap_at[sid] = time.monotonic()
 
+    def human_active(self, sid: str) -> bool:
+        """사람이 화면을 쥐고 있거나 인수를 기다리는 중인지 (잠금 밖 빠른 확인)."""
+        return bool((self.desktop.lease(sid) and not self.desktop.is_stale(sid)) or self._takeover_pending(sid))
+
     def needs_snapshot(self, sid: str) -> bool:
         """GUI 입력은 터미널·파일 관리자 등으로 정책 밖에서 /workspace를 바꿀 수 있다. 막을 수는 없으니
         AP-2의 복구 지점만이라도 남긴다: GUI 구간이 시작될 때와, 구간이 길면 interval마다."""
         s = self.sandboxes.settings
         if s.gui_snapshot_interval <= 0:
             return False
-        if (self.desktop.lease(sid) and not self.desktop.is_stale(sid)) or self._takeover_pending(sid):
+        if self.human_active(sid):
             return False  # 사람이 조작 중이라 어차피 423
         now = time.monotonic()
         last_input, last_snap = self._gui_input_at.get(sid), self._gui_snap_at.get(sid)

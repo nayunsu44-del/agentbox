@@ -86,13 +86,7 @@ def test_write_file_content_not_logged():
 
 
 # ---- run-3 v11·v10: 응답 없는 화면이 다른 호출과 사람의 인수를 붙잡지 않는다 ------------------
-class _Audit:
-    def __init__(self):
-        self.rows = []
-
-    def append(self, **row):
-        self.rows.append(row)
-        return len(self.rows)
+from conftest import FakeAudit as _Audit
 
 
 class _Sandboxes:

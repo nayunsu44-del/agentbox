@@ -345,41 +345,7 @@ class AgentBox:
             return ToolOutcome(403, {"status": "denied", "rule_id": decision.rule_id, "reason": decision.reason})
 
         if decision.action == REQUIRE_APPROVAL:
-            if len(self.approvals.list(status=A.PENDING, sandbox_id=sid)) >= PENDING_APPROVALS_MAX:
-                self.log_best_effort(sid, tool, "tool_blocked", {"request": req_id, "reason": "too_many_pending_approvals",
-                                                                 "limit": PENDING_APPROVALS_MAX})
-                raise ServiceError(429, f"이 샌드박스의 승인 대기가 이미 {PENDING_APPROVALS_MAX}개. "
-                                        "사람이 결정하거나 기한이 지난 뒤 다시 호출할 것.")
-            try:
-                preview = self._preview(sid, tool, args)
-            except Exception as e:  # 미리보기가 실패해도 승인은 사람에게 넘긴다
-                preview = {"command": args.get("command"), "affected": [], "notes": [f"미리보기 실패: {e}"]}
-            preview = bound_payload(preview)  # 대기 행도 감사 로그와 같은 크기로 (보안 검수 run-5)
-            if actor == "agent" and self.disk_low():
-                # 호출을 받을 때의 확인 뒤에 판단·미리보기가 오래 걸릴 수 있다. 행을 쓰기 직전에 다시 본다
-                self.log_best_effort(sid, tool, "tool_blocked", {"request": req_id, "reason": "disk_low"})
-                raise ServiceError(507, "컨트롤 플레인 디스크의 남은 공간이 부족해 승인 요청을 만들지 않음. "
-                                        "사람이 공간을 확보한 뒤 다시 호출할 것.")
-            cap = self._capture(sid)
-            if cap:
-                preview["capture"] = cap[1]
-            apr = self.approvals.create(sandbox_id=sid, tool=tool, args=args, rule_id=decision.rule_id,
-                                        rule_reason=decision.reason, preview=preview)
-            if cap:
-                self.captures.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
-                (self.captures / f"{apr['id']}.png").write_bytes(cap[0])  # type: ignore[operator]
-            try:
-                self.audit.append(actor="system", event="approval_requested", sandbox_id=sid, tool=tool,
-                                  payload={"request": req_id, "approval_id": apr["id"],
-                                           "preview": {k: v for k, v in preview.items() if k != "capture"},
-                                           "capture": preview.get("capture"), "expires_in": self.approval_timeout})
-            except AuditWriteError as e:
-                self.approvals.claim(apr["id"], A.FAILED, "system")
-                self._drop_capture(apr["id"])
-                raise ServiceError(503, f"{e}. 기록할 수 없어서 승인 요청을 취소함.") from e
-            return ToolOutcome(202, {"status": "pending", "approval_id": apr["id"],
-                                     "expires_in": self.approval_timeout,
-                                     "message": "사람의 승인을 기다리는 중. GET /approvals/{id}로 결과를 확인."})
+            return self._request_approval(sid, tool, args, actor, req_id, decision)
 
         assert decision.action == ALLOW
         if self._needs_snapshot(sid, tool, args):
@@ -407,6 +373,44 @@ class AgentBox:
             raise ServiceError(400, str(e)) from e
         self.log_best_effort(sid, tool, "tool_result", {"request": req_id, **self._summary(tool, result)})
         return ToolOutcome(200, {"status": "executed", "result": result})
+
+    def _request_approval(self, sid: str, tool: str, args: dict[str, Any], actor: str,
+                          req_id: int, decision: Decision) -> ToolOutcome:
+        if len(self.approvals.list(status=A.PENDING, sandbox_id=sid)) >= PENDING_APPROVALS_MAX:
+            self.log_best_effort(sid, tool, "tool_blocked", {"request": req_id, "reason": "too_many_pending_approvals",
+                                                             "limit": PENDING_APPROVALS_MAX})
+            raise ServiceError(429, f"이 샌드박스의 승인 대기가 이미 {PENDING_APPROVALS_MAX}개. "
+                                    "사람이 결정하거나 기한이 지난 뒤 다시 호출할 것.")
+        try:
+            preview = self._preview(sid, tool, args)
+        except Exception as e:  # 미리보기가 실패해도 승인은 사람에게 넘긴다
+            preview = {"command": args.get("command"), "affected": [], "notes": [f"미리보기 실패: {e}"]}
+        preview = bound_payload(preview)  # 대기 행도 감사 로그와 같은 크기로 (보안 검수 run-5)
+        if actor == "agent" and self.disk_low():
+            # 호출을 받을 때의 확인 뒤에 판단·미리보기가 오래 걸릴 수 있다. 행을 쓰기 직전에 다시 본다
+            self.log_best_effort(sid, tool, "tool_blocked", {"request": req_id, "reason": "disk_low"})
+            raise ServiceError(507, "컨트롤 플레인 디스크의 남은 공간이 부족해 승인 요청을 만들지 않음. "
+                                    "사람이 공간을 확보한 뒤 다시 호출할 것.")
+        cap = self._capture(sid)
+        if cap:
+            preview["capture"] = cap[1]
+        apr = self.approvals.create(sandbox_id=sid, tool=tool, args=args, rule_id=decision.rule_id,
+                                    rule_reason=decision.reason, preview=preview)
+        if cap:
+            self.captures.mkdir(parents=True, exist_ok=True)  # type: ignore[union-attr]
+            (self.captures / f"{apr['id']}.png").write_bytes(cap[0])  # type: ignore[operator]
+        try:
+            self.audit.append(actor="system", event="approval_requested", sandbox_id=sid, tool=tool,
+                              payload={"request": req_id, "approval_id": apr["id"],
+                                       "preview": {k: v for k, v in preview.items() if k != "capture"},
+                                       "capture": preview.get("capture"), "expires_in": self.approval_timeout})
+        except AuditWriteError as e:
+            self.approvals.claim(apr["id"], A.FAILED, "system")
+            self._drop_capture(apr["id"])
+            raise ServiceError(503, f"{e}. 기록할 수 없어서 승인 요청을 취소함.") from e
+        return ToolOutcome(202, {"status": "pending", "approval_id": apr["id"],
+                                 "expires_in": self.approval_timeout,
+                                 "message": "사람의 승인을 기다리는 중. GET /approvals/{id}로 결과를 확인."})
 
     def _human_blocked(self, sid: str, tool: str, req_id: int, h: HumanControl) -> ToolOutcome:
         try:
@@ -502,8 +506,7 @@ class AgentBox:
             self._finish(apr, A.DENIED, {"message": "사람이 거절함. 실행하지 않음."})
             return self.approvals.get(aid)  # type: ignore[return-value]
 
-        if tool in GUI_INPUT and ((self.desktop.lease(sid) and not self.desktop.is_stale(sid))
-                                  or self._takeover_pending(sid)):
+        if tool in GUI_INPUT and self.bursts.human_active(sid):
             # 사람이 화면을 조작 중이면 GUI 입력은 어차피 실행하지 않는다. 스냅샷·구간도 만들지 않는다 (보안 검수 run-5)
             msg = "사람이 화면을 조작 중이라 승인된 GUI 입력을 실행하지 않음. 돌려받은 뒤 다시 요청할 것"
             self._finish(apr, A.FAILED, {"error": msg})
