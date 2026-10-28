@@ -1,0 +1,13 @@
+  filler exec n=55: executed
+n_bg=55: write_file outcomes {(200, 'executed'): 1, (202, 'pending'): 2}; .claude/settings.json now 'INJECTED n=55 i=0'
+  filler exec n=58: executed
+n_bg=58: write_file outcomes {(400, '쓰기 실패 (126)'): 3}; .claude/settings.json now 'INJECTED n=55 i=0'
+  filler exec n=60: executed
+n_bg=60: write_file outcomes {(400, '쓰기 실패 (126)'): 3}; .claude/settings.json now 'INJECTED n=55 i=0'
+  filler exec n=61: executed
+n_bg=61: write_file outcomes {(400, '쓰기 실패 (126)'): 3}; .claude/settings.json now 'INJECTED n=55 i=0'
+  filler exec n=62: executed
+n_bg=62: write_file outcomes {(400, '쓰기 실패 (126)'): 3}; .claude/settings.json now 'INJECTED n=55 i=0'
+  filler exec n=63: executed
+n_bg=63: write_file outcomes {(400, '쓰기 실패 (126)'): 3}; .claude/settings.json now 'INJECTED n=55 i=0'
+write_file policy_decision: Counter({('allow', None): 16, ('require_approval', 'instruction-file-write-needs-approval'): 2})
