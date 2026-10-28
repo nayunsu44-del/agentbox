@@ -1,0 +1,2 @@
+original: 20 x 1 MiB U+0001 render+sha256 10.127 s, body 83909102 bytes | tail marker present: False
+fixed: 20 x 1 MiB U+0001 render+sha256 0.040 s, body 352582 bytes | tail marker present: True

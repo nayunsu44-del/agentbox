@@ -1,0 +1,5 @@
+{
+ "decision": "replace",
+ "reason": "wording, remediation and evidence-only corrections; root cause mechanism, trace, execution, impact and severity unchanged (parent accepted as non-material)",
+ "fingerprint": "agentbox/templates/_approvals.html:instruction-content-full-render-unbounded-per-poll"
+}

@@ -1,0 +1,146 @@
+{
+ "fingerprint": "agentbox/templates/_approvals.html:instruction-content-full-render-unbounded-per-poll",
+ "title": "Instruction-file approval cards render attacker-sized full content with no per-card or aggregate cap, re-rendered on every 2 s poll",
+ "description": "A prompt-injected sandbox agent holding its own agent token can queue PENDING_APPROVALS_MAX=20 pending write_file approvals per sandbox to instruction-file paths (default rule instruction-file-write-needs-approval). Each pending row stores the agent's full 'content', which is exempt from TOOL_ARG_MAX. _approvals.html renders every pending instruction-file card's content in full through autoescape plus _shown (escape_controls turns each non-printable-ASCII character such as U+0001 into a 4-character escape) with no truncation and no aggregate cap. web.render materialises and SHA-256-hashes the whole body on every request, including ones that end in 204, and index.html and sandbox.html both poll the fragment every 2 s; the index fragment aggregates the pending set of all sandboxes. Parent-live evidence against the real API: 20 write_file calls returned 202 (the 21st 429), and each GET /ui/approvals returned 83,920,462 bytes in about 13.7 s. Independent sandboxed reproduction with the real template and filters: 20 x 1 MiB U+0001 cards took 10.85 s to render and hash and produced an 80.0 MiB body, against 0.13 s / 20.0 MiB for printable ASCII. The human approval view becomes unusable while the attacker's writes are pending, and each poll ties up a control-plane worker for seconds of CPU.",
+ "root_cause": "_approvals.html:13 outputs a.args.content in full with no length bound. _shown/escape_controls expands each non-printable-ASCII character about 4x. Neither the card nor the fragment has a rendered-size cap. web.render (web.py:147-148) always builds and hashes the full body before deciding on a 204. Content size is not checked when the approval is created: service.py:359-360 exempts 'content' from TOOL_ARG_MAX, and the max_write_bytes=1 MiB check only runs when the approved write executes (sandbox.py:507). A pending card's content is therefore bounded only by the 8 MiB JSON body limit (config.py:65); the 1 MiB-per-card figure used in the measurements is a conservative lower bound.",
+ "intended_behavior": "The approvals fragment, polled every 2 s from the index and sandbox pages, should cap the CPU and bytes each poll costs, so that pending content chosen by an agent cannot make a poll cost seconds of control-plane CPU or tens of MiB of response, and the human can still review and deny the request.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/service.py",
+   "line": 359,
+   "scope": "AgentBox._call_tool argument-length gate",
+   "description": "The agent's write_file call enters here. The TOOL_ARG_MAX comprehension skips the 'content' key, so content of any size passes. Nothing checks max_write_bytes before the approval is created."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 433,
+   "scope": "AgentBox._request_approval",
+   "description": "approvals.create stores the full args (including 1 MiB content); up to PENDING_APPROVALS_MAX=20 rows can be pending per sandbox."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/web.py",
+   "line": 251,
+   "scope": "approvals_view",
+   "description": "Lists every pending approval; with sandbox_id=None (the index poll) it aggregates all sandboxes into one fragment."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/web.py",
+   "line": 148,
+   "scope": "render()",
+   "description": "Builds the entire response body and hashes it on every request, even when it returns 204."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/templates/_approvals.html",
+   "line": 13,
+   "scope": "pending instruction-file card",
+   "description": "<pre>{{ a.args.content }}</pre> renders the full content through _shown; no truncation or aggregate cap."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/service.py",
+   "line": 47,
+   "description": "PENDING_APPROVALS_MAX = 20 pending approvals per sandbox."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 507,
+   "description": "max_write_bytes is enforced only when the approved write executes, not when the pending approval is created."
+  },
+  {
+   "file": "agentbox/config.py",
+   "line": 65,
+   "description": "max_body_bytes defaults to 8 MiB; this is the effective bound on pending content per card."
+  },
+  {
+   "file": "agentbox/default_policy.yaml",
+   "line": 24,
+   "description": "instruction-file-write-needs-approval routes write_file to instruction files to approval, which selects the full-content card branch."
+  },
+  {
+   "file": "agentbox/templates/index.html",
+   "line": 25,
+   "description": "hx-get=\"/ui/approvals\" (all sandboxes) with hx-trigger=\"load, every 2s\"."
+  },
+  {
+   "file": "agentbox/templates/sandbox.html",
+   "line": 25,
+   "description": "Per-sandbox approvals fragment, also polled every 2s."
+  },
+  {
+   "file": "agents/parent-live/artifacts/approvals_render_live.out",
+   "line": 1,
+   "description": "Live API: 20 write_file calls returned 202 and the 21st 429; GET /ui/approvals returned 200 with 83,920,462 bytes in 13.69-13.91 s per request, for both the index and the per-sandbox fragment."
+  },
+  {
+   "file": "agents/v-approvals-render/artifacts/v_render.out",
+   "line": 1,
+   "description": "Sandboxed reproduction with the real template and filters: 20 x 1 MiB U+0001 took 10.846 s to render and hash and produced 83,909,472 bytes; 20 x 1 MiB 'a' took 0.131 s and produced 20,994,912 bytes."
+  }
+ ],
+ "conditions": [
+  {
+   "kind": "authentication_level",
+   "description": "Attacker holds a per-sandbox agent token (the assumed prompt-injected agent)."
+  },
+  {
+   "kind": "user_interaction",
+   "description": "A human has an approvals view open; the index and sandbox pages poll /ui/approvals every 2 s automatically."
+  },
+  {
+   "kind": "data_state",
+   "description": "Up to 20 pending instruction-file write approvals per sandbox, each carrying large content of non-printable-ASCII characters; approvals expire after approval_timeout (default 300 s) and the agent can queue them again."
+  },
+  {
+   "kind": "system_configuration",
+   "description": "Default configuration: default_policy.yaml v4, PENDING_APPROVALS_MAX 20, max_body_bytes 8 MiB."
+  }
+ ],
+ "execution": {
+  "attacker_perspective": "As the sandbox agent, fill the per-sandbox pending queue with maximum-size instruction-file writes; every human poll of the approvals view then re-renders them.",
+  "payloads": [
+   "POST /sandboxes/{sid}/tools/write_file {\"args\":{\"path\":\"CLAUDE.md\",\"content\":\"\\u0001\" * 1048576}}",
+   "repeat 20 times with different instruction-file paths to reach PENDING_APPROVALS_MAX"
+  ],
+  "instructions": [
+   "In the sandbox, build a Jinja2 environment for agentbox/templates with autoescape on, finalize=agentbox.web._shown, and filters oneline/short as in web.register.",
+   "Construct 20 pending-approval dicts with tool='write_file', preview.instruction_file set, and args.content = '\\x01' * (1024*1024).",
+   "Render _approvals.html once and record render time and body size."
+  ],
+  "observed_result": "Rendering and hashing 20 x 1 MiB U+0001 cards took 10.846 s and produced an 80.0 MiB body; printable ASCII took 0.131 s for 20.0 MiB. The parent-live run against the real API measured 83,920,462 bytes in about 13.7 s per GET /ui/approvals."
+ },
+ "remediation": {
+  "strategy": "In the polled fragment, show only a capped prefix of instruction-file content, with total length, a digest, and a link to a separate non-polled page that shows the full content for the approval under review. Cap the total rendered bytes per fragment. Reject or bound write_file content at max_write_bytes before creating an approval. Base the 204 version on approval ids and statuses, not on a hash of the rendered body.",
+  "code_changes": [
+   {
+    "file_name": "agentbox/templates/_approvals.html",
+    "fixed_code": "<pre class=\"instruction-content\" style=\"max-height:480px\">{{ a.args.content[:4096] }}{% if a.args.content | length > 4096 %}\n…({{ a.args.content | length - 4096 }}자 더)\n{% endif %}</pre><a href=\"/ui/approvals/{{ a.id }}/content\">전체 내용 보기</a>"
+   },
+   {
+    "file_name": "agentbox/service.py",
+    "fixed_code": "        if tool == \"write_file\" and len(str(args.get(\"content\", \"\")).encode()) > self.sandboxes.settings.max_write_bytes:\n            raise ServiceError(413, \"쓸 내용이 너무 큼\")"
+   }
+  ]
+ },
+ "severity": {
+  "likelihood": {
+   "score": "high",
+   "reason": "Triggered by a prompt-injected agent under default configuration; the UI polls automatically."
+  },
+  "impact": {
+   "score": "medium",
+   "reason": "Degrades or denies the human approval UI and ties up control-plane threadpool workers while the human triages the attacker's writes; no data loss or privilege change."
+  },
+  "overall_severity": "medium"
+ },
+ "confidence": {
+  "score": "high",
+  "reason": "Measured with the real template and filters in the sandbox and against the real API in a parent-live run; bounds and per-poll rebuild are source-confirmed."
+ },
+ "verdict": "confirmed"
+}
