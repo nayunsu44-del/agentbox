@@ -20,23 +20,33 @@
  "companions_selected": [],
  "shared_file_owner": "parent",
  "prior_runs": [
-  {"run_id": "agentbox-run-6", "commit": "530b29e", "run_status": "complete", "deferred_units": 0},
-  {"run_id": "agentbox-if1-single-pass", "commit": "ccaf367", "note": "owner-run single-pass review: 7 confirmed (2 Medium, 5 Low), 3 info, 5 needs_validation; fixed in a0a186c: 7 confirmed + 2 needs_validation (U+017F/fullwidth normalisation, NTFS ::$DATA). Remaining needs_validation carried into IF units: F2 in-container write step (h-if-policy) and the rest folded into the IF unit invariants."}
+  {
+   "run_id": "agentbox-run-6",
+   "commit": "530b29e",
+   "run_status": "complete",
+   "deferred_units": 0
+  },
+  {
+   "run_id": "agentbox-if1-single-pass",
+   "commit": "ccaf367",
+   "note": "owner-run single-pass review: 7 confirmed (2 Medium, 5 Low), 3 info, 5 needs_validation; fixed in a0a186c: 7 confirmed + 2 needs_validation (U+017F/fullwidth normalisation, NTFS ::$DATA). Remaining needs_validation carried into IF units: F2 in-container write step (h-if-policy) and the rest folded into the IF unit invariants."
+  }
  ],
  "run_status": "in_progress",
  "agents_spent": {
   "recon": 0,
-  "hunters": 0,
+  "hunters": 6,
   "phase3": 0,
   "phase5": 0,
   "retries": 0,
   "critics": 0,
   "reverify": 0
  },
- "agents_spent_total": 0,
- "phase": "phase2_hunters",
+ "agents_spent_total": 6,
+ "phase": "phase3_verifiers",
  "deviations": [
   "The security-audit skill was fetched as a GitHub tarball (codeload) at commit c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 because git clone of non-session repositories is blocked by the host's git gateway.",
-  "The owner did not attach the single-pass report body; the owner's summary lists two of the five needs_validation items (both fixed) and the F2 in-container write step. The other remaining needs_validation items are not itemised and are covered only through the IF unit invariants."
+  "The owner did not attach the single-pass report body; the owner's summary lists two of the five needs_validation items (both fixed) and the F2 in-container write step. The other remaining needs_validation items are not itemised and are covered only through the IF unit invariants.",
+  "Hunter final messages were transcribed by the parent into result files; two hunters (h-if-policy, h-if-scan) put one prose sentence before the JSON, which the parent dropped (no retry spent). Three hunter fingerprints were renamed by the parent to the repository's path:symbol:slug convention before ingest (h-if-kind, h-if-policy, h-if-notice-sinks); content unchanged."
  ]
 }

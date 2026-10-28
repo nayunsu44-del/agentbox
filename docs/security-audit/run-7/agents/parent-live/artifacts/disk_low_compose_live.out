@@ -1,0 +1,6 @@
+DockerRootDir (daemon) = /projects/sandbox/.scratch/docker/data exists in control-plane container: False
+disk_usage(docker_root) raised FileNotFoundError [Errno 2] No such file or directory: '/projects/sandbox/.scratch/docker/data'
+disk_low with min_free = home_free-1 : False
+disk_low with min_free = home_free+1 : True
+host daemon data root free:
+/dev/loop1       88G  2.2G   85G   3% /projects/sandbox/.scratch/docker/data

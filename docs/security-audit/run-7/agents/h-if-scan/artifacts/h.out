@@ -1,0 +1,27 @@
+{
+  "hit_cap": {
+    "n_hits": 200,
+    "complete": false,
+    "secs": 0.018
+  },
+  "entry_cap": {
+    "complete": false,
+    "note": "seen>SCAN_MAX_ENTRIES returns complete=False"
+  },
+  "unreadable_dir": {
+    "complete": false,
+    "hits": [
+      "agents.md"
+    ]
+  },
+  "found_payload": {
+    "raw_bytes": 308661,
+    "payload_max": 131072,
+    "truncated": true,
+    "count_in_bounded": 200,
+    "paths_present": false,
+    "complete_in_bounded": false
+  },
+  "describe_truncated": "에이전트 지시 파일 200개 (원본 폴더) (목록이 길어 기록에서 잘림) (다 훑지 못함: 상한 또는 읽지 못한 폴더, 더 있을 수 있음)",
+  "describe_small": "에이전트 지시 파일 10개 (원본 폴더): d0/claude.md, d1/claude.md, d2/claude.md, d3/claude.md, d4/claude.md … (다 훑지 못함: 상한 또는 읽지 못한 폴더, 더 있을 수 있음)"
+}

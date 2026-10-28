@@ -1,0 +1,15 @@
+=== with_notice boundary tests ===
+mark_read -> True
+real tag present and != deadbeef: True
+attacker fake tag 'deadbeef' lines are INSIDE real boundary: True
+with_notice leaves raw control chars (sink must escape): True
+
+=== agent.py vs mcp truncation divergence ===
+MCP keeps closing boundary: True
+agent.py keeps closing boundary: False
+agent.py keeps opening boundary: True
+len mcp=30297 len agent=20013
+
+=== approval-card render cost (20 x 1MiB non-ASCII) ===
+render time (s): 10.110
+response body bytes: 83909242 (80.0 MiB)

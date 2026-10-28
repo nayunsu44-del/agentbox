@@ -1,0 +1,21 @@
+=== kind() on bare instruction directory as LAST component ===
+  kind('/workspace/cfg') = None
+  kind('/workspace/.claude') = None
+  kind('/workspace/.cursor') = None
+  kind('/workspace/.github/instructions') = None
+  kind('/workspace/.claude/settings.json') = 'Claude Code'
+  kind('/workspace/.github/instructions/x.md') = 'GitHub Copilot'
+
+=== Policy.decide for write_file ===
+  write cfg (resolved=/workspace/.claude): ('allow', None)
+  write cmds (resolved=/workspace/.claude/commands/x): ('require_approval', 'instruction-file-write-needs-approval')
+  write CLAUDE.md (no resolved): ('require_approval', 'instruction-file-write-needs-approval')
+  write gh (resolved=/workspace/.github/instructions): ('allow', None)
+
+=== delete_file mirror check (catch-all delete rule) ===
+  delete cfg (resolved=/workspace/.claude): ('require_approval', 'delete-file-needs-approval')
+  delete ordinary foo: ('require_approval', 'delete-file-needs-approval')
+
+=== real `mv -f -- tmp p` semantics when p is a symlink to a dir ===
+  tmp still at original location: False
+  files now inside .claude/: ['.claude/cfg.agentbox-tmp-74833b']
