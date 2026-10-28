@@ -19,6 +19,8 @@ from __future__ import annotations
 import os
 import posixpath
 import secrets
+import time
+import unicodedata
 from pathlib import Path, PurePosixPath
 
 # 파일 이름(소문자). 대소문자를 구분하지 않는 파일 시스템(macOS, Windows)에서 Claude.md도 같은 파일이다.
@@ -58,18 +60,41 @@ NOTICE = ("agentbox 알림: 이 파일은 코딩 에이전트가 지시로 자�
 
 SCAN_MAX_ENTRIES = 200_000   # 생성 때 원본 폴더를 훑는 최대 항목 수 (아주 큰 폴더에서 생성이 늦어지지 않게)
 SCAN_MAX_HITS = 200          # 기록하는 최대 경로 수
+SCAN_MAX_SECONDS = 10.0      # 훑는 최대 시간. 느린 디스크·네트워크 드라이브에서도 생성 요청을 오래 붙잡지 않게
+
+
+def _norm(name: str) -> str:
+    """이름 한 조각을 다른 파일 시스템·도구가 같은 파일로 보는 모양으로 바꾼다.
+
+    - NFKC + casefold: 전각 문자(ＣＬＡＵＤＥ.md), 'ſ'(U+017F, casefold하면 s) 같은 글자로 목록을 피하지 못하게.
+      대소문자를 구분하지 않는 파일 시스템(macOS, Windows)에서는 이런 이름이 같은 파일이 될 수 있다.
+    - 첫 ':' 뒤를 뗀다: NTFS는 'CLAUDE.md::$DATA'를 CLAUDE.md의 기본 데이터 스트림으로 연다.
+    - 끝의 점·공백을 뗀다: Windows는 저장할 때 이것을 떼므로 'CLAUDE.md.'도 내려받으면 CLAUDE.md가 된다.
+    """
+    n = unicodedata.normalize("NFKC", name).casefold()
+    n = n.split(":", 1)[0]
+    return n.rstrip(". ")
+
+
+def _parts(path: str) -> list[str]:
+    raw = str(path).strip()
+    if not raw:
+        return []
+    pieces: list[str] = []
+    # 리눅스(컨테이너) 경로로 먼저 나눈다. 여기서 역슬래시는 글자이고, '..'는 리눅스가 푸는 대로만 푼다.
+    # 역슬래시를 '/'로 바꾼 뒤 '..'를 풀면 '.claude/a\..\..\x'가 '.claude' 없는 경로로 보이지만, 컨테이너에서는
+    # .claude 폴더 안에 쓰인다 (보안 검수 IF-1 단발 F2).
+    for p in PurePosixPath(posixpath.normpath(raw)).parts:
+        if p == "/":
+            continue
+        # Windows로 받아 가면 역슬래시가 폴더 구분자가 된다. 이 조각들은 폴더 이름으로만 보고 '..'는 풀지 않는다.
+        pieces.extend(p.split("\\"))
+    return [n for n in (_norm(x) for x in pieces) if n and n not in (".", "..")]
 
 
 def kind(path: str) -> str | None:
     """에이전트 지시 파일이면 어느 도구의 것인지, 아니면 None."""
-    raw = str(path).strip().replace("\\", "/")   # 역슬래시도 나눈다 (Windows에서 받아 갈 때 경로가 된다)
-    if not raw:
-        return None
-    # 이름 끝의 점·공백은 지운 뒤 본다. Windows는 저장할 때 이것을 떼므로 "CLAUDE.md." "CLAUDE.md "로 받아도
-    # 내려받은 뒤에는 CLAUDE.md가 된다. 폴더(".claude.")도 같다.
-    parts = [p.rstrip(". ").lower() for p in PurePosixPath(posixpath.normpath(raw)).parts
-             if p not in ("/", "", ".", "..")]
-    parts = [p for p in parts if p]
+    parts = _parts(path)
     if not parts:
         return None
     name = parts[-1]
@@ -123,27 +148,40 @@ def paths_in_words(words: list[str]) -> list[str]:
 
 
 def scan(root: Path | str) -> tuple[list[str], bool]:
-    """원본 폴더 안의 지시 파일 상대 경로 목록과, 끝까지 훑었는지(False면 상한에서 멈춤).
+    """원본 폴더 안의 지시 파일 상대 경로 목록과, 끝까지 다 봤는지.
+
+    complete가 False면 목록을 믿을 수 없다: 항목 수·찾은 수·시간 상한에 걸렸거나, 읽지 못한 폴더가 있었다.
+    찾은 것이 없어도 False일 수 있다 (node_modules가 든 저장소는 공격자 없이도 항목 상한을 넘는다).
+    상한은 폴더를 다 읽기 전에, 항목 하나마다 본다 (보안 검수 IF-1 단발 F3).
 
     링크는 따라가지 않는다. 지시 폴더(.claude 등)는 폴더 하나로 기록하고 안쪽은 세지 않는다."""
     root = Path(root)
     hits: list[str] = []
     seen = 0
+    complete = True
+    deadline = time.monotonic() + SCAN_MAX_SECONDS
     stack = [root]
     while stack:
         d = stack.pop()
+        entries = []
         try:
-            entries = sorted(os.scandir(d), key=lambda e: e.name)
+            with os.scandir(d) as it:
+                for e in it:
+                    seen += 1
+                    if seen > SCAN_MAX_ENTRIES or time.monotonic() > deadline:
+                        return hits, False
+                    entries.append(e)
         except OSError:
+            complete = False   # 읽지 못한 폴더 안에 지시 파일이 있을 수 있다
             continue
-        for e in entries:
-            seen += 1
-            if seen > SCAN_MAX_ENTRIES or len(hits) >= SCAN_MAX_HITS:
+        for e in sorted(entries, key=lambda e: e.name):
+            if len(hits) >= SCAN_MAX_HITS:
                 return hits, False
             rel = Path(e.path).relative_to(root).as_posix()
             try:
                 is_dir = e.is_dir(follow_symlinks=False)
             except OSError:
+                complete = False
                 continue
             if is_dir:
                 if kind(rel + "/_"):          # 이 폴더 아래가 전부 지시 파일이다 (.claude, .github/instructions 등)
@@ -152,4 +190,4 @@ def scan(root: Path | str) -> tuple[list[str], bool]:
                     stack.append(Path(e.path))
             elif kind(rel):
                 hits.append(rel)
-    return hits, True
+    return hits, complete

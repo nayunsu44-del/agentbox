@@ -23,7 +23,6 @@ from fastapi.templating import Jinja2Templates
 
 from . import approvals as A
 from . import desktop as D
-from . import instruction_files
 from .display import escape_controls
 from .sandbox import SandboxError
 from .service import AUDIT_BURST_WAIT, AgentBox, ServiceError
@@ -38,6 +37,11 @@ def _shown(value: Any) -> Any:
     if isinstance(value, str):
         return escape_controls(value, keep_newlines=True)
     return value
+
+
+def _oneline(v: Any) -> str:
+    """한 줄로만 찍을 값(파일 이름·경로). 줄바꿈·탭도 보이는 이스케이프로 바꾼다 (finalize는 줄바꿈을 남긴다)."""
+    return escape_controls(str(v), keep_newlines=False)
 
 
 def _short(v: Any, n: int = 160) -> str:
@@ -83,11 +87,16 @@ def describe(e: dict[str, Any]) -> str:
             s += " · 삭제됨: " + ", ".join(p["deleted"][:5]) + (" …" if n.get("deleted", 0) > 5 else "")
         return _short(s, 240)
     if ev == "instruction_files_found":
-        paths = [str(x) for x in p.get("paths") or []]
+        paths = [str(x) for x in p.get("paths") or [] if not str(x).startswith("…(+")]
+        n = p.get("count", len(paths))   # 목록이 기록 상한에 잘려도 개수는 남는다 (단발 F5)
         via = {"source": "원본 폴더", "import": "파일 넣기"}.get(p.get("via"), p.get("via"))
-        s = f"에이전트 지시 파일 {len(paths)}개 ({via}): " + ", ".join(paths[:5]) + (" …" if len(paths) > 5 else "")
+        s = f"에이전트 지시 파일 {n}개 ({via})"
+        if paths:
+            s += ": " + ", ".join(paths[:5]) + (" …" if n > 5 else "")
+        elif p.get("payload_truncated"):
+            s += " (목록이 길어 기록에서 잘림)"
         if not p.get("complete", True):
-            s += " (훑기 상한에서 멈춤, 더 있을 수 있음)"
+            s += " (다 훑지 못함: 상한 또는 읽지 못한 폴더, 더 있을 수 있음)"
         return _short(s, 240)
     if ev in ("file_imported", "file_exported", "file_import_request"):
         return f"{p.get('name')} · {p.get('bytes')} bytes · sha256 {str(p.get('sha256', ''))[:16]}…"
@@ -126,6 +135,7 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
     tpl = Jinja2Templates(directory=str(HERE / "templates"))
     tpl.env.globals.update(actors=ACTORS, describe=describe, runtime=box.sandboxes.runtime)
     tpl.env.filters["short"] = _short
+    tpl.env.filters["oneline"] = _oneline
     tpl.env.finalize = _shown
 
     def session_of(request: Request) -> str | None:
@@ -263,14 +273,12 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
     @app.get("/ui/sandboxes/{sid}/outbox", include_in_schema=False)
     def outbox_frag(request: Request, sid: str, p=Depends(browser_human)):
         try:
-            files = box.sandboxes.outbox_list(sid)
+            files = box.outbox(sid)
         except SandboxError as e:
             return render(request, "_error.html", message=str(e))
         except APIError:
             # 스냅샷(docker commit)이 컨테이너를 잠깐 멈춘 사이. 지금 보이는 목록을 그대로 둔다.
             return Response(status_code=204, headers={"Cache-Control": "no-store"})
-        for f in files:
-            f["instruction"] = instruction_files.kind(f["name"])
         return render(request, "_outbox.html", sid=sid, files=files)
 
     @app.get("/ui/sandboxes/{sid}/snapshots", include_in_schema=False)

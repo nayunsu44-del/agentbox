@@ -232,6 +232,24 @@ class AgentBox:
             return {k: v for k, v in result.items() if k in ("path", "bytes", "sha256", "deleted")}
         return result
 
+    def _resolved(self, sid: str, tool: str, args: dict[str, Any]) -> str | None:
+        """write_file·delete_file 대상을 컨테이너 안에서 링크까지 푼 실제 경로. 원본에 'cfg -> .claude' 같은 링크가
+        있으면 cfg/settings.json에 쓰는 것은 .claude/settings.json에 쓰는 것이다 (보안 검수 IF-1 단발 F2).
+        링크를 새로 만드는 것은 exec(ln)라 승인 대상이다. 풀지 못하면 None (요청 경로로만 판단)."""
+        if tool not in ("write_file", "delete_file"):
+            return None
+        resolve = getattr(self.sandboxes, "resolve", None)
+        if resolve is None:
+            return None
+        try:
+            return resolve(sid, str(args.get("path", "")))
+        except Exception:   # 풀지 못하면 요청 경로로만 본다. 링크 루프처럼 풀 수 없는 경로는 실제 쓰기도 실패한다
+            return None
+
+    def _policy_args(self, sid: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
+        real = self._resolved(sid, tool, args)
+        return {**args, "resolved_path": real} if real else args
+
     def _preview(self, sid: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         if tool == "exec":
             return self.sandboxes.preview(sid, str(args.get("command", "")))
@@ -245,11 +263,17 @@ class AgentBox:
                 effect = "덮어쓰기" if exists else "새 파일 만들기"
                 la = self._logged_args(tool, args)
                 notes.append(f"쓸 내용 {la['content_bytes']} bytes, sha256 {la['content_sha256'][:16]}…")
-            k = IF.kind(p)
+            real = self._resolved(sid, tool, args)
+            k = IF.kind(p) or (IF.kind(real) if real else None)
+            affected = [{"path": p, "effect": effect}]
+            if real and real != p:
+                affected.append({"path": real, "effect": "링크를 따라간 실제 대상"})
+            out = {"tool": tool, "cwd": WORKSPACE, "affected": affected, "notes": notes}
             if k:
                 notes.append(f"에이전트 지시 파일({k}). 결과함으로 받아 가면 다른 에이전트가 이 내용을 지시로 자동으로 읽는다. "
-                             "내용을 꼭 확인할 것")
-            return {"tool": tool, "cwd": WORKSPACE, "affected": [{"path": p, "effect": effect}], "notes": notes}
+                             "아래 쓸 내용 전체를 확인할 것")
+                out["instruction_file"] = k   # 승인 화면이 쓸 내용을 자르지 않고 다 보여 준다 (보안 검수 IF-1 단발 F1)
+            return out
         return {"tool": tool, "cwd": WORKSPACE, "affected": [],
                 "notes": ["시스템이 영향을 계산하지 못함. 도구 인자 원문을 확인할 것."]}
 
@@ -342,7 +366,7 @@ class AgentBox:
         try:
             req_id = self.audit.append(actor=actor, event="tool_request", sandbox_id=sid, tool=tool,
                                        payload={"args": self._logged_args(tool, args)})
-            decision = self.policy.decide(tool, args)
+            decision = self.policy.decide(tool, self._policy_args(sid, tool, args))
             if decision.action == ALLOW and self._over_snapshot_quota(sid, tool, args):
                 quota = self.sandboxes.settings.snapshot_quota
                 decision = Decision(REQUIRE_APPROVAL, "snapshot-quota",
@@ -560,11 +584,12 @@ class AgentBox:
                                                       "image": rec["image"], "template": rec["template"],
                                                       "session": session})
         # 원본에 섞여 들어온 에이전트 지시 파일을 기록하고 화면에 보인다 (IF-1). 막지는 않는다
+        # 상한에 걸려 다 보지 못했으면 찾은 것이 없어도 남긴다. 아니면 '없음'과 '못 봄'이 구별되지 않는다 (단발 F3)
         hits, complete = IF.scan(rec["source_dir"])
-        if hits:
+        if hits or not complete:
             self.log_best_effort(rec["id"], None, "instruction_files_found",
-                                 {"via": "source", "paths": hits, "complete": complete}, actor="system")
-        return {**rec, "instruction_files": hits}, token
+                                 _found_payload("source", hits, complete), actor="system")
+        return {**rec, "instruction_files": hits, "instruction_files_complete": complete}, token
 
     # ---- 샌드박스 일시정지·재개·스냅샷·복원·삭제 -----------------------------
     # session을 넘기지 않으면(JSON API) 기록에 session 항목을 넣지 않고, 넘기면(웹 UI) None이어도 넣는다.
@@ -632,7 +657,7 @@ class AgentBox:
         k = IF.kind(name)
         if k:  # IF-1
             self.log_best_effort(sid, None, "instruction_files_found",
-                                 {"via": "import", "paths": [name], "complete": True}, actor="system")
+                                 _found_payload("import", [name], True), actor="system")
             res = {**res, "instruction_file": k}
         return res
 
@@ -640,9 +665,20 @@ class AgentBox:
         name = clean_name(name)
         data = self.sandboxes.outbox_read(sid, name)
         # 반출은 기록한 뒤에 내보낸다. 기록을 못 하면 내보내지 않는다.
+        k = IF.kind(name)
         self.log_human("file_exported", sid, {"name": name, "bytes": len(data),
-                                              "sha256": hashlib.sha256(data).hexdigest(), "session": session})
+                                              "sha256": hashlib.sha256(data).hexdigest(), "session": session}
+                       | ({"instruction_file": k} if k else {}))
         return data
+
+    def outbox(self, sid: str) -> list[dict[str, Any]]:
+        """결과함 목록. 지시 파일에는 instruction_file을 붙인다. 웹 화면과 JSON API가 같이 쓴다 (단발 F7)."""
+        files = self.sandboxes.outbox_list(sid)
+        for f in files:
+            k = IF.kind(f["name"])
+            if k:
+                f["instruction_file"] = k
+        return files
 
     # ---- 화면 인수·반환 (UX-2) -------------------------------------------
     def takeover(self, sid: str, session: str) -> dict[str, Any]:
@@ -737,6 +773,16 @@ class AgentBox:
             self.audit.append(actor="human", event=event, sandbox_id=sid, payload=payload)
         except AuditWriteError as e:
             raise ServiceError(503, f"{e}. 기록할 수 없어서 실행하지 않음.") from e
+
+
+FOUND_PATH_MAX = 512   # 기록하는 경로 하나의 최대 길이. 길게 만든 경로 200개로 기록 전체가 잘려 목록이 사라지지 않게
+
+
+def _found_payload(via: str, paths: list[str], complete: bool) -> dict[str, Any]:
+    """instruction_files_found 기록. 개수는 목록과 따로 남긴다: 기록 크기 상한(bound_payload)이 목록을 떼어 내도
+    타임라인이 '0개'로 보이지 않게 (보안 검수 IF-1 단발 F5)."""
+    shown = [p if len(p) <= FOUND_PATH_MAX else p[:FOUND_PATH_MAX] + "…" for p in paths]
+    return {"via": via, "count": len(paths), "paths": shown, "complete": complete}
 
 
 def _int(args: dict[str, Any], key: str) -> int:
