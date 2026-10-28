@@ -1,0 +1,13 @@
+{
+ "missing_units": [],
+ "reassign_ids": [],
+ "resolved_prior_leads": [
+  "agentbox/gui_bursts.py:GuiBursts.covers:container-identity-binding-gap-across-restore",
+  "agentbox/audit.py:AuditLog:table-growth-lock-contention-and-verify-memory",
+  "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets",
+  "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+  "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+  "agentbox/service.py:_snapshot:gui-burst-opened-under-takeover-lease"
+ ],
+ "stop": true
+}

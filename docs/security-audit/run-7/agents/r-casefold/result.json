@@ -1,0 +1,4 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/instruction_files.py:_norm:casefold-expands-dotted-capital-i-so-ci-filesystem-alias-is-missed"
+}

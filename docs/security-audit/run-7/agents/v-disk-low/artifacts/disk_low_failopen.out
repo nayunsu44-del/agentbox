@@ -1,0 +1,6 @@
+disk_usage(unreachable docker_root) raises: FileNotFoundError
+min_free_bytes               = 45586249728
+db-partition free bytes      = 91172499456
+disk_low [unreachable docker]= False
+disk_low [db-only baseline]  = False
+docker term silently dropped = True

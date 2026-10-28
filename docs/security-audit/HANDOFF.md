@@ -308,3 +308,22 @@ pytest                                                 # 160 passed
   - `agentbox/api.py`·`agentbox/web.py`·`deploy/Caddyfile`: `secure_cookie` 활성 환경에서 `same_origin`의 `https` 스킴 검증 및 Caddy HSTS 헤더 추가.
   - `agentbox/sandbox.py`·`agentbox/sandbox_desktop.py`: `list_dir`의 `_exec_head`(`_timed` + `_Head` 스트리밍 상한), `outbox_list`의 `_timed` + `head -c` 상한, `screenshot`의 심볼릭 링크 차단 및 16MiB `head -c` 상한.
   - `agentbox/sandbox.py`·`agentbox/service.py`: `DockerRootDir` 감지 및 `disk_low()`의 `docker_root` 여유 공간 병행 확인.
+
+## 7차 감사(run-7) 결과 — 2026-10-28 (run-6 이후 변경분 집중 감사, 보고 전용)
+
+- **기준과 브랜치:** 감사 기준 `main` `3580df0`(PR #26 병합 뒤), 변경분 `530b29e..3580df0`. 작업 브랜치 `audit-run-7`, 초안 PR. 보고서는 `run-7/REPORT.md`, 상세는 `run-7/FINDINGS-DETAIL.md`·`run-7/NEEDS-VALIDATION.md`.
+- **프로필·예산·모델:** `standard`. 상한은 15였고 critic-1 뒤 소유자 승인으로 20으로 올렸다. **18회**를 썼다(헌터 7, 3단계 5, 5단계 4, 비평 2). 정찰은 부모가 했다(0회). 서브에이전트 도구에 모델 선택 인수가 없어 모두 세션 모델(Claude Opus 5.5)로 돌았다. 소유자가 요청한 Sonnet 5.5로는 바꾸지 못했다.
+- **결과(`run-7/findings.json` 5건, 두 검증기 PASS, `run_status: complete`):** 확정 3(중간 1, 낮음 2), 검증 필요 2, 기각 0. 장부 7단위가 모두 닫혔다. critic-1이 IF-policy를 다시 맡기라고 했고 2차 헌터가 닫았다. critic-2는 `stop: true`였다.
+  - **F1(중간):** 지시 파일 쓰기 승인 카드가 쓸 내용 전체를 상한 없이 2초마다 다시 그린다. 대기 승인 20건이면 `GET /ui/approvals` 한 번이 83.9MB, 13.7초였다(실제 API). 대기 내용은 `max_write_bytes`가 아니라 본문 상한 8MiB로만 묶인다.
+  - **F2(낮음):** `cfg -> .claude`처럼 지시 폴더 자체를 가리키는 링크에 `write_file`을 하면 승인 없이 `.claude/` 안에 쓴다. `kind()`가 경로의 끝 조각을 지시 폴더로 보지 않는다.
+  - **F3(낮음):** 허용 목록 exec(`tail -f /dev/null &` 약 55개)로 pid 상한을 채우면 `resolve()`가 실패하고, `_resolved`가 이를 None으로 삼켜 요청 경로로만 판정된다. 그래서 `.claude/settings.json`을 승인 없이 덮어썼다(실제 Docker). 단발 F2 수정(a0a186c)이 우회된다.
+  - **N1:** U+0130 `İ`가 casefold에서 `i`+결합 점으로 펼쳐져 `gemİni.md`를 지시 파일로 보지 않는다. macOS에서 `gemini.md`와 같은 파일이 되는지 확인이 필요하다.
+  - **N2:** run-6 N3 수정이 덜 막았다. compose 구성의 컨트롤 플레인은 Docker 저장소 경로를 볼 수 없고, `disk_low()`는 그 오류를 무시한다(parent-live). 배포의 파일 시스템 분리 여부에 달려 있다.
+- **확인한 것(`covered`):** `5bb3c17` 리팩토링은 동작이 바뀌지 않았다. run-6 F1~F3·N1·N2 수정은 근본 원인을 막았다. 읽기 결과 경계(`with_notice`), 사람 화면 출력 지점 이스케이프, 원본 훑기(`scan`) 상한과 `complete` 표시도 지켜졌다. 하드닝 메모 10개는 REPORT 6절에 있다(F3 수정의 틸드 펼치기가 dash에서 동작하지 않음, 읽기의 링크 비대칭 등).
+- **실행 환경(이 호스트에서 이어받을 때):** Kiro Web 리눅스 샌드박스는 명령마다 새로 뜨고 `/projects/sandbox`만 남는다.
+  - 스크래치패드는 `/projects/sandbox/.scratch`이다(`skill/`, `src-audited/` 워크트리, `docker/` 데이터, `sbx-image/` 이미지 tar, `venv/`).
+  - `.scratch/dk.sh '<명령>'`이 사설 마운트 네임스페이스에 tmpfs `/run`을 깔고 cgroup을 다시 마운트한 뒤 dockerd를 띄워 명령을 돌린다. `.scratch/pl.sh`는 parent-live용으로 감사 소스와 venv를 붙인다(`AGENTBOX_CPUS=0`: 이 호스트는 CPU 쿼터를 못 건다).
+  - 에이전트용 `run-7/tools/sbx.py`는 호출마다 임시 dockerd를 띄우고 `agentbox-audit-sbx:1`을 tar에서 올린다. 메모리는 RLIMIT_DATA로, CPU는 cpuset으로 건다.
+  - 스킬은 git 게이트웨이가 막아 GitHub tarball(`c1c8a8c`)로 받았다.
+  - 단위 테스트 기준선(sbx): 270 통과, 1 건너뜀, 1 실패. 실패는 `test_m4_unit` overlap으로, `sudo`가 없어서 난다.
+- **남은 일:** 수정 여부는 소유자가 정한다. F2와 F3는 같은 정책 판정을 고치므로 함께 고치는 것이 낫다. N1은 macOS 확인, N2는 배포의 Docker 저장소 위치 확인이 필요하다.

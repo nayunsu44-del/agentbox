@@ -1,0 +1,4 @@
+{
+ "decision": "verified",
+ "fingerprint": "agentbox/service.py:_resolved:resolve-failure-fails-open-to-requested-path-skips-instruction-file-approval"
+}

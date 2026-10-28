@@ -1,0 +1,56 @@
+{
+ "proposed_verdict": "needs_validation",
+ "fingerprint": "agentbox/service.py:disk_low-unmonitored-docker-data-root",
+ "title": "disk_low fails open when the Docker data root is not reachable in the control-plane container",
+ "description": "The run-6 N3 fix added Docker-data-root monitoring to AgentBox.disk_low by taking min(free(db_path.parent), free(docker_root)), where docker_root is the host daemon's DockerRootDir. In the documented compose deployment the control-plane container does not mount the daemon's data root, so shutil.disk_usage(docker_root) raises OSError, which is silently ignored. disk_low then measures only the SQLite db partition. If that partition differs from the host filesystem holding container writable layers and snapshot images, a prompt-injected agent can grow Docker storage without disk_low ever returning True, so the 507 back-pressure never engages.",
+ "claimed_root_cause": "disk_low (service.py:461-485) treats an unreachable docker_root as no additional constraint (except OSError: pass) instead of failing closed or warning, and docker_root is taken from the daemon's DockerRootDir (sandbox.py:179-183), a path the compose control-plane container does not mount.",
+ "trace": [
+  {
+   "kind": "entrypoint",
+   "file": "agentbox/sandbox.py",
+   "line": 181,
+   "scope": "SandboxManager._detect_runtime",
+   "description": "self.docker_root is set from info['DockerRootDir'], the host daemon's data root path, only meaningful on the daemon host."
+  },
+  {
+   "kind": "propagation",
+   "file": "agentbox/service.py",
+   "line": 476,
+   "scope": "AgentBox.disk_low",
+   "description": "free = min(free, shutil.disk_usage(docker_root).free) is wrapped in try/except OSError: pass, so an unreachable docker_root silently drops the Docker-storage term."
+  },
+  {
+   "kind": "sink",
+   "file": "agentbox/service.py",
+   "line": 480,
+   "scope": "AgentBox.disk_low",
+   "description": "low = free < s.min_free_bytes is computed from the db partition alone; call_tool's 507 guard never trips on Docker-storage exhaustion."
+  }
+ ],
+ "evidence": [
+  {
+   "file": "agentbox/service.py",
+   "line": 476,
+   "description": "OSError on shutil.disk_usage(docker_root) is caught and ignored rather than failing closed."
+  },
+  {
+   "file": "agentbox/sandbox.py",
+   "line": 181,
+   "description": "docker_root is the daemon's DockerRootDir, a host path not guaranteed to exist inside the control-plane container."
+  },
+  {
+   "file": "deploy/docker-compose.yml",
+   "line": 31,
+   "description": "The control-plane service mounts only /var/run/docker.sock and the AGENTBOX_HOME volume."
+  }
+ ],
+ "blockers": [
+  "Whether, in the compose deployment, the host daemon's DockerRootDir is unreachable inside the control-plane container (compose shows it is not mounted, but a custom data_root on the AGENTBOX_HOME volume would be reachable).",
+  "Whether the host's Docker data-root filesystem is distinct from the AGENTBOX_HOME filesystem; if they are the same, the db measurement still reflects Docker storage.",
+  "Whether a sandbox can grow the Docker data root without an effective size cap (AGENTBOX_DISK default empty) long enough to exhaust host storage."
+ ],
+ "validation_plan": {
+  "local": "In the approved sandbox, construct an object exposing docker_root=Path('/nonexistent/docker/root') and a db path on scratch, set min_free_bytes so disk_low is True only when the docker term counts, and confirm the except-OSError branch returns False.",
+  "deployment": "On a real compose deployment: run `docker compose exec agentbox python3 -c 'import shutil,docker; r=docker.from_env().info()[\"DockerRootDir\"]; print(r); print(shutil.disk_usage(r))'` and observe FileNotFoundError; compare df of AGENTBOX_HOME and the host data root; grow a sandbox writable layer and confirm no disk_low event."
+ }
+}

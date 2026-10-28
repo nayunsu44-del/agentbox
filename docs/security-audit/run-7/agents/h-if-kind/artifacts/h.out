@@ -1,0 +1,71 @@
+== canonical (must match) ==
+'CLAUDE.md' -> Claude Code parts= ['claude.md']
+'claude.md' -> Claude Code parts= ['claude.md']
+'AGENTS.md' -> AGENTS.md (Codex 등) parts= ['agents.md']
+'agent.md' -> AGENTS.md (Codex 등) parts= ['agent.md']
+'.cursorrules' -> Cursor parts= ['.cursorrules']
+'.mcp.json' -> MCP 서버 설정 (Claude Code 등) parts= ['.mcp.json']
+'.claude/x' -> Claude Code parts= ['.claude', 'x']
+'/workspace/.claude/settings.json' -> Claude Code parts= ['workspace', '.claude', 'settings.json']
+'.github/instructions/a.md' -> GitHub Copilot parts= ['.github', 'instructions', 'a.md']
+'.github/prompts/x/y.md' -> GitHub Copilot parts= ['.github', 'prompts', 'x', 'y.md']
+'.continue/cfg' -> Continue parts= ['.continue', 'cfg']
+'.roo/x' -> Roo Code parts= ['.roo', 'x']
+
+== prior fixes (must still match) ==
+'ＣＬＡＵＤＥ.md' -> Claude Code parts= ['claude.md']
+'CLAUDE.md::$DATA' -> Claude Code parts= ['claude.md']
+'CLAUDE.md:stream' -> Claude Code parts= ['claude.md']
+'CLAUDE.md.' -> Claude Code parts= ['claude.md']
+'CLAUDE.md ' -> Claude Code parts= ['claude.md']
+'ſclaude.md' -> None parts= ['sclaude.md']
+'clauſe? n/a' -> None parts= ['clause? n', 'a']
+'.claude/a\\..\\..\\x' -> Claude Code parts= ['.claude', 'a', 'x']
+
+== residual: default-ignorables / zero-width (downstream symmetry) ==
+'claude\u200b.md' -> None parts= ['claude\u200b.md']
+   NFKC==claude.md ? False
+'claude\u200d.md' -> None parts= ['claude\u200d.md']
+   NFKC==claude.md ? False
+'\ufeffclaude.md' -> None parts= ['\ufeffclaude.md']
+   NFKC==claude.md ? False
+'claude.md️' -> None parts= ['claude.md️']
+   NFKC==claude.md ? False
+'CLAUDE\xad.md' -> None parts= ['claude\xad.md']
+   NFKC==claude.md ? False
+
+== residual: 8.3 short name ==
+'CLAUDE~1.MD' -> None parts= ['claude~1.md']
+'AGENTS~1.MD' -> None parts= ['agents~1.md']
+'CURSOR~1' -> None parts= ['cursor~1']
+
+== residual: trailing chars browsers/windows may strip (besides . space) ==
+'CLAUDE.md~' -> None parts= ['claude.md~']
+'CLAUDE.md\t' -> Claude Code parts= ['claude.md']
+'CLAUDE.md\n' -> Claude Code parts= ['claude.md']
+'CLAUDE.md\u3000' -> Claude Code parts= ['claude.md']
+'CLAUDE.md\x7f' -> None parts= ['claude.md\x7f']
+'CLAUDE.md\x00' -> None parts= ['claude.md\x00']
+
+== residual: turkish/kelvin casefold ==
+'İlaude.md' -> None parts= ['i̇laude.md']
+'cŁaude.md' -> None parts= ['cłaude.md']
+'Kelvin' -> None parts= ['kelvin']
+
+== .github boundary conditions ==
+'.github/instructions' -> None parts= ['.github', 'instructions']
+'.github/instructions/a.md' -> GitHub Copilot parts= ['.github', 'instructions', 'a.md']
+'.github/prompts' -> None parts= ['.github', 'prompts']
+'.github/chatmodes/x' -> GitHub Copilot parts= ['.github', 'chatmodes', 'x']
+'.github/workflows/x.yml' -> None parts= ['.github', 'workflows', 'x.yml']
+'.github/instructions/sub/a.md' -> GitHub Copilot parts= ['.github', 'instructions', 'sub', 'a.md']
+
+== over-match: colon truncation & dirs ==
+'foo:CLAUDE.md' -> None parts= ['foo']
+'.claude:extra/x' -> Claude Code parts= ['.claude', 'x']
+'notes/agent.md' -> AGENTS.md (Codex 등) parts= ['notes', 'agent.md']
+'src/.roo/thing' -> Roo Code parts= ['src', '.roo', 'thing']
+'a:b:c' -> None parts= ['a']
+
+== NFD (macOS stores decomposed) for an accented sibling - not canonical ascii ==
+'claude.md' True -> Claude Code

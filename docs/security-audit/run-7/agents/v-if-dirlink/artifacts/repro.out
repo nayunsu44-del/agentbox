@@ -1,0 +1,19 @@
+== kind() ==
+'/workspace/.claude' -> None
+'/workspace/.github/instructions' -> None
+'/workspace/.claude/settings.json' -> Claude Code
+'/workspace/.claude/commands/x' -> Claude Code
+'/workspace/CLAUDE.md' -> Claude Code
+'/workspace/cfg' -> None
+'/workspace/foo' -> None
+== decide write_file ==
+write_file {'path': '/workspace/cfg', 'resolved_path': '/workspace/.claude'} -> ('allow', None)
+write_file {'path': '/workspace/gh', 'resolved_path': '/workspace/.github/instructions'} -> ('allow', None)
+write_file {'path': '/workspace/cmds', 'resolved_path': '/workspace/.claude/commands/x'} -> ('require_approval', 'instruction-file-write-needs-approval')
+write_file {'path': '/workspace/CLAUDE.md', 'resolved_path': '/workspace/CLAUDE.md'} -> ('require_approval', 'instruction-file-write-needs-approval')
+== decide delete_file ==
+delete_file {'path': '/workspace/cfg', 'resolved_path': '/workspace/.claude'} -> ('require_approval', 'delete-file-needs-approval')
+delete_file {'path': '/workspace/foo'} -> ('require_approval', 'delete-file-needs-approval')
+== real mv into dir symlink ==
+mv exit 0 
+landed entries in .claude: ['cfg.agentbox-tmp-74833b']

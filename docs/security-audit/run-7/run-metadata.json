@@ -1,0 +1,65 @@
+{
+ "run_id": "agentbox-run-7",
+ "repo": "nayunsu44-del/agentbox",
+ "target": "/projects/sandbox/.scratch/src-audited",
+ "source_ref": {
+  "commit": "3580df0",
+  "branch": "main",
+  "dirty": false,
+  "note": "Audited source is a detached git worktree of main at 3580df0 (after PR #26) in the parent's scratchpad; agents read it and tools/sbx.py mounts it read-only at /target. Only docs/security-audit/run-7/ and HANDOFF.md are committed, on a work branch."
+ },
+ "profile": "standard",
+ "scope_paths": [
+  "."
+ ],
+ "scope_note": "Focused follow-up on the delta 530b29e..3580df0: 7dbda9e (unaudited fixes for run-6 F1-F3 and N1-N3), 5bb3c17 (refactor claimed as no behaviour change), and IF-1 agent instruction files (d4e956e, 79d8211, ccaf367, a0a186c; a0a186c fixed the owner-run single-pass review's 7 confirmed and 2 needs_validation items). Seven ledger units; run-6 left nothing deferred. README known limitations (name-only detection and display-not-block, exec glob/variable reads, GUI approval bypass N-1, LLM-provider data path, audit external anchor) are out of scope without a new angle.",
+ "budget": 20,
+ "budget_note": "Owner-set cap of 15 subagent invocations, raised by the owner to 20 after critic-1 (plan after the raise: wave-2 hunter 1, phase 3 1, phase 5 1, final-clean critic 1, 1 spare) (plan: hunters 6, phase 3 about 4, phase 5 about 3, critics 2); ask before exceeding. Reconnaissance was done by the parent (0 agents). Model: the subagent tool on this host has no model parameter, so subagents run on the session model (Claude Opus 5.5); the owner approved this and set Claude Sonnet 5.5 as the fallback if the session is blocked or the model changes. Parent-live checks (real Docker, desktop image) are outside the budget.",
+ "execution_policy": "sandboxed-source-and-local-only",
+ "execution_note": "Kiro Web Linux sandbox host: every tool call is a fresh sandbox, only /projects/sandbox persists, /run and cgroup are read-only outside a private mount namespace, cgroup2 is threaded with only cpuset/cpu/pids. Agent-run target code goes only through tools/sbx.py, which per call starts a private dockerd (tmpfs /run, ephemeral data root on the call's /tmp, image loaded from a saved tar) and runs one container: --network none, no docker socket, --read-only, audited worktree read-only at /target, writes only to agents/<id>/scratch at /scratch, /dev/shm 16 MiB, --pull never, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB via RLIMIT_DATA (--memory is discarded by this kernel's cgroup), 1 CPU via cpuset (--cpus is unsupported), 64 pids, 32 MiB file size, 120 s, explicit env allowlist, image agentbox-audit-sbx:1. Scratch is a plain directory owned by uid 65534 (no loop devices); size is checked after each agent. Parent-live checks run the audited control plane in-process (loopback TestClient) against a private dockerd with AGENTBOX_CPUS=0 and AGENTBOX_DESKTOP_CPUS=0 because CPU quotas cannot be applied on this host.",
+ "companions_selected": [],
+ "shared_file_owner": "parent",
+ "prior_runs": [
+  {
+   "run_id": "agentbox-run-6",
+   "commit": "530b29e",
+   "run_status": "complete",
+   "deferred_units": 0
+  },
+  {
+   "run_id": "agentbox-if1-single-pass",
+   "commit": "ccaf367",
+   "note": "owner-run single-pass review: 7 confirmed (2 Medium, 5 Low), 3 info, 5 needs_validation; fixed in a0a186c: 7 confirmed + 2 needs_validation (U+017F/fullwidth normalisation, NTFS ::$DATA). Remaining needs_validation carried into IF units: F2 in-container write step (h-if-policy) and the rest folded into the IF unit invariants."
+  }
+ ],
+ "run_status": "complete",
+ "agents_spent": {
+  "recon": 0,
+  "hunters": 7,
+  "phase3": 5,
+  "phase5": 4,
+  "retries": 0,
+  "critics": 2,
+  "reverify": 0
+ },
+ "agents_spent_total": 18,
+ "phase": "done_phase6_reports",
+ "deviations": [
+  "The security-audit skill was fetched as a GitHub tarball (codeload) at commit c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 because git clone of non-session repositories is blocked by the host's git gateway.",
+  "The owner did not attach the single-pass report body; the owner's summary lists two of the five needs_validation items (both fixed) and the F2 in-container write step. The other remaining needs_validation items are not itemised and are covered only through the IF unit invariants.",
+  "Hunter final messages were transcribed by the parent into result files; two hunters (h-if-policy, h-if-scan) put one prose sentence before the JSON, which the parent dropped (no retry spent). Three hunter fingerprints were renamed by the parent to the repository's path:symbol:slug convention before ingest (h-if-kind, h-if-policy, h-if-notice-sinks); content unchanged.",
+  "v-approvals-render's final message was cut off inside remediation.code_changes; the parent rebuilt the record from the verifier's complete fields (title, description, root_cause, intended_behavior, trace, evidence, conditions, execution) and completed remediation.code_changes itself. Phase 5 re-checks the whole record.",
+  "Owner asked to run subagents on Claude Sonnet 5.5. The subagent tool on this host exposes no model selector, so every subagent still ran on the session model; this is recorded rather than worked around.",
+  "Phase 5 used 3 invocations for 4 records: one verifier checked both needs_validation records (r-disk-low, r-casefold) in sequence to stay within the owner's cap of 15. r-approvals-render returned a replace with wording, remediation (adds the missing full-content route) and evidence corrections; apply.py flags root_cause text changes as material, but the mechanism, trace, execution, impact and severity are unchanged, so the parent applied it as non-material instead of spending a fresh verifier.",
+  "critic-1 returned stop=false with one reassignment (IF-policy unit: induced resolve() failure, decide-to-mv link changes, user rule order). With 1 invocation left, the parent ran the resolve() fail-open check live outside the budget (agents/parent-live/artifacts/resolve_failopen_live.out): with pids_limit 64, one allowlisted exec backgrounding 55 `tail -f` made a concurrent write_file('/workspace/cfg/settings.json') (cfg -> .claude) get policy 'allow' and overwrite /workspace/.claude/settings.json without approval. A first attempt (pl_resolve_failopen.py) hung on 60 s exec timeouts and was rerun with AGENTBOX_EXEC_TIMEOUT."
+ ],
+ "run_status_reason": "complete: all 7 ledger units closed (3 covered, 4 candidate units decided: 3 confirmed and 2 needs_validation records); critic-1 reassigned the IF-policy unit, the wave-2 hunter closed it, and the final-clean critic-2 returned stop=true with no missing units or reassignments.",
+ "resolved_prior_leads": [
+  "agentbox/gui_bursts.py:GuiBursts.covers:container-identity-binding-gap-across-restore",
+  "agentbox/audit.py:AuditLog:table-growth-lock-contention-and-verify-memory",
+  "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets",
+  "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+  "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+  "agentbox/service.py:_snapshot:gui-burst-opened-under-takeover-lease"
+ ]
+}

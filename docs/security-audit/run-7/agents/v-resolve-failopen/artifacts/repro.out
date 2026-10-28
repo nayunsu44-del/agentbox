@@ -1,0 +1,4 @@
+resolve_ok: resolved_path_present=True action=require_approval rule_id=instruction-file-write-needs-approval
+resolve_fail: resolved_path_present=False action=allow rule_id=None
+filler simple_programs=['tail']
+filler exec: action=allow rule_id=read-only-exec

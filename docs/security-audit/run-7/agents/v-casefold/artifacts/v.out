@@ -1,0 +1,24 @@
+v-casefold local reproduction (approved sandbox, /target read-only, no network)
+command: sbx.py v-casefold /usr/bin/python3 -c <below>
+
+>>> from agentbox import instruction_files as IF
+>>> name = "gem\u0130ni.md"            # 'gemİni.md', U+0130 LATIN CAPITAL LETTER I WITH DOT ABOVE
+>>> IF.kind(name)                       -> None
+>>> IF.kind("gemini.md")                -> "Gemini CLI"
+>>> unicodedata.normalize("NFKC", name).casefold()
+                                        -> 'gemi\u0307ni.md'   (U+0130 -> 'i' + U+0307 COMBINING DOT ABOVE)
+>>> normalized.rstrip(". ") == "gemini.md"   -> False
+# proposed fix shape:
+>>> "".join(c for c in NFKD(name) if category(c)!="Mn").casefold()
+                                        -> 'gemini.md'         (NFKD, drop Mn, casefold -> canonical)
+>>> from agentbox.sandbox import clean_name
+>>> clean_name(name)                    -> 'gemİni.md'         (accepted; downloadable from outbox)
+
+Conclusion of local half (source + sandbox):
+- _norm (instruction_files.py:74) full-casefold expands U+0130, so kind() misses the U+0130 spelling of a canonical instruction name.
+- policy.decide (policy.py:225) keys instruction-file-write approval on kind(); None => rule does not fire.
+- service.outbox (service.py:674) adds no instruction_file badge for the name.
+- api.outbox_file (api.py:403) serves it; clean_name (sandbox.py) accepts it.
+UNRESOLVED (not observable on Linux offline host): whether a case-insensitive volume (APFS/HFS+)
+or a recipient coding agent folds U+0130 to plain ASCII 'i' and so resolves 'gemİni.md' to 'gemini.md'.
+Note: simple (1:1) case folding and documented NTFS $UpCase do NOT equate U+0130 with 'i'.

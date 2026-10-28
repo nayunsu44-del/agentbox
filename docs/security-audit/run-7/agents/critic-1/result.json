@@ -1,0 +1,11 @@
+{
+ "missing_units": [],
+ "reassign_ids": [
+  "IF-policy unit (Policy target versus write target for instruction files)"
+ ],
+ "reassignment_reasons": {
+  "policy-target-unit": "Only the final-component directory-link root cause was checked. Unchecked: (1) induced resolve() failure (service._resolved turns any exception into None; pids pressure via allowlisted '&' while write_file runs), (2) link changes between decide and mv/rm including the approval wait, (3) user-policy rule order."
+ },
+ "resolved_prior_leads": [],
+ "stop": false
+}

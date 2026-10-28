@@ -1,0 +1,74 @@
+{
+ "decision": "needs_validation",
+ "record": {
+  "fingerprint": "agentbox/instruction_files.py:_norm:casefold-expands-dotted-capital-i-so-ci-filesystem-alias-is-missed",
+  "title": "kind() casefold expands U+0130 and may miss an instruction name that a case-insensitive filesystem treats as canonical",
+  "description": "_norm normalizes a name with unicodedata.normalize('NFKC', name).casefold(). Python's full casefold expands LATIN CAPITAL LETTER I WITH DOT ABOVE (U+0130) to 'i' followed by U+0307 COMBINING DOT ABOVE, so kind('gemİni.md') returns None. clean_name accepts the name on the outbox download path, outbox()/_outbox.html show no instruction-file badge, and the write never hit the instruction-file approval rule. If a recipient on a case-insensitive volume equates 'gemİni.md' to 'gemini.md', the human's other coding agent auto-reads attacker content as an instruction file, the same boundary the a0a186c fullwidth/U+017F fix was meant to close. NTFS $UpCase does not equate U+0130 with ASCII 'i', so Windows recipients are not affected; the open question is macOS and other case-insensitive volumes.",
+  "claimed_root_cause": "_norm relies on Python's full casefold, which maps U+0130 to an ASCII letter plus a combining mark, diverging from an OS case-insensitive fold that may map U+0130 to plain 'i'; kind() therefore misclassifies a name a case-insensitive filesystem might resolve to a canonical instruction name. A fold that does not introduce combining marks (NFKD, drop Mn, then casefold, verified locally to yield 'gemini.md') would classify it.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/policy.py",
+    "line": 225,
+    "scope": "Policy.decide, match.instruction_files branch",
+    "description": "A prompt-injected agent calls write_file with path 'outbox/gemİni.md'; kind() of path and resolved_path is None, so the instruction-file-write-needs-approval rule does not fire."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/instruction_files.py",
+    "line": 74,
+    "scope": "_norm",
+    "description": "casefold() expands U+0130 to 'i'+U+0307, so _norm('gemİni.md')='gemi̇ni.md' and kind() returns None."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 674,
+    "scope": "AgentBox.outbox",
+    "description": "outbox() calls IF.kind(f['name']) which returns None, so no instruction_file flag or badge is shown."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/api.py",
+    "line": 403,
+    "scope": "outbox_file Content-Disposition filename*",
+    "description": "The human downloads the file (clean_name accepts the name); on a volume that folds U+0130 to 'i' the saved name could resolve to 'gemini.md'."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/instruction_files.py",
+    "line": 74,
+    "description": "n = unicodedata.normalize('NFKC', name).casefold(); observed locally (h2.out): kind('gemİni.md')=None while kind('gemini.md')='Gemini CLI'."
+   },
+   {
+    "file": "agents/v-casefold/artifacts/v.out",
+    "line": 1,
+    "description": "Sandbox: kind('gemİni.md') is None, kind('gemini.md') is 'Gemini CLI', casefold gives 'gemi̇ni.md'; NFKD + drop Mn + casefold gives 'gemini.md'; clean_name accepts the name."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 49,
+    "description": "clean_name accepts 'gemİni.md' (observed h2.out), so the name is downloadable from the outbox."
+   },
+   {
+    "file": "agentbox/policy.py",
+    "line": 225,
+    "description": "decide() keys the instruction-file approval solely on kind(path)/kind(resolved_path)."
+   }
+  ],
+  "blockers": [
+   "Whether a real case-insensitive filesystem (APFS or HFS+) equates a filename containing U+0130 with the ASCII-'i' canonical name is not observable on the Linux-only offline host. Full casefold expands U+0130 to 'i'+U+0307, but simple (1:1) case folding, which file-system comparison typically uses, maps U+0130 to itself, so the alias is not established and may well be false.",
+   "Whether a recipient coding agent on such a volume loads the aliased name requires that agent and OS at runtime.",
+   "NTFS $UpCase is documented not to equate U+0130 with ASCII 'i', so the Windows recipient path is excluded."
+  ],
+  "validation_plan": {
+   "local": "Already run in the approved sandbox (h2.out). Extend by enumerating every character whose casefold expands to an ASCII letter used in _NAMES/_DIRS plus a combining or invisible code point.",
+   "deployment": "On an owner-controlled macOS machine with an APFS case-insensitive volume, create a file literally named 'gemİni.md' and check whether `stat gemini.md` resolves to it and whether `ls` shows one or two files. If it aliases, fold names for classification with a mapping that does not introduce combining marks (for example NFKD, drop Mn, then casefold, or special-case U+0130)."
+  },
+  "verdict": "needs_validation"
+ },
+ "artifacts_to_promote": [
+  "v.out"
+ ]
+}

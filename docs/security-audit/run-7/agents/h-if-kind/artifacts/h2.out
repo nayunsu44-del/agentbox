@@ -1,0 +1,7 @@
+'gemİni.md' casefold= 'gemi̇ni.md' kind= None
+'.clinerİles' casefold= '.clineri̇les' kind= None
+'gemıni.md' casefold= 'gemıni.md' kind= None
+clean_name 'gemİni.md' -> 'gemİni.md'
+clean_name 'CLAUDE.md\x81' -> 'CLAUDE.md\x81'
+clean_name 'CLAUDE.md\x7f' -> REJECT
+clean_name 'CLAUDE.md~' -> 'CLAUDE.md~'
