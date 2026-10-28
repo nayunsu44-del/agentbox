@@ -28,6 +28,16 @@ from .sandbox import SandboxError
 from .service import AUDIT_BURST_WAIT, AgentBox, ServiceError
 
 HERE = Path(__file__).parent
+# 2초마다 다시 그리는 승인 목록 카드에 싣는 쓸 내용의 최대 글자 수. 이보다 긴 지시 파일 쓰기는 전체 내용 화면에서만
+# 승인한다 (보안 검수 run-7 F1과 후속 검증). 템플릿과 서버가 같은 값을 쓴다.
+CARD_CONTENT_MAX = 4096
+
+
+def needs_full_view(a: dict[str, Any]) -> bool:
+    """카드에 다 보이지 않아 전체 내용 화면에서만 승인할 수 있는 요청인지."""
+    content = (a.get("args") or {}).get("content")
+    return bool((a.get("preview") or {}).get("instruction_file")) and isinstance(content, str) \
+        and len(content) > CARD_CONTENT_MAX
 ACTORS = {"agent": "AI", "human": "사람", "system": "시스템"}
 # HTML 이스케이프는 < > & 따옴표만 바꾼다. 양방향(bidi) 재배치 문자가 남으면 브라우저가 글자 순서를 바꿔 보여서,
 # 승인 화면의 명령이 실제와 다르게 읽힌다 (보안 검수 run-3 v13). 터미널의 cli._safe와 같은 문자를 같은 모양으로
@@ -133,7 +143,8 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
             pass
 
     tpl = Jinja2Templates(directory=str(HERE / "templates"))
-    tpl.env.globals.update(actors=ACTORS, describe=describe, runtime=box.sandboxes.runtime)
+    tpl.env.globals.update(actors=ACTORS, describe=describe, runtime=box.sandboxes.runtime,
+                           card_cut=CARD_CONTENT_MAX, needs_full_view=needs_full_view)
     tpl.env.filters["short"] = _short
     tpl.env.filters["oneline"] = _oneline
     tpl.env.finalize = _shown
@@ -263,13 +274,35 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
         a = box.approvals.get(aid)
         if not a or a.get("tool") != "write_file" or not isinstance((a.get("args") or {}).get("content"), str):
             raise HTTPException(404, "내용을 볼 수 있는 승인 요청이 없음 (끝난 요청은 내용 대신 크기·해시만 남는다)")
-        return render(request, "approval_content.html", a=a)
+        return render(request, "approval_content.html", a=a, error=None)
+
+    @app.post("/ui/approvals/{aid}/content/{decision}", include_in_schema=False)
+    def decide_from_content(request: Request, aid: str, decision: str, p=Depends(browser_human)):
+        """전체 내용 화면에서의 결정. 긴 지시 파일 쓰기는 여기서만 승인한다 (보안 검수 run-7 후속 검증)."""
+        if decision not in ("approve", "deny"):
+            raise HTTPException(400, "approve 또는 deny")
+        a = box.approvals.get(aid)
+        try:
+            box.decide(aid, decision == "approve", actor="human", session=p.session)
+        except ServiceError as e:
+            # 오류 글은 주소에 싣지 않는다 (남이 만든 링크로 가짜 안내를 띄우지 못하게)
+            if not a:
+                raise HTTPException(404, "승인 요청 없음") from e
+            return render(request, "approval_content.html", a=box.approvals.get(aid) or a, error=e.message)
+        return RedirectResponse(f"/ui/sandboxes/{a['sandbox_id']}" if a else "/ui", status_code=303)
 
     @app.post("/ui/approvals/{aid}/{decision}", include_in_schema=False)
     def decide(request: Request, aid: str, decision: str, sandbox_id: str = "", p=Depends(browser_human)):
         if decision not in ("approve", "deny"):
             raise HTTPException(400, "approve 또는 deny")
         error = None
+        a = box.approvals.get(aid) if decision == "approve" else None
+        if a and needs_full_view(a):
+            # 카드에는 앞부분만 보였다. 뒤쪽에 숨긴 지시를 보지 않고 승인하지 못하게 전체 내용 화면에서만 받는다
+            error = f"{aid}: 쓸 내용이 길어 카드에 다 보이지 않음. '전체 내용 보고 승인'에서 끝까지 확인한 뒤 승인할 것"
+            r = approvals_view(request, sandbox_id or None, error)
+            r.headers["HX-Trigger"] = "audit-changed"
+            return r
         try:
             box.decide(aid, decision == "approve", actor="human", session=p.session)
         except ServiceError as e:

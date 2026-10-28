@@ -178,7 +178,8 @@ class SandboxManager(DesktopTools):
     # ---- SB-6 격리 백엔드 감지 -----------------------------------------
     def _detect_runtime(self) -> str:
         info = self.client.info() or {}
-        root = info.get("DockerRootDir")
+        # 컨트롤 플레인이 컨테이너 안에서 돌면 데몬의 경로가 보이지 않는다. 그때는 붙인 경로를 준다 (보안 검수 run-7 N2)
+        root = self.settings.docker_root or info.get("DockerRootDir")
         self.docker_root: Path | None = Path(root) if root else None
         available = set((info.get("Runtimes") or {}).keys()) or {"runc"}
         want = self.settings.runtime

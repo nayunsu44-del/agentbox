@@ -63,6 +63,10 @@ SCAN_MAX_HITS = 200          # 기록하는 최대 경로 수
 SCAN_MAX_SECONDS = 10.0      # 훑는 최대 시간. 느린 디스크·네트워크 드라이브에서도 생성 요청을 오래 붙잡지 않게
 
 
+_DROP = {"Mn", "Cf"}                    # 결합 문자, 보이지 않는 서식 문자
+_FOLD = str.maketrans({"\u0131": "i"})  # dotless i. casefold는 이것을 'i'로 바꾸지 않는다
+
+
 def _norm(name: str) -> str:
     """이름 한 조각을 다른 파일 시스템·도구가 같은 파일로 보는 모양으로 바꾼다.
 
@@ -71,12 +75,14 @@ def _norm(name: str) -> str:
       Windows)에서는 이런 이름이 같은 파일이 될 수 있다. casefold 뒤에 다시 떼는 것은 casefold가 'İ'(U+0130)를
       'i'+U+0307로 펼쳐 'gemİni.md'가 gemini.md로 보이지 않기 때문이다 (보안 검수 run-7 N1). 판정은 더 넓은 쪽으로
       한다. 'é' 같은 이름도 'e'로 보지만, 그 결과는 차단이 아니라 표시·승인이다.
+    - 보이지 않는 서식 문자(Cf: U+200B~U+200D, U+FEFF, U+00AD 등)도 떼고, 'ı'(U+0131)는 'i'로 본다. 어떤 파일 시스템·
+      도구가 이 이름들을 같은 파일로 보는지는 확인하지 못했으므로 넓은 쪽으로 판정한다 (보안 검수 run-7 후속 검증).
     - 첫 ':' 뒤를 뗀다: NTFS는 'CLAUDE.md::$DATA'를 CLAUDE.md의 기본 데이터 스트림으로 연다.
     - 끝의 점·공백을 뗀다: Windows는 저장할 때 이것을 떼므로 'CLAUDE.md.'도 내려받으면 CLAUDE.md가 된다.
     """
-    n = unicodedata.normalize("NFKD", name)
-    n = "".join(c for c in n if unicodedata.category(c) != "Mn").casefold()
-    n = "".join(c for c in unicodedata.normalize("NFKD", n) if unicodedata.category(c) != "Mn")
+    n = "".join(c for c in unicodedata.normalize("NFKD", name) if unicodedata.category(c) not in _DROP)
+    n = n.casefold().translate(_FOLD)
+    n = "".join(c for c in unicodedata.normalize("NFKD", n) if unicodedata.category(c) not in _DROP)
     n = n.split(":", 1)[0]
     return n.rstrip(". ")
 
