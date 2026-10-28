@@ -1,0 +1,152 @@
+{
+ "decision": "confirmed",
+ "record": {
+  "fingerprint": "agentbox/service.py:_resolved:resolve-failure-fails-open-to-requested-path-skips-instruction-file-approval",
+  "title": "Induced resolve() failure makes the instruction-file write gate fail open to the benign requested path",
+  "description": "A prompt-injected agent can write into an instruction directory (for example /workspace/.claude/) without human approval when the source folder contains a planted directory symlink such as cfg -> .claude. The write gate depends on one in-container 'realpath -m' (SandboxManager.resolve) at decide time. AgentBox._resolved catches every exception and returns None, and _policy_args then drops resolved_path. Policy.decide (default_policy.yaml v4 rule instruction-file-write-needs-approval) therefore judges only the requested path 'cfg/settings.json', for which kind() is None, and the decision is default allow. write_file then runs 'mv -f -- tmp /workspace/cfg/settings.json', which follows the cfg -> .claude link, so the content lands in /workspace/.claude/settings.json with no approval. The agent causes resolve() to fail with an allowlisted read-only exec ('tail -f /dev/null &' repeated about 55 times) that uses up the container pid limit, while a concurrent write_file still succeeds. This bypasses the a0a186c fix for the single-pass review's F2.",
+  "root_cause": "AgentBox._resolved (service.py:235-247) turns every resolve() exception into None, and _policy_args (service.py:249-251) omits resolved_path when the value is None. A failed link resolution therefore fails open: the instruction-file rule, which needs resolved_path to see through links, is evaluated against the attacker-chosen requested path. The agent can cause resolve() to fail (pid exhaustion through an allowlisted background exec, or the exec timeout). write_file and delete_file act on the requested path and follow the planted link at mv/rm time.",
+  "intended_behavior": "When the container-side link resolution for a write_file/delete_file target cannot be completed, the control plane must fail closed for the instruction-file gate (require human approval or deny) rather than judging the requested path alone.",
+  "trace": [
+   {
+    "kind": "entrypoint",
+    "file": "agentbox/service.py",
+    "line": 369,
+    "scope": "AgentBox._call_tool",
+    "description": "policy.decide(tool, self._policy_args(sid, tool, args)) decides the write_file without any resolved_path when resolve failed."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 246,
+    "scope": "AgentBox._resolved",
+    "description": "'except Exception:' followed by 'return None' at line 247 swallows every resolve() failure (SandboxError, a failed exec_run under pid exhaustion, or a timeout)."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/service.py",
+    "line": 251,
+    "scope": "AgentBox._policy_args",
+    "description": "Returns args without resolved_path when real is None, so the gate loses its only view through the link."
+   },
+   {
+    "kind": "propagation",
+    "file": "agentbox/policy.py",
+    "line": 225,
+    "scope": "Policy.decide match.instruction_files",
+    "description": "hit is the first of args['path']/args['resolved_path'] with a kind; with only the benign path present, hit is None, the rule is skipped, and write_file falls to default allow."
+   },
+   {
+    "kind": "sink",
+    "file": "agentbox/sandbox.py",
+    "line": 511,
+    "scope": "SandboxManager.write_file",
+    "description": "mv -f -- tmp p on the requested path follows the cfg->.claude link, writing /workspace/.claude/settings.json with no approval."
+   }
+  ],
+  "evidence": [
+   {
+    "file": "agentbox/service.py",
+    "line": 246,
+    "description": "_resolved: 'except Exception: return None'. The code comment assumes an unresolvable path also makes the write fail. That holds for link loops but not for an induced transient failure, where the write can still succeed."
+   },
+   {
+    "file": "agentbox/service.py",
+    "line": 251,
+    "description": "_policy_args: {**args, 'resolved_path': real} if real else args; resolve failure yields the original args."
+   },
+   {
+    "file": "agentbox/default_policy.yaml",
+    "line": 24,
+    "description": "instruction-file-write-needs-approval depends entirely on instruction_files matching; there is no fallback for an unresolved write target."
+   },
+   {
+    "file": "agentbox/sandbox.py",
+    "line": 491,
+    "description": "resolve runs realpath -m via c.exec_run under _timed and raises SandboxError on failure."
+   },
+   {
+    "file": "agentbox/policy.py",
+    "line": 157,
+    "description": "simple_programs accepts the filler 'tail -f /dev/null & ... &' (no $, backtick, > or <( in it; '&' is a separator), so the filler matches read-only-exec and runs without approval."
+   },
+   {
+    "file": "agents/v-resolve-failopen/artifacts/repro.out",
+    "line": 1,
+    "description": "Verifier sandbox run using the real AgentBox._resolved/_policy_args, the real Policy and default_policy.yaml v4: resolve OK -> require_approval; resolve raising SandboxError -> resolved_path absent, allow, rule_id None; the 55x background tail filler is allowed by read-only-exec."
+   },
+   {
+    "file": "agents/h-if-policy-2/artifacts/h.out",
+    "line": 1,
+    "description": "Sandbox: resolve success -> require_approval; resolve failure -> allow (rule_id None); delete_file stays require_approval."
+   },
+   {
+    "file": "agents/parent-live/artifacts/resolve_failopen_live.out",
+    "line": 2,
+    "description": "Parent-live run on a real dockerd and sandbox with pids_limit 64. With 55 background tails, one of three concurrent write_file calls returned 200 executed and /workspace/.claude/settings.json became 'INJECTED n=55 i=0'; the other two went to pending approval. At 58 or more background processes every write failed (126). write_file decisions included ('allow', None) x16."
+   }
+  ],
+  "conditions": [
+   {
+    "kind": "authentication_level",
+    "description": "Attacker is a prompt-injected agent holding only its per-sandbox agent token."
+   },
+   {
+    "kind": "data_state",
+    "description": "The source folder (attacker-controlled names and links) contains a directory symlink such as cfg -> .claude, copied into /workspace at creation. Creating a new link needs an approved exec (ln)."
+   },
+   {
+    "kind": "timing_dependency",
+    "description": "The agent exhausts the container pid limit with allowlisted background execs so resolve() fails while a write exec still succeeds; parent-live shows the window at about 55 background processes with pids_limit 64."
+   },
+   {
+    "kind": "user_interaction",
+    "description": "Recipient impact needs the human to take more than the top-level outbox files (e.g. copy the workspace) so another coding agent reads the planted .claude/settings.json."
+   }
+  ],
+  "execution": {
+   "attacker_perspective": "A prompt-injected agent that wants to drop an instruction file into .claude/ without the human approving it.",
+   "payloads": [
+    "write_file path=/workspace/cfg/settings.json content=INJECTED (source folder ships cfg -> .claude)",
+    "exec command: tail -f /dev/null & ... (about 55x) tail -f /dev/null, sent concurrently with the write_file"
+   ],
+   "instructions": [
+    "In the approved sandbox, load the real Policy from agentbox/default_policy.yaml and reproduce service._resolved/_policy_args (catch-all -> None, drop resolved_path).",
+    "Call Policy.decide('write_file', ...) once with a resolve that returns /workspace/.claude/settings.json and once with a resolve that raises.",
+    "Observe that the raising case yields allow (rule_id None) while the succeeding case yields require_approval."
+   ],
+   "observed_result": "resolve success -> require_approval; resolve failure -> allow (rule_id None). Parent-live real-docker run wrote /workspace/.claude/settings.json under policy ('allow', None) with no approval."
+  },
+  "remediation": {
+   "strategy": "Fail closed when link resolution for a path tool cannot be completed: _policy_args must distinguish 'resolved' from 'could not resolve', and Policy.decide must require approval (or deny) for a write_file/delete_file whose real target is unknown. Keep the allow path only when resolve() positively returns a non-instruction absolute path. Strip any agent-supplied resolved_path/resolve_failed keys before the service sets them.",
+   "code_changes": [
+    {
+     "file_name": "agentbox/service.py",
+     "fixed_code": "def _policy_args(self, sid: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:\n    args = {k: v for k, v in args.items() if k not in (\"resolved_path\", \"resolve_failed\")}\n    if tool not in (\"write_file\", \"delete_file\"):\n        return args\n    resolve = getattr(self.sandboxes, \"resolve\", None)\n    if resolve is None:\n        return args\n    try:\n        real = resolve(sid, str(args.get(\"path\", \"\")))\n    except Exception:\n        return {**args, \"resolve_failed\": True}   # 실제 대상을 모르면 지시 파일일 수 있다고 본다\n    return {**args, \"resolved_path\": real}"
+    },
+    {
+     "file_name": "agentbox/policy.py",
+     "fixed_code": "if match.get(\"instruction_files\"):\n    if tool not in PATH_TOOLS:\n        continue\n    if args.get(\"resolve_failed\"):\n        return Decision(r[\"action\"], r[\"id\"], r.get(\"reason\"), [str(args.get(\"path\", \"\"))])\n    hit = next((x for x in (args.get(\"path\"), args.get(\"resolved_path\"))\n                if isinstance(x, str) and instruction_files.kind(x)), None)\n    if hit is None:\n        continue\n    return Decision(r[\"action\"], r[\"id\"], r.get(\"reason\"), [hit])"
+    }
+   ]
+  },
+  "severity": {
+   "likelihood": {
+    "score": "low",
+    "reason": "Needs an attacker-planted directory link in the source folder plus deliberate pid exhaustion so resolve() fails while the write still lands; the window is narrow (writes fail at 58+ background processes with pids_limit 64)."
+   },
+   "impact": {
+    "score": "medium",
+    "reason": "Bypasses the human approval gate at the core IF-1 boundary: an instruction file (.claude/settings.json) is written unapproved."
+   },
+   "overall_severity": "low"
+  },
+  "confidence": {
+   "score": "high",
+   "reason": "The verifier independently reproduced the fail-open decision with the real service methods, the real Policy and the default policy; all trace lines were checked at 3580df0; parent-live evidence shows the end-to-end unapproved write on a real dockerd."
+  },
+  "verdict": "confirmed"
+ },
+ "artifacts_to_promote": [
+  "repro.out"
+ ]
+}

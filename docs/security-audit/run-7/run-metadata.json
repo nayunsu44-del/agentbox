@@ -13,8 +13,8 @@
   "."
  ],
  "scope_note": "Focused follow-up on the delta 530b29e..3580df0: 7dbda9e (unaudited fixes for run-6 F1-F3 and N1-N3), 5bb3c17 (refactor claimed as no behaviour change), and IF-1 agent instruction files (d4e956e, 79d8211, ccaf367, a0a186c; a0a186c fixed the owner-run single-pass review's 7 confirmed and 2 needs_validation items). Seven ledger units; run-6 left nothing deferred. README known limitations (name-only detection and display-not-block, exec glob/variable reads, GUI approval bypass N-1, LLM-provider data path, audit external anchor) are out of scope without a new angle.",
- "budget": 15,
- "budget_note": "Owner-set cap of 15 subagent invocations (plan: hunters 6, phase 3 about 4, phase 5 about 3, critics 2); ask before exceeding. Reconnaissance was done by the parent (0 agents). Model: the subagent tool on this host has no model parameter, so subagents run on the session model (Claude Opus 5.5); the owner approved this and set Claude Sonnet 5.5 as the fallback if the session is blocked or the model changes. Parent-live checks (real Docker, desktop image) are outside the budget.",
+ "budget": 20,
+ "budget_note": "Owner-set cap of 15 subagent invocations, raised by the owner to 20 after critic-1 (plan after the raise: wave-2 hunter 1, phase 3 1, phase 5 1, final-clean critic 1, 1 spare) (plan: hunters 6, phase 3 about 4, phase 5 about 3, critics 2); ask before exceeding. Reconnaissance was done by the parent (0 agents). Model: the subagent tool on this host has no model parameter, so subagents run on the session model (Claude Opus 5.5); the owner approved this and set Claude Sonnet 5.5 as the fallback if the session is blocked or the model changes. Parent-live checks (real Docker, desktop image) are outside the budget.",
  "execution_policy": "sandboxed-source-and-local-only",
  "execution_note": "Kiro Web Linux sandbox host: every tool call is a fresh sandbox, only /projects/sandbox persists, /run and cgroup are read-only outside a private mount namespace, cgroup2 is threaded with only cpuset/cpu/pids. Agent-run target code goes only through tools/sbx.py, which per call starts a private dockerd (tmpfs /run, ephemeral data root on the call's /tmp, image loaded from a saved tar) and runs one container: --network none, no docker socket, --read-only, audited worktree read-only at /target, writes only to agents/<id>/scratch at /scratch, /dev/shm 16 MiB, --pull never, uid 65534, cap-drop ALL, no-new-privileges, 512 MiB via RLIMIT_DATA (--memory is discarded by this kernel's cgroup), 1 CPU via cpuset (--cpus is unsupported), 64 pids, 32 MiB file size, 120 s, explicit env allowlist, image agentbox-audit-sbx:1. Scratch is a plain directory owned by uid 65534 (no loop devices); size is checked after each agent. Parent-live checks run the audited control plane in-process (loopback TestClient) against a private dockerd with AGENTBOX_CPUS=0 and AGENTBOX_DESKTOP_CPUS=0 because CPU quotas cannot be applied on this host.",
  "companions_selected": [],
@@ -35,15 +35,15 @@
  "run_status": "in_progress",
  "agents_spent": {
   "recon": 0,
-  "hunters": 6,
-  "phase3": 4,
-  "phase5": 3,
+  "hunters": 7,
+  "phase3": 5,
+  "phase5": 4,
   "retries": 0,
   "critics": 1,
   "reverify": 0
  },
- "agents_spent_total": 14,
- "phase": "critic1_reassign_parent_live",
+ "agents_spent_total": 17,
+ "phase": "critic2_final_clean",
  "deviations": [
   "The security-audit skill was fetched as a GitHub tarball (codeload) at commit c1c8a8c1471069fb0e188eeaff69b8e8db6564a8 because git clone of non-session repositories is blocked by the host's git gateway.",
   "The owner did not attach the single-pass report body; the owner's summary lists two of the five needs_validation items (both fixed) and the F2 in-container write step. The other remaining needs_validation items are not itemised and are covered only through the IF unit invariants.",

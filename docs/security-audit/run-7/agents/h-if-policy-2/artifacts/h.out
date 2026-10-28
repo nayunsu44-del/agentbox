@@ -1,0 +1,28 @@
+=== kind() of the two names ===
+kind('/workspace/cfg/settings.json')   = None
+kind('/workspace/.claude/settings.json')= Claude Code
+
+=== write_file to cfg/settings.json  (cfg -> .claude symlink in source) ===
+resolve() SUCCEEDS (realpath -m resolves the link):
+    policy_args     = {'path': '/workspace/cfg/settings.json', 'content': 'INJECTED', 'resolved_path': '/workspace/.claude/settings.json'}
+    decision.action = require_approval   rule_id = instruction-file-write-needs-approval
+resolve() FAILS (induced pid/timeout exhaustion):
+    policy_args     = {'path': '/workspace/cfg/settings.json', 'content': 'INJECTED'}
+    decision.action = allow   rule_id = None
+
+=== delete_file is always gated regardless of resolve ===
+delete_file cfg/settings.json, resolve fails:
+    policy_args     = {'path': '/workspace/cfg/settings.json'}
+    decision.action = require_approval   rule_id = delete-file-needs-approval
+
+=== RESULT ===
+resolve-success  -> require_approval : True
+resolve-failure  -> allow (FAIL OPEN): True
+FAIL-OPEN CONFIRMED: True
+
+=== Part 3a: 'version' field is never validated/consulted ===
+v3 policy lacking instruction rule -> write .claude/settings.json decision: allow (no version migration/warning; silently allowed)
+
+=== Part 3b: match.instruction_files + commands in one rule -> commands silently ignored ===
+mixed rule, path=CLAUDE.md    -> deny (instruction_files branch wins)
+mixed rule, path=ordinary.txt -> allow (falls through; 'commands' key had no effect)

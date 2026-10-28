@@ -559,38 +559,11 @@
    }
   ],
   "prior_status": "new",
-  "attempts": [],
-  "wave": 1,
-  "status": "candidate",
-  "agent_id": "h-if-policy",
-  "reviewed_paths": [
-   "agentbox/default_policy.yaml",
-   "agentbox/instruction_files.py",
-   "agentbox/policy.py",
-   "agentbox/sandbox.py",
-   "agentbox/service.py",
-   "agents/parent-live/artifacts/recon_leads_live.out",
-   "agents/v-if-dirlink/artifacts/repro.out"
-  ],
-  "local_checks": [
+  "attempts": [
    {
+    "wave": 1,
+    "status": "candidate",
     "agent_id": "h-if-policy",
-    "reviewed_paths": [
-     "agentbox/default_policy.yaml",
-     "agentbox/instruction_files.py",
-     "agentbox/policy.py",
-     "agentbox/sandbox.py",
-     "agentbox/service.py"
-    ],
-    "invariant": "A write_file whose resolved target is an instruction directory, and a delete via a directory-symlink last component, must require approval; resolve() failure must not weaken the gate; delete_file must stay gated.",
-    "method": "local",
-    "result": "kind('/workspace/.claude') and kind('/workspace/.github/instructions') return None because kind() never compares the last path part to _DIRS/_GITHUB_DIRS (only parts[:-1]); so Policy.decide('write_file',{path:'/workspace/cfg',resolved_path:'/workspace/.claude'}) returns ('allow',None) and the write runs with no approval, while a resolved target one level deeper ('/workspace/.claude/commands/x') and a direct 'CLAUDE.md' both return ('require_approval','instruction-file-write-needs-approval'). The '.github/instructions' bare final component also returns ('allow',None). A real `mv -f -- cfg.agentbox-tmp-74833b cfg` with cfg a symlink to a dir lands the file at .claude/cfg.agentbox-tmp-74833b, matching the parent-live observation. delete_file returns ('require_approval','delete-file-needs-approval') for both the symlink case and an ordinary path (catch-all delete rule), so delete has no mirror bypass. resolve() failure fallback is not needed for this bypass: resolve() succeeds and returns the bare dir.",
-    "artifact": "agents/h-if-policy/artifacts/h.out"
-   },
-   {
-    "agent_id": "v-if-dirlink",
-    "method": "source",
-    "artifact": null,
     "reviewed_paths": [
      "agentbox/default_policy.yaml",
      "agentbox/instruction_files.py",
@@ -600,26 +573,125 @@
      "agents/parent-live/artifacts/recon_leads_live.out",
      "agents/v-if-dirlink/artifacts/repro.out"
     ],
+    "local_checks": [
+     {
+      "agent_id": "h-if-policy",
+      "reviewed_paths": [
+       "agentbox/default_policy.yaml",
+       "agentbox/instruction_files.py",
+       "agentbox/policy.py",
+       "agentbox/sandbox.py",
+       "agentbox/service.py"
+      ],
+      "invariant": "A write_file whose resolved target is an instruction directory, and a delete via a directory-symlink last component, must require approval; resolve() failure must not weaken the gate; delete_file must stay gated.",
+      "method": "local",
+      "result": "kind('/workspace/.claude') and kind('/workspace/.github/instructions') return None because kind() never compares the last path part to _DIRS/_GITHUB_DIRS (only parts[:-1]); so Policy.decide('write_file',{path:'/workspace/cfg',resolved_path:'/workspace/.claude'}) returns ('allow',None) and the write runs with no approval, while a resolved target one level deeper ('/workspace/.claude/commands/x') and a direct 'CLAUDE.md' both return ('require_approval','instruction-file-write-needs-approval'). The '.github/instructions' bare final component also returns ('allow',None). A real `mv -f -- cfg.agentbox-tmp-74833b cfg` with cfg a symlink to a dir lands the file at .claude/cfg.agentbox-tmp-74833b, matching the parent-live observation. delete_file returns ('require_approval','delete-file-needs-approval') for both the symlink case and an ordinary path (catch-all delete rule), so delete has no mirror bypass. resolve() failure fallback is not needed for this bypass: resolve() succeeds and returns the bare dir.",
+      "artifact": "agents/h-if-policy/artifacts/h.out"
+     },
+     {
+      "agent_id": "v-if-dirlink",
+      "method": "source",
+      "artifact": null,
+      "reviewed_paths": [
+       "agentbox/default_policy.yaml",
+       "agentbox/instruction_files.py",
+       "agentbox/policy.py",
+       "agentbox/sandbox.py",
+       "agentbox/service.py",
+       "agents/parent-live/artifacts/recon_leads_live.out",
+       "agents/v-if-dirlink/artifacts/repro.out"
+      ],
+      "note": "phase3 decision confirmed",
+      "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
+      "result": "phase3 decision confirmed"
+     }
+    ],
+    "result_fingerprints": [
+     "agentbox/instruction_files.py:kind:instruction-dir-as-final-component-unmatched-so-write-into-linked-dir-skips-approval"
+    ],
+    "unresolved": [],
+    "reassignment_reason": "critic-1: only the final-component directory-link root cause was checked; induced resolve() failure (service._resolved turns any exception into None while write_file still runs), link changes between decide and mv/rm including the approval wait, and user-policy rule order were not checked."
+   }
+  ],
+  "wave": 2,
+  "status": "candidate",
+  "agent_id": "h-if-policy-2",
+  "reviewed_paths": [
+   "agentbox/default_policy.yaml",
+   "agentbox/instruction_files.py",
+   "agentbox/policy.py",
+   "agentbox/sandbox.py",
+   "agentbox/service.py",
+   "agents/h-if-policy-2/artifacts/h.out",
+   "agents/parent-live/artifacts/resolve_failopen_live.out",
+   "agents/v-resolve-failopen/artifacts/repro.out"
+  ],
+  "local_checks": [
+   {
+    "agent_id": "h-if-policy-2",
+    "reviewed_paths": [
+     "agentbox/default_policy.yaml",
+     "agentbox/policy.py",
+     "agentbox/service.py"
+    ],
+    "invariant": "When resolve() fails for write_file/delete_file, the instruction-file approval gate must not fall open to the benign requested path. Also: user-policy rule order / 'version' handling must stay safe.",
+    "method": "local",
+    "result": "Reproduced service._resolved/_policy_args verbatim driving the real Policy.decide with the real default_policy.yaml v4. write_file to /workspace/cfg/settings.json (cfg->.claude): resolve success -> resolved_path=/workspace/.claude/settings.json -> require_approval (instruction-file-write-needs-approval); resolve failure (exception) -> resolved_path dropped -> allow (rule_id None, default). delete_file stays require_approval. Part 3: 'version' is never read (a v3 policy lacking the instruction rule silently allows a .claude write); a rule mixing instruction_files:true with commands silently ignores 'commands'.",
+    "artifact": "agents/h-if-policy-2/artifacts/h.out"
+   },
+   {
+    "agent_id": "h-if-policy-2",
+    "reviewed_paths": [
+     "agentbox/sandbox.py"
+    ],
+    "invariant": "resolve() raises on container exec failure; write_file/delete_file act on the requested path (following planted symlinks) at mv/rm.",
+    "method": "source",
+    "result": "resolve (sandbox.py:487-496) uses c.exec_run(realpath -m) and raises SandboxError on non-zero exit or non-absolute output; exec_run itself fails when the container cannot fork (pid limit) or the _timed limit fires. write_file (sandbox.py:502-515) runs mv -f -- tmp p on the requested path, so a source-planted symlink component (cfg->.claude) is followed at mv time; delete_file rm -f -- p likewise.",
+    "artifact": null
+   },
+   {
+    "agent_id": "h-if-policy-2",
+    "reviewed_paths": [
+     "agentbox/instruction_files.py"
+    ],
+    "invariant": "kind() of the benign vs resolved name; decide()/_call_tool do not re-resolve or re-decide stored args (parts 2 and classification).",
+    "method": "source",
+    "result": "kind('/workspace/cfg/settings.json')=None, kind('/workspace/.claude/settings.json')='Claude Code', so only resolved_path triggers the rule. Part 2: decide() (service.py:520-575) and the ALLOW branch of _call_tool execute stored args with no re-resolution, but the only agent mutations available without approval between decide and the sink are mkdir/touch/write_file (ln/mv/rm need an approved exec; delete always needs approval), none of which can turn a resolved non-instruction target into an instruction target. The exploitable primitive is the source-planted link plus the resolve fail-open, not a post-decide link swap.",
+    "artifact": null
+   },
+   {
+    "agent_id": "v-resolve-failopen",
+    "method": "source",
+    "artifact": null,
+    "reviewed_paths": [
+     "agentbox/default_policy.yaml",
+     "agentbox/policy.py",
+     "agentbox/sandbox.py",
+     "agentbox/service.py",
+     "agents/h-if-policy-2/artifacts/h.out",
+     "agents/parent-live/artifacts/resolve_failopen_live.out",
+     "agents/v-resolve-failopen/artifacts/repro.out"
+    ],
     "note": "phase3 decision confirmed",
     "invariant": "Phase 3 verifier re-decided the linked candidate for this unit",
     "result": "phase3 decision confirmed"
    }
   ],
   "result_fingerprints": [
-   "agentbox/instruction_files.py:kind:instruction-dir-as-final-component-unmatched-so-write-into-linked-dir-skips-approval"
+   "agentbox/service.py:_resolved:resolve-failure-fails-open-to-requested-path-skips-instruction-file-approval"
   ],
   "unresolved": [],
-  "x_hunter": "h-if-policy",
+  "x_hunter": "h-if-policy-2",
   "x_prior_unit": null,
   "x_prior_fingerprints": [],
   "x_source": "a0a186c (single-pass F2 fix: resolved_path) plus single-pass NV item: F2 in-container write step.",
   "x_hardening": [
-   "instruction_files.kind() has no directory-aware form; callers that need directory semantics (scan) hand-append '/_' while _policy_args/_preview/Policy.decide do not. A single helper that probes both the name and the '/_' directory form would remove this class of inconsistency.",
-   "User policies that add a `read_file`/`list_dir` instruction_files rule get no resolved_path (service._resolved only resolves write_file/delete_file), so a link to an instruction file is judged only on the requested name for reads.",
-   "default_policy.yaml declares `version: 4` but Policy never validates the version field."
+   "policy.py never reads 'version'; a stale v3 policy lacking the instruction rule silently allows instruction writes. Warn or fail when the version is below 4 or the instruction rule is missing.",
+   "A rule with match.instruction_files:true silently ignores sibling match keys (commands/only_commands); reject or warn on such rules.",
+   "service._preview calls _resolved a second time and also swallows the exception, so under induced failure the approval card omits the 'link to real target' line; show 'real target could not be resolved' instead."
   ],
   "x_decision": "confirmed",
-  "x_decided_by": "v-if-dirlink"
+  "x_decided_by": "v-resolve-failopen"
  },
  {
   "coverage_id": "Read-result%20boundary%20for%20instruction%20files%3A%20instruction_files.mark_read%2Fwith_notice%2Fnotice%20%28instruction_files.py%3A111-137%29%2C%20agent.py%20ToolClient.call_text%20%28%3A118-126%29%2C%20mcp_server.py%20read_file%20and%20instructions%20%28%3A46-52%2C%20119-125%29%2C%20exec%20notice%20in%20service._run_tool%20%28%3A133-141%29::When%20the%20agent%20reads%20an%20instruction%20file%2C%20the%20agent-visible%20text%20must%20carry%20the%20notice%20and%20an%20unforgeable%20boundary%20that%20encloses%20exactly%20the%20file%20content%2C%20identically%20for%20MCP%20and%20the%20built-in%20loop.%20Check%3A%20tag%20collision%20redraw%2C%20the%20truncation%20marker%20inside%20the%20boundary%2C%20content%20that%20imitates%20the%20notice%20or%20a%20boundary%20with%20a%20different%20tag%2C%20exec%20results%20%28notice%20only%2C%20no%20boundary%29%2C%20reads%20through%20a%20link%20or%20a%20non-instruction%20name%20pointing%20at%20an%20instruction%20file%20%28mark_read%20uses%20the%20requested%20path%29%2C%20list_dir%2C%20and%20whether%20a%20user%20read-blocking%20rule%20%28README%29%20can%20be%20bypassed%20through%20a%20link.::agentbox%2Finstruction_files.py%23mark_read%2Fwith_notice%20%2B%20agentbox%2Fagent.py%23call_text%20%2B%20agentbox%2Fmcp_server.py%23read_file%20%2B%20agentbox%2Fservice.py%23_run_tool::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
