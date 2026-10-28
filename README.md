@@ -261,7 +261,7 @@ agentbox ui                    # 1회용 로그인 링크 (60초). 또는 http:/
 | 쓰기 | 기본 정책 `instruction-file-write-needs-approval`이 `write_file`을 사람 승인으로 보낸다. 대상은 컨테이너 안에서 링크를 푼 실제 경로로도 본다(`cfg -> .claude`이면 `cfg/settings.json`도, 링크 `cfg` 자체도 지시 파일). 링크를 풀지 못하면 지시 파일로 보고 승인을 받는다. 승인 카드는 쓸 내용 앞 4096자를 공백 그대로 보이고, '전체 내용 보기'에서 전체를 본다. 쓸 내용이 `max_write_bytes`를 넘으면 승인 요청을 만들지 않는다(413). `exec`로 쓰는 경로(`>`, `cp`, `ln`, `sh`)는 원래 승인 대상이다 |
 | 결과함 | 웹 화면에 배지와 경고를 붙이고, JSON API(`GET /sandboxes/{id}/outbox`)에 `instruction_file`을 넣는다. 내려받으면 반출 기록에도 남는다 |
 
-알아보는 이름: `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `AGENT.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.goosehints`, `copilot-instructions.md`, `.mcp.json`, 그리고 `.claude/`, `.cursor/`, `.windsurf/`, `.continue/`, `.gemini/`, `.codex/`, `.roo/`, `.github/{instructions,prompts,chatmodes}/` 아래 전부 (유니코드 NFKC 정규화와 casefold로 대소문자·전각·`ſ` 같은 글자를 같게 보고, 이름 끝의 점·공백과 첫 `:` 뒤는 떼고 본다. Windows가 저장할 때 끝의 점·공백을 떼고 NTFS는 `CLAUDE.md::$DATA`를 `CLAUDE.md`로 열기 때문이다). 목록은 `agentbox/instruction_files.py`에 있다.
+알아보는 이름: `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `AGENT.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.goosehints`, `copilot-instructions.md`, `.mcp.json`, 그리고 `.claude/`, `.cursor/`, `.windsurf/`, `.continue/`, `.gemini/`, `.codex/`, `.roo/`, `.github/{instructions,prompts,chatmodes}/` 아래 전부 (유니코드 NFKD로 풀어 결합 문자를 떼고 casefold해서 대소문자·전각·`ſ`·`İ`·악센트가 붙은 글자를 같게 보고, 이름 끝의 점·공백과 첫 `:` 뒤는 떼고 본다. Windows가 저장할 때 끝의 점·공백을 떼고 NTFS는 `CLAUDE.md::$DATA`를 `CLAUDE.md`로 열기 때문이다). 목록은 `agentbox/instruction_files.py`에 있다.
 
 읽기까지 막고 싶으면 정책에 규칙을 더한다 (`match.instruction_files`는 `list_dir`·`read_file`·`write_file`·`delete_file`의 `path`에 맞는다):
 
