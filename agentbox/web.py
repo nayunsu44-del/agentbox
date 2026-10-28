@@ -23,6 +23,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import approvals as A
 from . import desktop as D
+from . import instruction_files
 from .display import escape_controls
 from .sandbox import SandboxError
 from .service import AUDIT_BURST_WAIT, AgentBox, ServiceError
@@ -80,6 +81,13 @@ def describe(e: dict[str, Any]) -> str:
              f" · 삭제 {n.get('deleted', 0)}")
         if p.get("deleted"):
             s += " · 삭제됨: " + ", ".join(p["deleted"][:5]) + (" …" if n.get("deleted", 0) > 5 else "")
+        return _short(s, 240)
+    if ev == "instruction_files_found":
+        paths = [str(x) for x in p.get("paths") or []]
+        via = {"source": "원본 폴더", "import": "파일 넣기"}.get(p.get("via"), p.get("via"))
+        s = f"에이전트 지시 파일 {len(paths)}개 ({via}): " + ", ".join(paths[:5]) + (" …" if len(paths) > 5 else "")
+        if not p.get("complete", True):
+            s += " (훑기 상한에서 멈춤, 더 있을 수 있음)"
         return _short(s, 240)
     if ev in ("file_imported", "file_exported", "file_import_request"):
         return f"{p.get('name')} · {p.get('bytes')} bytes · sha256 {str(p.get('sha256', ''))[:16]}…"
@@ -261,6 +269,8 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
         except APIError:
             # 스냅샷(docker commit)이 컨테이너를 잠깐 멈춘 사이. 지금 보이는 목록을 그대로 둔다.
             return Response(status_code=204, headers={"Cache-Control": "no-store"})
+        for f in files:
+            f["instruction"] = instruction_files.kind(f["name"])
         return render(request, "_outbox.html", sid=sid, files=files)
 
     @app.get("/ui/sandboxes/{sid}/snapshots", include_in_schema=False)

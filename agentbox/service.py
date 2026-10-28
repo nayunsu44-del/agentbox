@@ -24,11 +24,12 @@ from pathlib import Path
 from typing import Any
 
 from . import approvals as A
+from . import instruction_files as IF
 from .approvals import ApprovalStore
 from .audit import AuditLog, AuditWriteError, bound_payload
 from .desktop import DesktopControl, Lease
 from .gui_bursts import GuiBursts
-from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Decision, Policy
+from .policy import ALLOW, DENY, REQUIRE_APPROVAL, Decision, Policy, command_words
 from .sandbox import WORKSPACE, SandboxError, SandboxManager, clean_name, safe_path
 
 FILE_TOOLS = {"list_dir", "read_file", "exec", "write_file", "delete_file"}
@@ -132,11 +133,17 @@ class AgentBox:
     def _run_tool(self, sid: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
         sb = self.sandboxes
         if tool == "exec":
-            return sb.exec(sid, str(args.get("command", "")))
+            command = str(args.get("command", ""))
+            res = sb.exec(sid, command)
+            hits = IF.paths_in_words(command_words(command))
+            if hits:  # cat AGENTS.md 처럼 지시 파일을 이름으로 가리키면 결과에 표시 (IF-1)
+                res["instruction_files"] = hits
+                res["notice"] = IF.notice(IF.kind(hits[0]) or "")
+            return res
         if tool == "list_dir":
             return sb.list_dir(sid, str(args.get("path", "/workspace")))
         if tool == "read_file":
-            return sb.read_file(sid, str(args.get("path", "")))
+            return IF.mark_read(sb.read_file(sid, str(args.get("path", ""))))
         if tool == "write_file":
             return sb.write_file(sid, str(args.get("path", "")), str(args.get("content", "")))
         if tool == "delete_file":
@@ -214,10 +221,11 @@ class AgentBox:
             return {k: result.get(k) for k in ("exit_code", "timed_out")} | {
                 "stdout_head": (result.get("stdout") or "")[:500],
                 "stderr_head": (result.get("stderr") or "")[:500],
-            }
+            } | ({"instruction_files": result["instruction_files"]} if result.get("instruction_files") else {})
         if tool == "read_file":
             return {"path": result.get("path"), "bytes": len(result.get("content") or ""),
-                    "truncated": result.get("truncated")}
+                    "truncated": result.get("truncated")} | (
+                {"instruction_file": result["instruction_file"]} if result.get("instruction_file") else {})
         if tool == "screenshot":
             return {k: result.get(k) for k in ("width", "height", "bytes", "sha256")}
         if tool in ("write_file", "delete_file", "list_dir"):
@@ -237,6 +245,10 @@ class AgentBox:
                 effect = "덮어쓰기" if exists else "새 파일 만들기"
                 la = self._logged_args(tool, args)
                 notes.append(f"쓸 내용 {la['content_bytes']} bytes, sha256 {la['content_sha256'][:16]}…")
+            k = IF.kind(p)
+            if k:
+                notes.append(f"에이전트 지시 파일({k}). 결과함으로 받아 가면 다른 에이전트가 이 내용을 지시로 자동으로 읽는다. "
+                             "내용을 꼭 확인할 것")
             return {"tool": tool, "cwd": WORKSPACE, "affected": [{"path": p, "effect": effect}], "notes": notes}
         return {"tool": tool, "cwd": WORKSPACE, "affected": [],
                 "notes": ["시스템이 영향을 계산하지 못함. 도구 인자 원문을 확인할 것."]}
@@ -547,7 +559,12 @@ class AgentBox:
         self.log_human("sandbox_created", rec["id"], {"source_dir": rec["source_dir"], "runtime": rec["runtime"],
                                                       "image": rec["image"], "template": rec["template"],
                                                       "session": session})
-        return rec, token
+        # 원본에 섞여 들어온 에이전트 지시 파일을 기록하고 화면에 보인다 (IF-1). 막지는 않는다
+        hits, complete = IF.scan(rec["source_dir"])
+        if hits:
+            self.log_best_effort(rec["id"], None, "instruction_files_found",
+                                 {"via": "source", "paths": hits, "complete": complete}, actor="system")
+        return {**rec, "instruction_files": hits}, token
 
     # ---- 샌드박스 일시정지·재개·스냅샷·복원·삭제 -----------------------------
     # session을 넘기지 않으면(JSON API) 기록에 session 항목을 넣지 않고, 넘기면(웹 UI) None이어도 넣는다.
@@ -612,6 +629,11 @@ class AgentBox:
                 raise ServiceError(503, f"스냅샷 또는 기록 실패, 넣지 않음: {e}") from e
         res = self.sandboxes.upload(sid, name, data)
         self.log_best_effort(sid, None, "file_imported", {**meta, "path": res["path"]}, actor="human")
+        k = IF.kind(name)
+        if k:  # IF-1
+            self.log_best_effort(sid, None, "instruction_files_found",
+                                 {"via": "import", "paths": [name], "complete": True}, actor="system")
+            res = {**res, "instruction_file": k}
         return res
 
     def export_file(self, sid: str, name: str, session: str | None = None) -> bytes:

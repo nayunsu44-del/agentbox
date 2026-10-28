@@ -3,9 +3,10 @@
   <tr><th>파일</th><th>크기</th><th>바뀐 때 (UTC)</th><th></th></tr>
   {% for f in files %}
   <tr data-notify="out:{{ sid }}:{{ f.name }}:{{ f.mtime }}" data-text="결과 파일 도착: {{ f.name }}">
-    <td class="mono">{{ f.name }}</td><td>{{ f.bytes }}</td><td class="mut">{{ f.mtime[:19] }}</td>
+    <td class="mono">{{ f.name }}{% if f.instruction %} <span class="badge warn" title="코딩 에이전트가 지시로 자동으로 읽는 파일. 내려받기 전에 내용을 확인할 것">에이전트 지시 파일 · {{ f.instruction }}</span>{% endif %}</td><td>{{ f.bytes }}</td><td class="mut">{{ f.mtime[:19] }}</td>
     <td><a href="/sandboxes/{{ sid }}/outbox/{{ f.name | urlencode }}" download="{{ f.name }}">내려받기</a></td></tr>
   {% endfor %}
 </table>
+{% if files | selectattr("instruction") | list %}<p class="err" style="font-size:12px">에이전트 지시 파일(CLAUDE.md·AGENTS.md 등)이 있다. 받은 폴더에서 다른 에이전트를 돌리면 이 내용을 지시로 읽는다.</p>{% endif %}
 <p class="mut" style="font-size:12px">내려받으면 파일 이름·크기·sha256이 감사 로그에 반출로 남는다.</p>
 {% else %}<p class="mut">비어 있음. 에이전트가 /workspace/outbox에 두면 여기에 나타난다.</p>{% endif %}

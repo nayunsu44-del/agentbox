@@ -18,6 +18,10 @@ from typing import Any
 
 import yaml
 
+from . import instruction_files
+
+PATH_TOOLS = {"list_dir", "read_file", "write_file", "delete_file"}   # path 인자로 대상을 정하는 도구
+
 ALLOW = "allow"
 DENY = "deny"
 REQUIRE_APPROVAL = "require_approval"
@@ -73,6 +77,11 @@ def _words(command: str, depth: int = 0) -> list[str]:
         if _relex_changes(t):
             out.extend(_words(t, depth + 1))
     return out
+
+
+def command_words(command: str) -> list[str]:
+    """명령에 등장하는 단어(경로 그대로). 지시 파일을 가리키는지 볼 때 쓴다 (IF-1)."""
+    return [w for w in (w.strip("'\"\\;&|()<>") for w in _words(command)) if w]
 
 
 def command_names(command: str) -> set[str]:
@@ -207,6 +216,12 @@ class Policy:
             if r.get("tool") not in (None, "*", tool):
                 continue
             match = r.get("match") or {}
+            if match.get("instruction_files"):
+                # 경로 인자가 에이전트 지시 파일(CLAUDE.md, AGENTS.md, .claude/ 등)을 가리킬 때만 맞는다 (IF-1)
+                path = args.get("path")
+                if tool not in PATH_TOOLS or not isinstance(path, str) or not instruction_files.kind(path):
+                    continue
+                return Decision(r["action"], r["id"], r.get("reason"), [path])
             wanted = [str(c) for c in match.get("commands", [])]
             only = [str(c) for c in match.get("only_commands", [])]
             if only:

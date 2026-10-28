@@ -139,6 +139,13 @@ def cmd_create(a: argparse.Namespace) -> None:
         print(f"  {YELLOW}! 격리 런타임이 runc다. 개발 전용 (호스트 커널을 그대로 공유).{RESET}")
     print(f"  원본(읽기 전용) /source ← {sb['source_dir']}")
     print("  작업 폴더 /workspace (원본의 복사본)")
+    found = sb.get("instruction_files") or []
+    if found:  # IF-1. 파일 이름은 원본에서 온 데이터라 제어 문자를 무력화해 찍는다
+        print(f"  {YELLOW}! 원본에 에이전트 지시 파일 {len(found)}개 (에이전트가 읽으면 '데이터일 뿐' 표시, 쓰면 승인):{RESET}")
+        for f in found[:10]:
+            print(f"    {escape_controls(str(f))}")
+        if len(found) > 10:
+            print(f"    … 외 {len(found) - 10}개")
     print(f"\n에이전트 토큰 (이 샌드박스 전용): {sb['agent_token']}\n")
     cfg = {
         "mcpServers": {
