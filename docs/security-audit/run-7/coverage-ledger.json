@@ -1,0 +1,379 @@
+[
+ {
+  "coverage_id": "Behaviour%20preservation%20of%20the%205bb3c17%20refactor%3A%20GuiBursts.human_active%20%28gui_bursts.py%3A55-70%29%20used%20by%20needs_snapshot%20and%20decide%20%28service.py%3A545%29%2C%20_request_approval%20split%20out%20of%20_call_tool%20%28service.py%3A354-449%29%2C%20unchanged%20_check_control%2F_gui_locked%2F_snapshot%2Fcall_tool%20gates%20%28service.py%3A173-198%2C%20300-352%29%2C%20and%20the%20shared%20test%20doubles%20%28tests%2Fconftest.py%2C%20tests%2Ftest_m2_unit.py%2C%20tests%2Ftest_m5_unit.py%29::The%20refactor%20claims%20no%20behaviour%20change.%20Invariant%3A%20for%20every%20tool%20and%20actor%2C%20the%20approval%20order%20%28pending%20cap%20-%3E%20preview%20-%3E%20bound_payload%20-%3E%20disk_low%20recheck%20-%3E%20capture%20-%3E%20row%20-%3E%20audit%29%20and%20its%20failure%20handling%2C%20the%20arguments%20stored%2C%20previewed%2C%20logged%20and%20executed%2C%20and%20the%20GUI%20burst%20decisions%20%28needs_snapshot%2C%20decide%20refusal%20under%20a%20lease%20or%20pending%20takeover%2C%20_snapshot%20opening%20only%20after%20_check_control%20under%20gui_lock%2C%20covers%29%20are%20identical%20to%20530b29e%2B7dbda9e%2C%20and%20the%20run-3..run-6%20GUI%20and%20argument%20fixes%20still%20hold%3B%20the%20conftest%20doubles%20do%20not%20hide%20a%20regression%20the%20old%20per-file%20doubles%20would%20have%20caught.::agentbox%2Fservice.py%23_call_tool%2F_request_approval%2Fdecide%2F_snapshot%2F_check_control%20%2B%20agentbox%2Fgui_bursts.py%23human_active%2Fneeds_snapshot%20%2B%20tests%2Fconftest.py::AI-AND-LLM.md%23Action-confirmation%20and%20approval%20binding",
+  "canonical_refs": {
+   "surface": "Behaviour preservation of the 5bb3c17 refactor: GuiBursts.human_active (gui_bursts.py:55-70) used by needs_snapshot and decide (service.py:545), _request_approval split out of _call_tool (service.py:354-449), unchanged _check_control/_gui_locked/_snapshot/call_tool gates (service.py:173-198, 300-352), and the shared test doubles (tests/conftest.py, tests/test_m2_unit.py, tests/test_m5_unit.py)",
+   "boundary": "The refactor claims no behaviour change. Invariant: for every tool and actor, the approval order (pending cap -> preview -> bound_payload -> disk_low recheck -> capture -> row -> audit) and its failure handling, the arguments stored, previewed, logged and executed, and the GUI burst decisions (needs_snapshot, decide refusal under a lease or pending takeover, _snapshot opening only after _check_control under gui_lock, covers) are identical to 530b29e+7dbda9e, and the run-3..run-6 GUI and argument fixes still hold; the conftest doubles do not hide a regression the old per-file doubles would have caught.",
+   "subsystem": "agentbox/service.py#_call_tool/_request_approval/decide/_snapshot/_check_control + agentbox/gui_bursts.py#human_active/needs_snapshot + tests/conftest.py",
+   "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding"
+  },
+  "surface": "Behaviour preservation of the 5bb3c17 refactor: GuiBursts.human_active (gui_bursts.py:55-70) used by needs_snapshot and decide (service.py:545), _request_approval split out of _call_tool (service.py:354-449), unchanged _check_control/_gui_locked/_snapshot/call_tool gates (service.py:173-198, 300-352), and the shared test doubles (tests/conftest.py, tests/test_m2_unit.py, tests/test_m5_unit.py)",
+  "boundary": "The refactor claims no behaviour change. Invariant: for every tool and actor, the approval order (pending cap -> preview -> bound_payload -> disk_low recheck -> capture -> row -> audit) and its failure handling, the arguments stored, previewed, logged and executed, and the GUI burst decisions (needs_snapshot, decide refusal under a lease or pending takeover, _snapshot opening only after _check_control under gui_lock, covers) are identical to 530b29e+7dbda9e, and the run-3..run-6 GUI and argument fixes still hold; the conftest doubles do not hide a regression the old per-file doubles would have caught.",
+  "subsystem": "agentbox/service.py#_call_tool/_request_approval/decide/_snapshot/_check_control + agentbox/gui_bursts.py#human_active/needs_snapshot + tests/conftest.py",
+  "attack_class": "AI-AND-LLM.md#Action-confirmation and approval binding",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/gui_bursts.py",
+   "agentbox/desktop.py",
+   "agentbox/approvals.py",
+   "agentbox/audit.py",
+   "tests/conftest.py",
+   "tests/test_m2_unit.py",
+   "tests/test_m5_unit.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Action-confirmation and approval binding",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Privileged helper as confused deputy",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Pending-action and user-presence confusion",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Quota-accounting scope and reset gaps"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "SUPPLY-CHAIN-AND-RELEASE.md#Cache, artifact, and workspace trust mixing",
+    "reason": "Test doubles are reviewed only for whether they mask a behaviour change; CI trust is out of scope."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-refactor",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_hunter": "h-refactor",
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [
+   "agentbox/service.py:_snapshot:gui-burst-opened-under-takeover-lease",
+   "agentbox/audit.py:append:agent-grown-rows-in-shared-sqlite-have-no-aggregate-bound-or-retention"
+  ],
+  "x_source": "5bb3c17 refactor (claimed no behaviour change)."
+ },
+ {
+  "coverage_id": "Completeness%20of%20the%207dbda9e%20fixes%20for%20run-6%20F1-F3%20and%20N1-N3%3A%20GuiBursts.covers%20container_id%20check%20and%20restore_sandbox%20bursts.end%20%28gui_bursts.py%3A72-83%2C%20service.py%3A625-635%29%3B%20idx_audit_sandbox_id%20and%20batched%20_verify_live%20outside%20_lock%20%28audit.py%3A38%2C%20337-400%29%3B%20_expand%20~%2F%7B%20handling%20and%20head%20-z%20-n%20cap%20plus%20preview%20notes%20%28sandbox.py%3A600-626%2C%20preview.py%3A88-114%29%3B%20same_origin%20scheme%20check%20and%20HSTS%20%28api.py%3A221-235%2C%20web.py%3A177%2C187%2C%20cli.py%3A102%2C%20deploy%2FCaddyfile%3A8%29%3B%20_exec_head%2C%20outbox%20head%20-c%2C%20screenshot%20link%2Fsize%20checks%20%28sandbox.py%3A41%2C%20422-461%2C%20564-574%2C%20sandbox_desktop.py%3A37%2C%20113-123%29%3B%20DockerRootDir%20and%20disk_low%20%28sandbox.py%3A179-183%2C%20service.py%3A461-485%29::Each%20run-6%20fix%20must%20close%20its%20root%20cause%20for%20all%20variants%20without%20introducing%20a%20new%20defect%3A%20no%20GUI%20input%20runs%20under%20a%20burst%20whose%20baseline%20belongs%20to%20another%20container%3B%20verify%28%29%20cannot%20hold%20AuditLog._lock%20for%20long%2C%20load%20the%20table%2C%20loop%20forever%2C%20or%20report%20a%20broken%20chain%20as%20intact%3B%20the%20rm%20preview%20does%20not%20show%20a%20real%20target%20as%20absent%20without%20a%20warning%3B%20a%20cross-scheme%20Origin%20is%20refused%20whenever%20cookies%20are%20secure%20%28including%20behind%20the%20TLS%20proxy%20and%20when%20secure_cookie%20is%20off%20by%20configuration%29%3B%20no%20container%20reader%20buffers%20unbounded%20output%20or%20follows%20an%20attacker%20link%3B%20disk_low%20sees%20the%20filesystem%20that%20holds%20container%20layers%20and%20snapshot%20images%20or%20fails%20closed%20when%20it%20cannot.::agentbox%2Fgui_bursts.py%23covers%2Fend%20%2B%20agentbox%2Fservice.py%23restore_sandbox%2Fdisk_low%20%2B%20agentbox%2Faudit.py%23_verify_live%2Fverify%2Fverify_archives%20%2B%20agentbox%2Fsandbox.py%23_expand%2F_exec_head%2Flist_dir%2Foutbox_list%2F_detect_runtime%20%2B%20agentbox%2Fpreview.py%23preview_command%20%2B%20agentbox%2Fsandbox_desktop.py%23screenshot%20%2B%20agentbox%2Fapi.py%23same_origin%2Fsecure_cookie%20%2B%20deploy%2FCaddyfile::ATTACK-CLASSES.md%23Business%20logic",
+  "canonical_refs": {
+   "surface": "Completeness of the 7dbda9e fixes for run-6 F1-F3 and N1-N3: GuiBursts.covers container_id check and restore_sandbox bursts.end (gui_bursts.py:72-83, service.py:625-635); idx_audit_sandbox_id and batched _verify_live outside _lock (audit.py:38, 337-400); _expand ~/{ handling and head -z -n cap plus preview notes (sandbox.py:600-626, preview.py:88-114); same_origin scheme check and HSTS (api.py:221-235, web.py:177,187, cli.py:102, deploy/Caddyfile:8); _exec_head, outbox head -c, screenshot link/size checks (sandbox.py:41, 422-461, 564-574, sandbox_desktop.py:37, 113-123); DockerRootDir and disk_low (sandbox.py:179-183, service.py:461-485)",
+   "boundary": "Each run-6 fix must close its root cause for all variants without introducing a new defect: no GUI input runs under a burst whose baseline belongs to another container; verify() cannot hold AuditLog._lock for long, load the table, loop forever, or report a broken chain as intact; the rm preview does not show a real target as absent without a warning; a cross-scheme Origin is refused whenever cookies are secure (including behind the TLS proxy and when secure_cookie is off by configuration); no container reader buffers unbounded output or follows an attacker link; disk_low sees the filesystem that holds container layers and snapshot images or fails closed when it cannot.",
+   "subsystem": "agentbox/gui_bursts.py#covers/end + agentbox/service.py#restore_sandbox/disk_low + agentbox/audit.py#_verify_live/verify/verify_archives + agentbox/sandbox.py#_expand/_exec_head/list_dir/outbox_list/_detect_runtime + agentbox/preview.py#preview_command + agentbox/sandbox_desktop.py#screenshot + agentbox/api.py#same_origin/secure_cookie + deploy/Caddyfile",
+   "attack_class": "ATTACK-CLASSES.md#Business logic"
+  },
+  "surface": "Completeness of the 7dbda9e fixes for run-6 F1-F3 and N1-N3: GuiBursts.covers container_id check and restore_sandbox bursts.end (gui_bursts.py:72-83, service.py:625-635); idx_audit_sandbox_id and batched _verify_live outside _lock (audit.py:38, 337-400); _expand ~/{ handling and head -z -n cap plus preview notes (sandbox.py:600-626, preview.py:88-114); same_origin scheme check and HSTS (api.py:221-235, web.py:177,187, cli.py:102, deploy/Caddyfile:8); _exec_head, outbox head -c, screenshot link/size checks (sandbox.py:41, 422-461, 564-574, sandbox_desktop.py:37, 113-123); DockerRootDir and disk_low (sandbox.py:179-183, service.py:461-485)",
+  "boundary": "Each run-6 fix must close its root cause for all variants without introducing a new defect: no GUI input runs under a burst whose baseline belongs to another container; verify() cannot hold AuditLog._lock for long, load the table, loop forever, or report a broken chain as intact; the rm preview does not show a real target as absent without a warning; a cross-scheme Origin is refused whenever cookies are secure (including behind the TLS proxy and when secure_cookie is off by configuration); no container reader buffers unbounded output or follows an attacker link; disk_low sees the filesystem that holds container layers and snapshot images or fails closed when it cannot.",
+  "subsystem": "agentbox/gui_bursts.py#covers/end + agentbox/service.py#restore_sandbox/disk_low + agentbox/audit.py#_verify_live/verify/verify_archives + agentbox/sandbox.py#_expand/_exec_head/list_dir/outbox_list/_detect_runtime + agentbox/preview.py#preview_command + agentbox/sandbox_desktop.py#screenshot + agentbox/api.py#same_origin/secure_cookie + deploy/Caddyfile",
+  "attack_class": "ATTACK-CLASSES.md#Business logic",
+  "starting_paths": [
+   "agentbox/gui_bursts.py",
+   "agentbox/service.py",
+   "agentbox/audit.py",
+   "agentbox/sandbox.py",
+   "agentbox/preview.py",
+   "agentbox/sandbox_desktop.py",
+   "agentbox/api.py",
+   "agentbox/web.py",
+   "agentbox/cli.py",
+   "deploy/Caddyfile",
+   "deploy/docker-compose.yml",
+   "tests/test_m5_unit.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Reachable fatal error or deadlock",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+   "WEB-PROTOCOL-AND-AUTH.md#Cookie scope and transport",
+   "WEB-PROTOCOL-AND-AUTH.md#Host and forwarded-header trust",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+   "AI-AND-LLM.md#Action-confirmation and approval binding"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "CLIENT-SIDE.md#Cross-site WebSocket request use",
+    "reason": "The WebSocket upgrade shares same_origin, which is in this unit; no separate WebSocket origin unit."
+   },
+   {
+    "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Restore reintroduces invalid state",
+    "reason": "Restore is only in scope for the GUI burst binding in this unit; the refactor unit owns burst gating."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-fixes",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_hunter": "h-fixes",
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [
+   "agentbox/gui_bursts.py:GuiBursts.covers:container-identity-binding-gap-across-restore",
+   "agentbox/audit.py:AuditLog:table-growth-lock-contention-and-verify-memory",
+   "agentbox/sandbox.py:preview:_expand-word-splits-operands-and-line-splits-paths-so-affected-list-misreports-rm-targets",
+   "agentbox/api.py:same_origin:scheme-blind-origin-netloc-compare",
+   "agentbox/sandbox.py:container-output-readers-without-_Head-byte-cap",
+   "agentbox/service.py:disk_low-unmonitored-docker-data-root"
+  ],
+  "x_source": "7dbda9e (run-6 F1-F3 and N1-N3 fixes, unaudited)."
+ },
+ {
+  "coverage_id": "Human-facing%20sinks%20for%20attacker-chosen%20instruction-file%20names%2C%20paths%20and%20content%3A%20_created.html%20%28oneline%29%2C%20_outbox.html%20%28badge%2C%20data-notify%2Fdata-text%2C%20href%20urlencode%2C%20download%20attribute%29%2C%20_approvals.html%20full-content%20%3Cpre%3E%20polled%20every%202%20s%20%28index.html%3A25%2C%20sandbox.html%3A25%29%2C%20sandbox.html%20upload%20JS%2C%20web._shown%2F_oneline%2Fdescribe%28instruction_files_found%29%20%28web.py%3A35-100%29%2C%20cli._safe%2Fcmd_create%2F_show_approval%20%28cli.py%3A33-35%2C%20142-150%2C%20208-217%29%2C%20api.outbox_file%20Content-Disposition%20%28api.py%3A398-404%29::Every%20new%20sink%20must%20pass%20attacker%20strings%20through%20autoescape%20plus%20_shown%2Foneline%20%28web%29%20or%20_safe%20%28CLI%29%3A%20no%20markup%20or%20attribute%20injection%2C%20no%20bidi%2Finvisible%20reordering%2C%20no%20fake%20rows%20or%20lines%2C%20no%20header%20injection%3B%20and%20rendering%20up%20to%2020%20pending%20full-content%20approval%20cards%20per%20sandbox%20%281%20MiB%20each%29%20every%202%20s%20must%20not%20freeze%20the%20human%20UI%20or%20the%20control%20plane.::agentbox%2Ftemplates%2F_created.html%20%2B%20agentbox%2Ftemplates%2F_outbox.html%20%2B%20agentbox%2Ftemplates%2F_approvals.html%20%2B%20agentbox%2Fweb.py%23_shown%2F_oneline%2Fdescribe%20%2B%20agentbox%2Fcli.py%23_safe%2Fcmd_create%2F_show_approval%20%2B%20agentbox%2Fapi.py%23outbox_file::AI-AND-LLM.md%23Insecure%20output%20rendering",
+  "canonical_refs": {
+   "surface": "Human-facing sinks for attacker-chosen instruction-file names, paths and content: _created.html (oneline), _outbox.html (badge, data-notify/data-text, href urlencode, download attribute), _approvals.html full-content <pre> polled every 2 s (index.html:25, sandbox.html:25), sandbox.html upload JS, web._shown/_oneline/describe(instruction_files_found) (web.py:35-100), cli._safe/cmd_create/_show_approval (cli.py:33-35, 142-150, 208-217), api.outbox_file Content-Disposition (api.py:398-404)",
+   "boundary": "Every new sink must pass attacker strings through autoescape plus _shown/oneline (web) or _safe (CLI): no markup or attribute injection, no bidi/invisible reordering, no fake rows or lines, no header injection; and rendering up to 20 pending full-content approval cards per sandbox (1 MiB each) every 2 s must not freeze the human UI or the control plane.",
+   "subsystem": "agentbox/templates/_created.html + agentbox/templates/_outbox.html + agentbox/templates/_approvals.html + agentbox/web.py#_shown/_oneline/describe + agentbox/cli.py#_safe/cmd_create/_show_approval + agentbox/api.py#outbox_file",
+   "attack_class": "AI-AND-LLM.md#Insecure output rendering"
+  },
+  "surface": "Human-facing sinks for attacker-chosen instruction-file names, paths and content: _created.html (oneline), _outbox.html (badge, data-notify/data-text, href urlencode, download attribute), _approvals.html full-content <pre> polled every 2 s (index.html:25, sandbox.html:25), sandbox.html upload JS, web._shown/_oneline/describe(instruction_files_found) (web.py:35-100), cli._safe/cmd_create/_show_approval (cli.py:33-35, 142-150, 208-217), api.outbox_file Content-Disposition (api.py:398-404)",
+  "boundary": "Every new sink must pass attacker strings through autoescape plus _shown/oneline (web) or _safe (CLI): no markup or attribute injection, no bidi/invisible reordering, no fake rows or lines, no header injection; and rendering up to 20 pending full-content approval cards per sandbox (1 MiB each) every 2 s must not freeze the human UI or the control plane.",
+  "subsystem": "agentbox/templates/_created.html + agentbox/templates/_outbox.html + agentbox/templates/_approvals.html + agentbox/web.py#_shown/_oneline/describe + agentbox/cli.py#_safe/cmd_create/_show_approval + agentbox/api.py#outbox_file",
+  "attack_class": "AI-AND-LLM.md#Insecure output rendering",
+  "starting_paths": [
+   "agentbox/templates/_created.html",
+   "agentbox/templates/_outbox.html",
+   "agentbox/templates/_approvals.html",
+   "agentbox/templates/sandbox.html",
+   "agentbox/templates/index.html",
+   "agentbox/templates/_notify.html",
+   "agentbox/web.py",
+   "agentbox/cli.py",
+   "agentbox/display.py",
+   "agentbox/api.py",
+   "agentbox/approvals.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Insecure output rendering",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules",
+   "CLIENT-SIDE.md#DOM-based XSS",
+   "WEB-PROTOCOL-AND-AUTH.md#Response-header injection",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "CLIENT-SIDE.md#Clickjacking",
+    "reason": "_NoFraming is unchanged by the delta and was covered in run-4."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-if-notice-sinks",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_hunter": "h-if-notice-sinks",
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "d4e956e, a0a186c (single-pass F1, F4, F6, F7 sink fixes)."
+ },
+ {
+  "coverage_id": "Instruction-file%20name%20classification%3A%20instruction_files._norm%2F_parts%2Fkind%20%28instruction_files.py%3A26-108%29%20and%20every%20caller%20%28policy.Policy.decide%20%3A214-232%2C%20service._preview%2F_run_tool%2Fimport_file%2Fexport_file%2Foutbox%2C%20IF.scan%2C%20paths_in_words%29::kind%28%29%20must%20classify%20a%20name%20as%20an%20instruction%20file%20whenever%20a%20downstream%20file%20system%2C%20archive%20tool%2C%20browser%20download%2C%20or%20coding%20agent%20would%20treat%20it%20as%20one%20of%20_NAMES%2F_DIRS%2F.github%20dirs%2C%20and%20must%20not%20flag%20ordinary%20names%20so%20often%20that%20normal%20writes%20go%20to%20approval.%20Check%20residual%20bypasses%20after%20a0a186c%3A%20combining%20marks%2C%20NFD%2FNFC%2FNFKD%20forms%2C%20default-ignorable%20characters%2C%20other%20case%20foldings%2C%208.3%20short%20names%2C%20names%20a%20browser%20rewrites%20on%20download%20%28download%20attribute%2C%20Content-Disposition%20filename%2A%29%2C%20trailing%20characters%20other%20than%20dot%2Fspace%2C%20and%20path%20splitting%20of%20backslash%20and%20%27..%27.::agentbox%2Finstruction_files.py%23_norm%2F_parts%2Fkind%20%2B%20agentbox%2Fpolicy.py%23decide%20%2B%20agentbox%2Fapi.py%23outbox_file::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+  "canonical_refs": {
+   "surface": "Instruction-file name classification: instruction_files._norm/_parts/kind (instruction_files.py:26-108) and every caller (policy.Policy.decide :214-232, service._preview/_run_tool/import_file/export_file/outbox, IF.scan, paths_in_words)",
+   "boundary": "kind() must classify a name as an instruction file whenever a downstream file system, archive tool, browser download, or coding agent would treat it as one of _NAMES/_DIRS/.github dirs, and must not flag ordinary names so often that normal writes go to approval. Check residual bypasses after a0a186c: combining marks, NFD/NFC/NFKD forms, default-ignorable characters, other case foldings, 8.3 short names, names a browser rewrites on download (download attribute, Content-Disposition filename*), trailing characters other than dot/space, and path splitting of backslash and '..'.",
+   "subsystem": "agentbox/instruction_files.py#_norm/_parts/kind + agentbox/policy.py#decide + agentbox/api.py#outbox_file",
+   "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+  },
+  "surface": "Instruction-file name classification: instruction_files._norm/_parts/kind (instruction_files.py:26-108) and every caller (policy.Policy.decide :214-232, service._preview/_run_tool/import_file/export_file/outbox, IF.scan, paths_in_words)",
+  "boundary": "kind() must classify a name as an instruction file whenever a downstream file system, archive tool, browser download, or coding agent would treat it as one of _NAMES/_DIRS/.github dirs, and must not flag ordinary names so often that normal writes go to approval. Check residual bypasses after a0a186c: combining marks, NFD/NFC/NFKD forms, default-ignorable characters, other case foldings, 8.3 short names, names a browser rewrites on download (download attribute, Content-Disposition filename*), trailing characters other than dot/space, and path splitting of backslash and '..'.",
+  "subsystem": "agentbox/instruction_files.py#_norm/_parts/kind + agentbox/policy.py#decide + agentbox/api.py#outbox_file",
+  "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+  "starting_paths": [
+   "agentbox/instruction_files.py",
+   "agentbox/policy.py",
+   "agentbox/service.py",
+   "agentbox/api.py",
+   "agentbox/templates/_outbox.html",
+   "tests/test_instruction_files.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+  "selected_companion_blocks": [
+   "ATTACK-CLASSES.md#Resource and file handling",
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+   "AI-AND-LLM.md#Validation rules",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Export and backup scope expansion"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Superlinear parsing, matching, or evaluation",
+    "reason": "kind() cost on long paths is bounded by TOOL_ARG_MAX; scan cost is owned by the h-if-scan unit."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-if-kind",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_hunter": "h-if-kind",
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "d4e956e, ccaf367, a0a186c (name normalisation; single-pass review NV items 1-2 fixed)."
+ },
+ {
+  "coverage_id": "Policy%20target%20versus%20write%20target%20for%20instruction%20files%3A%20service._resolved%2F_policy_args%2F_preview%20%28service.py%3A235-289%29%2C%20SandboxManager.resolve%20%28sandbox.py%3A487-496%29%2C%20write_file%20tmp%2Bmv%20and%20delete_file%20%28sandbox.py%3A502-525%29%2C%20Policy.decide%20match.instruction_files%20with%20resolved_path%20%28policy.py%3A214-232%29%2C%20default_policy.yaml%20version%204%20rule%20order%2C%20decide%28%29%20executing%20stored%20args%20%28service.py%3A520-575%29::An%20agent-caused%20write%20or%20delete%20must%20not%20land%20in%20an%20instruction%20file%20or%20instruction%20directory%20without%20approval.%20Invariant%3A%20the%20object%20policy%20judged%20%28requested%20path%20or%20the%20single%20realpath%20-m%20at%20decide%20time%29%20is%20the%20object%20mv%2Frm%20finally%20touches%2C%20including%20directory%20links%20as%20the%20last%20component%2C%20links%20changed%20between%20decide%20and%20execution%20or%20during%20the%20approval%20wait%20%28by%20allowlisted%20exec%2C%20write_file%2C%20GUI%20tools%20or%20concurrent%20calls%29%2C%20and%20resolve%28%29%20failures%20%28timeouts%2C%20errors%2C%20concurrency%29%20cannot%20be%20induced%20to%20fall%20back%20to%20the%20requested%20path%3B%20user%20policies%20mixing%20instruction_files%20with%20other%20rules%20evaluate%20in%20a%20safe%20order.::agentbox%2Fservice.py%23_resolved%2F_policy_args%2F_preview%2F_call_tool%2Fdecide%20%2B%20agentbox%2Fsandbox.py%23resolve%2Fwrite_file%2Fdelete_file%20%2B%20agentbox%2Fpolicy.py%23decide%20%2B%20agentbox%2Fdefault_policy.yaml::DESKTOP-MOBILE-AND-LOCAL-IPC.md%23Local%20file%20ownership%20and%20TOCTOU",
+  "canonical_refs": {
+   "surface": "Policy target versus write target for instruction files: service._resolved/_policy_args/_preview (service.py:235-289), SandboxManager.resolve (sandbox.py:487-496), write_file tmp+mv and delete_file (sandbox.py:502-525), Policy.decide match.instruction_files with resolved_path (policy.py:214-232), default_policy.yaml version 4 rule order, decide() executing stored args (service.py:520-575)",
+   "boundary": "An agent-caused write or delete must not land in an instruction file or instruction directory without approval. Invariant: the object policy judged (requested path or the single realpath -m at decide time) is the object mv/rm finally touches, including directory links as the last component, links changed between decide and execution or during the approval wait (by allowlisted exec, write_file, GUI tools or concurrent calls), and resolve() failures (timeouts, errors, concurrency) cannot be induced to fall back to the requested path; user policies mixing instruction_files with other rules evaluate in a safe order.",
+   "subsystem": "agentbox/service.py#_resolved/_policy_args/_preview/_call_tool/decide + agentbox/sandbox.py#resolve/write_file/delete_file + agentbox/policy.py#decide + agentbox/default_policy.yaml",
+   "attack_class": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU"
+  },
+  "surface": "Policy target versus write target for instruction files: service._resolved/_policy_args/_preview (service.py:235-289), SandboxManager.resolve (sandbox.py:487-496), write_file tmp+mv and delete_file (sandbox.py:502-525), Policy.decide match.instruction_files with resolved_path (policy.py:214-232), default_policy.yaml version 4 rule order, decide() executing stored args (service.py:520-575)",
+  "boundary": "An agent-caused write or delete must not land in an instruction file or instruction directory without approval. Invariant: the object policy judged (requested path or the single realpath -m at decide time) is the object mv/rm finally touches, including directory links as the last component, links changed between decide and execution or during the approval wait (by allowlisted exec, write_file, GUI tools or concurrent calls), and resolve() failures (timeouts, errors, concurrency) cannot be induced to fall back to the requested path; user policies mixing instruction_files with other rules evaluate in a safe order.",
+  "subsystem": "agentbox/service.py#_resolved/_policy_args/_preview/_call_tool/decide + agentbox/sandbox.py#resolve/write_file/delete_file + agentbox/policy.py#decide + agentbox/default_policy.yaml",
+  "attack_class": "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+  "starting_paths": [
+   "agentbox/service.py",
+   "agentbox/sandbox.py",
+   "agentbox/policy.py",
+   "agentbox/default_policy.yaml",
+   "agentbox/instruction_files.py",
+   "tests/test_instruction_files.py",
+   "tests/test_instruction_files_acceptance.py"
+  ],
+  "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+  "selected_companion_blocks": [
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Local file ownership and TOCTOU",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+   "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+   "AI-AND-LLM.md#Action-confirmation and approval binding",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Policy and query disagreement",
+   "ATTACK-CLASSES.md#Access control"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "AI-AND-LLM.md#Excessive agency and confused-deputy authority",
+    "reason": "GUI-tool approval bypass is the documented N-1 limitation; only a new angle is in scope here."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-if-policy",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_hunter": "h-if-policy",
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "a0a186c (single-pass F2 fix: resolved_path) plus single-pass NV item: F2 in-container write step."
+ },
+ {
+  "coverage_id": "Read-result%20boundary%20for%20instruction%20files%3A%20instruction_files.mark_read%2Fwith_notice%2Fnotice%20%28instruction_files.py%3A111-137%29%2C%20agent.py%20ToolClient.call_text%20%28%3A118-126%29%2C%20mcp_server.py%20read_file%20and%20instructions%20%28%3A46-52%2C%20119-125%29%2C%20exec%20notice%20in%20service._run_tool%20%28%3A133-141%29::When%20the%20agent%20reads%20an%20instruction%20file%2C%20the%20agent-visible%20text%20must%20carry%20the%20notice%20and%20an%20unforgeable%20boundary%20that%20encloses%20exactly%20the%20file%20content%2C%20identically%20for%20MCP%20and%20the%20built-in%20loop.%20Check%3A%20tag%20collision%20redraw%2C%20the%20truncation%20marker%20inside%20the%20boundary%2C%20content%20that%20imitates%20the%20notice%20or%20a%20boundary%20with%20a%20different%20tag%2C%20exec%20results%20%28notice%20only%2C%20no%20boundary%29%2C%20reads%20through%20a%20link%20or%20a%20non-instruction%20name%20pointing%20at%20an%20instruction%20file%20%28mark_read%20uses%20the%20requested%20path%29%2C%20list_dir%2C%20and%20whether%20a%20user%20read-blocking%20rule%20%28README%29%20can%20be%20bypassed%20through%20a%20link.::agentbox%2Finstruction_files.py%23mark_read%2Fwith_notice%20%2B%20agentbox%2Fagent.py%23call_text%20%2B%20agentbox%2Fmcp_server.py%23read_file%20%2B%20agentbox%2Fservice.py%23_run_tool::AI-AND-LLM.md%23Indirect%20injection%20through%20retrieved%20or%20ingested%20content",
+  "canonical_refs": {
+   "surface": "Read-result boundary for instruction files: instruction_files.mark_read/with_notice/notice (instruction_files.py:111-137), agent.py ToolClient.call_text (:118-126), mcp_server.py read_file and instructions (:46-52, 119-125), exec notice in service._run_tool (:133-141)",
+   "boundary": "When the agent reads an instruction file, the agent-visible text must carry the notice and an unforgeable boundary that encloses exactly the file content, identically for MCP and the built-in loop. Check: tag collision redraw, the truncation marker inside the boundary, content that imitates the notice or a boundary with a different tag, exec results (notice only, no boundary), reads through a link or a non-instruction name pointing at an instruction file (mark_read uses the requested path), list_dir, and whether a user read-blocking rule (README) can be bypassed through a link.",
+   "subsystem": "agentbox/instruction_files.py#mark_read/with_notice + agentbox/agent.py#call_text + agentbox/mcp_server.py#read_file + agentbox/service.py#_run_tool",
+   "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content"
+  },
+  "surface": "Read-result boundary for instruction files: instruction_files.mark_read/with_notice/notice (instruction_files.py:111-137), agent.py ToolClient.call_text (:118-126), mcp_server.py read_file and instructions (:46-52, 119-125), exec notice in service._run_tool (:133-141)",
+  "boundary": "When the agent reads an instruction file, the agent-visible text must carry the notice and an unforgeable boundary that encloses exactly the file content, identically for MCP and the built-in loop. Check: tag collision redraw, the truncation marker inside the boundary, content that imitates the notice or a boundary with a different tag, exec results (notice only, no boundary), reads through a link or a non-instruction name pointing at an instruction file (mark_read uses the requested path), list_dir, and whether a user read-blocking rule (README) can be bypassed through a link.",
+  "subsystem": "agentbox/instruction_files.py#mark_read/with_notice + agentbox/agent.py#call_text + agentbox/mcp_server.py#read_file + agentbox/service.py#_run_tool",
+  "attack_class": "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+  "starting_paths": [
+   "agentbox/instruction_files.py",
+   "agentbox/agent.py",
+   "agentbox/mcp_server.py",
+   "agentbox/service.py",
+   "agentbox/policy.py",
+   "agentbox/sandbox.py",
+   "tests/test_instruction_files.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "AI-AND-LLM.md#Core discipline",
+   "AI-AND-LLM.md#Indirect injection through retrieved or ingested content",
+   "AI-AND-LLM.md#Prompt role and provenance confusion",
+   "AI-AND-LLM.md#Universal moves",
+   "AI-AND-LLM.md#Validation rules"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "AI-AND-LLM.md#Sensitive context extraction",
+    "reason": "The LLM-provider data path is a documented limitation and out of scope."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-if-notice-sinks",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_hunter": "h-if-notice-sinks",
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "d4e956e, 79d8211 (notice and random boundary)."
+ },
+ {
+  "coverage_id": "Source-folder%20scan%20at%20sandbox%20creation%3A%20instruction_files.scan%20%28instruction_files.py%3A150-193%29%20called%20synchronously%20in%20AgentBox.create_sandbox%20%28service.py%3A577-597%29%2C%20_found_payload%2FFOUND_PATH_MAX%20%28service.py%3A778-786%29%20and%20bound_payload%2C%20web.describe%20and%20the%20create%20card::The%20scan%20must%20bound%20the%20time%20and%20memory%20a%20create%20request%20spends%20%28including%20a%20single%20blocking%20scandir%20or%20stat%20on%20a%20slow%2C%20FUSE%20or%20network%20directory%2C%20and%20per-directory%20entry%20buffering%29%2C%20report%20complete%3DFalse%20whenever%20the%20list%20may%20be%20partial%2C%20not%20hold%20locks%20or%20request%20threads%20that%20block%20other%20humans%20or%20agents%2C%20and%20its%20audit%20record%20must%20keep%20the%20count%20and%20truthfully%20mark%20a%20truncated%20list%20after%20bound_payload.::agentbox%2Finstruction_files.py%23scan%20%2B%20agentbox%2Fservice.py%23create_sandbox%2F_found_payload%20%2B%20agentbox%2Faudit.py%23bound_payload%20%2B%20agentbox%2Fweb.py%23describe::RESOURCE-EXHAUSTION-AND-AVAILABILITY.md%23Worker%2C%20pool%2C%20and%20priority%20starvation",
+  "canonical_refs": {
+   "surface": "Source-folder scan at sandbox creation: instruction_files.scan (instruction_files.py:150-193) called synchronously in AgentBox.create_sandbox (service.py:577-597), _found_payload/FOUND_PATH_MAX (service.py:778-786) and bound_payload, web.describe and the create card",
+   "boundary": "The scan must bound the time and memory a create request spends (including a single blocking scandir or stat on a slow, FUSE or network directory, and per-directory entry buffering), report complete=False whenever the list may be partial, not hold locks or request threads that block other humans or agents, and its audit record must keep the count and truthfully mark a truncated list after bound_payload.",
+   "subsystem": "agentbox/instruction_files.py#scan + agentbox/service.py#create_sandbox/_found_payload + agentbox/audit.py#bound_payload + agentbox/web.py#describe",
+   "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation"
+  },
+  "surface": "Source-folder scan at sandbox creation: instruction_files.scan (instruction_files.py:150-193) called synchronously in AgentBox.create_sandbox (service.py:577-597), _found_payload/FOUND_PATH_MAX (service.py:778-786) and bound_payload, web.describe and the create card",
+  "boundary": "The scan must bound the time and memory a create request spends (including a single blocking scandir or stat on a slow, FUSE or network directory, and per-directory entry buffering), report complete=False whenever the list may be partial, not hold locks or request threads that block other humans or agents, and its audit record must keep the count and truthfully mark a truncated list after bound_payload.",
+  "subsystem": "agentbox/instruction_files.py#scan + agentbox/service.py#create_sandbox/_found_payload + agentbox/audit.py#bound_payload + agentbox/web.py#describe",
+  "attack_class": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+  "starting_paths": [
+   "agentbox/instruction_files.py",
+   "agentbox/service.py",
+   "agentbox/audit.py",
+   "agentbox/web.py",
+   "agentbox/api.py",
+   "agentbox/cli.py",
+   "tests/test_instruction_files.py"
+  ],
+  "ordinary_attack_class_block": null,
+  "selected_companion_blocks": [
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Worker, pool, and priority starvation",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Unbounded buffering and cardinality",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Universal moves",
+   "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Validation rules",
+   "DATA-ISOLATION-AND-LIFECYCLE.md#Analytics, logs, traces, and diagnostics as alternate readers"
+  ],
+  "excluded_blocks": [
+   {
+    "block": "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Pre-authentication work imbalance",
+    "reason": "create_sandbox is a human-only route; pre-auth body handling is unchanged since run-6."
+   }
+  ],
+  "prior_status": "new",
+  "attempts": [],
+  "wave": 1,
+  "status": "in_progress",
+  "agent_id": "h-if-scan",
+  "reviewed_paths": [],
+  "local_checks": [],
+  "result_fingerprints": [],
+  "unresolved": [],
+  "x_hunter": "h-if-scan",
+  "x_prior_unit": null,
+  "x_prior_fingerprints": [],
+  "x_source": "d4e956e, a0a186c (single-pass F3, F5 fixes)."
+ }
+]
