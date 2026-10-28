@@ -13,6 +13,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import RUN  # noqa: E402
 from ko_text import KO  # noqa: E402
+from report_notes import HARDENING  # noqa: E402
 
 B = chr(96)
 F3 = B * 3
@@ -129,56 +130,55 @@ M_ = M["agents_spent"]
 hunted = [u for u in L if u["status"] not in ("deferred", "planned")]
 R = ["# agentbox 보안 감사 run-7 보고서", ""]
 R.append(
-    f"감사 기준은 {c('main')} 커밋 {c('3580df0')}(run-6 수정 PR #24·#25 반영 이후)이다. "
-    f"프로필은 {c('standard')}, 서브에이전트 호출 상한은 소유자가 정한 **30**(모두 {c('flash')} 모델)이다. "
-    "run-6에서 보류한 7단위(상위 4단위 + 나머지 3단위)와 PR #24·#25가 바꾼 코드 4단위를 합친 **11단위 전체 후속 감사**다. "
-    "1차 보고 뒤 소유자 지시('사용에 영향 없는 건 보고 없이 수정')에 따라 확정 3건(F1~F3)과 검증 필요 하드닝 3건(N1~N3)을 모두 수정하고 회귀 테스트를 추가했다."
+    f"감사 기준은 {c('main')} 커밋 {c('3580df0')}(PR #26 병합 뒤)이고, 대상은 run-6 이후 변경분 {c('530b29e..3580df0')}이다: "
+    f"run-6 확정·하드닝 수정 {c('7dbda9e')}, 리팩토링 {c('5bb3c17')}, IF-1 에이전트 지시 파일({c('d4e956e')}·{c('79d8211')}·{c('ccaf367')}·{c('a0a186c')}). "
+    f"프로필은 {c('standard')}, 서브에이전트 호출 상한은 소유자가 정한 15였고 critic-1 뒤 소유자 승인으로 **20**으로 올렸다. "
+    "보고 전용이며 감사 소스는 고치지 않았다."
 )
 R.append("")
 R.append("## 1. 요약")
 R.append("")
 sev_str = ", ".join(f"{SK[k]} {v}건" for k, v in sorted(sev.items(), key=lambda x: ORDER[x[0]])) or "없음"
+R.append(f"- 확정 **{len(conf)}건**({sev_str}), 검증 필요 **{len(nv)}건**, 기각 **{len(rej)}건**(총 레코드 {len(recs)}건).")
 R.append(
-    f"- 확정 **{len(conf)}건**({sev_str}), 검증 필요 **{len(nv)}건**, 기각 **{len(rej)}건**(총 레코드 {len(recs)}건)."
+    f"- 장부 {len(L)}단위가 모두 닫혔다({', '.join(f'{k} {v}' for k, v in sorted(st.items()))}). "
+    "critic-1이 IF-policy 단위를 다시 맡기라고 했고 2차 헌터가 닫았다. 최종 비평 critic-2는 빠진 단위·재할당 없이 `stop: true`를 반환했다."
 )
 R.append(
-    f"- 장부 {len(L)}단위: 헌팅한 {len(hunted)}단위는 모두 닫혔다"
-    f"({', '.join(f'{k} {v}' for k, v in sorted(st.items()) if k != 'deferred')}). "
-    + (f"최종 비평(critic-2)이 낸 {len(deferred)}단위는 {c('deferred')}로 기록했다." if deferred else "보류(deferred)로 남은 단위는 없다.")
+    f"- 서브에이전트 {M['agents_spent_total']}/{M['budget']}회: 헌터 {M_['hunters']}(2차 1 포함), 3단계 {M_['phase3']}, 5단계 {M_['phase5']}, 비평 {M_['critics']}, 형식 재시도 {M_['retries']}. "
+    f"정찰은 부모가 했다(0회). 실제 Docker가 필요한 확인 5건은 부모가 예산 밖에서 했다({c('agents/parent-live/')})."
 )
 R.append(
-    f"- 서브에이전트 예산 {M['agents_spent_total']}/{M['budget']}회를 썼다(모두 {c('flash')}): "
-    f"헌터 {M_['hunters']}, 형식 재시도 {M_['retries']}, 3단계 {M_['phase3']}, 5단계 {M_['phase5']}, "
-    f"재검증 {M_['reverify']}, 비평 {M_['critics']}. 정찰은 부모가 수행했다(0회). "
-    f"실제 Docker 데몬과 데스크톱 이미지가 필요한 확인 5건은 부모가 일회용 컨테이너에서 직접 수행했다({c('agents/parent-live/artifacts/')}, 예산 밖)."
+    "- **run-6 수정(7dbda9e):** F1(GUI 구간 컨테이너 묶기), F2(감사 인덱스·나눠 검사), F3(미리보기 경고), N1(스킴 검사·HSTS), N2(출력 상한)는 근본 원인을 막았다. "
+    "N3(`disk_low`의 Docker 저장소)은 compose 구성에서 경로를 볼 수 없어 조용히 건너뛰므로 같은 지문으로 검증 필요에 다시 올렸다."
 )
+R.append("- **리팩토링(5bb3c17):** 승인 요청 순서, 저장·기록·실행 인수, GUI 구간 판정이 그대로임을 diff와 단위 테스트(34개 통과)로 확인했다(`covered`).")
 R.append(
-    "- **PR #24·#25 수정 검증 결과:** PR #24가 고친 3개 영역(DesktopControl 잠금 분리·웹소켓 스레드풀 오프로드·prune 아카이브 보존, "
-    "GUI 구간 인수 중 열기 차단, 에이전트 도구 인자 16KiB 상한·`_relex_changes`·미리보기 40회/50메모 상한·대기 승인 행 128KiB 상한)과 "
-    "PR #25가 고친 1개 영역(`_BodyLimit` 본문 읽기 전 자격 증명 확인·`/login` 64KiB 상한·배포 설정 상한)은 모두 현재 코드에서 안전하게 지켜짐(`covered`)을 확인했다."
-)
-R.append(
-    "- **PR #19 제어문자 필터(`display.escape_controls`) 완전성:** 웹 템플릿(`finalize=_shown`)과 CLI(`_safe`)의 모든 에이전트·컨테이너 문자열 출력 경로가 "
-    "Bidi·제어문자(`Cc`/`Cf`/`Zl`/`Zp`)를 이스케이프하여 run-4의 미해결 리드(`exec-command-bidi-controls-unneutralized`)가 완전히 해소됨(`covered`)을 확인했다."
+    "- **IF-1:** 단발 리뷰가 고친 7건과 검증 필요 2건은 다시 보고하지 않았다. 그 수정의 우회 2건(링크 끝 조각, `resolve()` 실패)과 "
+    "단발 F1 수정이 만든 렌더링 비용 1건을 확정했고, 이름 접기 1건은 macOS 확인이 필요해 검증 필요로 남겼다. 읽기 결과 경계와 원본 훑기는 `covered`다."
 )
 R.append("")
 R.append("## 2. 감사 방법과 경계")
 R.append("")
 R.append(
-    f"- **실행 환경:** Windows 호스트 + Docker Desktop WSL2 리눅스 엔진. 모든 서브에이전트 검증 스크립트는 {c('tools/sbx.py')}를 통해 "
-    f"격리된 일회용 리눅스 컨테이너({c('agentbox-audit-sbx:1')}, `--network none`, 대상 소스 읽기 전용 `/src`, `/scratch`만 쓰기, uid 65534, 512MiB, 1 CPU, 120초) 안에서만 실행했다."
-)
-R.append(f"- **모델:** 소유자 지시로 모든 서브에이전트(`invoke_subagent`)는 질문 없이 {c('flash')}로만 호출했다.")
-R.append(
-    f"- **정찰:** 에이전트 호출 없이 부모가 직접 수행했다. run-6 구조 요약에 {c('530b29e..3580df0')}(PR #24·#25)에서 바뀐 13개 소스 파일의 변경분과 현재 줄 번호를 반영했다({c('architecture.md')} 0.1절)."
+    "- **실행 환경:** Kiro Web 리눅스 샌드박스. 명령마다 새 샌드박스가 뜨므로, 대상 코드는 호출마다 사설 마운트 네임스페이스에 dockerd를 띄우는 "
+    f"{c('tools/sbx.py')}로만 돌렸다(`--network none`, 읽기 전용 `/target`, uid 65534, 512MiB는 RLIMIT_DATA, 1 CPU는 cpuset, 64 pids, 120초)."
 )
 R.append(
-    "- **범위 단위(11단위):** run-6 보류 상위 4단위(`same_origin` 스킴 비교, 컨테이너 출력 판독기 상한, 승인 미리보기의 정확성, `AuditLog._lock` 경합) + "
-    "PR #24·#25 변경 4단위 + 나머지 보류 3단위(Docker data-root 증가와 `disk_low`, 복원 전후 `GuiBursts.covers` 컨테이너 ID 바인딩, PR #19 제어문자 필터 완전성). "
-    "1차 파동 뒤 사후 비평(`critic-1`)이 빠진 단위가 없음을 확인하고 `stop: true`를 반환했다."
+    "- **모델:** 서브에이전트 도구에 모델 선택 인수가 없어 모두 세션 모델(Claude Opus 5.5)로 돌았다. 소유자가 요청한 Sonnet 5.5로는 바꿀 수 없었고, 이를 "
+    f"{c('run-metadata.json')}에 적었다."
+)
+R.append(
+    "- **장부(7단위):** run6-fixes, refactor, IF-kind, IF-policy, IF-notice, IF-sinks, IF-scan. run-6 장부에 `deferred`가 없어 이전 보류 단위는 없다."
+)
+R.append(
+    "- **parent-live(예산 밖):** 정찰 단서, 승인 카드 렌더링 비용, compose 구성의 `disk_low`, `resolve()` fail-open, 그리고 IF 수용 테스트 6개(모두 통과)."
+)
+R.append(
+    f"- **진행 중 벗어난 것:** {c('run-metadata.json')}의 `deviations`에 적었다(스킬을 tarball로 받음, 헌터 결과 옮겨 적기, 잘린 3단계 출력 복원, 5단계 한 번에 두 레코드 등)."
 )
 R.append("")
-R.append("## 3. 확정 항목 (모두 수정 완료)")
+R.append("## 3. 확정 항목")
 R.append("")
 R.append("| ID | 심각도 | 제목 | 주 경로 | 권장 수정 방향 |")
 R.append("|---|---|---|---|---|")
@@ -188,59 +188,37 @@ for r in conf:
         f"{ko(r, 'title', r['title'])} | {c(main_path(r))} | {ko(r, 'fix')} |"
     )
 R.append("")
-R.append(f"상세 근거, 샌드박스·실제 컨테이너 재현 결과, 영어 레코드 원문은 {c('FINDINGS-DETAIL.md')}에 있다.")
+R.append(f"근거, 실제 컨테이너 재현 결과, 영어 레코드 원문은 {c('FINDINGS-DETAIL.md')}에 있다.")
 R.append("")
 R.append("## 4. 검증 필요 항목")
 R.append("")
-R.append("| ID | 제목 | 막힌 지점 (배포·환경 의존) |")
+R.append("| ID | 제목 | 막힌 지점 |")
 R.append("|---|---|---|")
 for r in nv:
-    R.append(
-        f"| {cid[r['fingerprint']]} | {ko(r, 'title', r['title'])} | {(ko(r, 'blockers', ['']) or [''])[0]} |"
-    )
+    R.append(f"| {cid[r['fingerprint']]} | {ko(r, 'title', r['title'])} | {(ko(r, 'blockers', ['']) or [''])[0]} |")
 R.append("")
-R.append(f"검증 계획과 부모의 일회용 Docker 컨테이너 실측은 {c('NEEDS-VALIDATION.md')}에 있다.")
+R.append(f"검증 계획과 부모 실측은 {c('NEEDS-VALIDATION.md')}에 있다.")
 R.append("")
 R.append("## 5. 기각 항목")
 R.append("")
-if rej:
-    for r in rej:
-        R.append(f"- **{cid[r['fingerprint']]}. {ko(r, 'title', r['title'])}** {ko(r, 'reason')}")
-else:
-    R.append("- 이번 run에서 기각(`rejected`)된 후보는 없다.")
+R.append("- 이번 run에서 기각된 후보는 없다." if not rej else "\n".join(f"- {cid[r['fingerprint']]}. {r['title']}" for r in rej))
 R.append("")
-R.append("## 6. 커버리지와 비평 결과")
+R.append("## 6. 하드닝 메모 (결함으로 보고하지 않음)")
 R.append("")
-R.append(
-    f"- 헌팅한 11단위 중 5단위는 보안 불변식이 지켜짐을 확인해 {c('covered')}로 닫았고, "
-    f"6단위는 후보를 내어 3단계·5단계 검증을 거쳐 확정 {len(conf)}건({c('confirmed')})과 검증 필요 {len(nv)}건({c('needs_validation')})으로 닫았다."
-)
-if deferred:
-    R.append(f"- 최종 비평(`critic-2`)이 제안한 추가 보류({c('deferred')}) {len(deferred)}단위:")
-    for u in deferred:
-        R.append(f"  - [critic-2] {u['surface'][:160]}{'…' if len(u['surface']) > 160 else ''}")
-else:
-    R.append("- 사후 비평(`critic-1`)과 최종 비평(`critic-2`) 모두 빠진 단위 없이 `stop: true`를 반환했다.")
+for line in HARDENING:
+    R.append("- " + line)
 R.append("")
-R.append("## 7. 후속 수정 결과 (소유자 지시 반영)")
+R.append("## 7. 다음 일")
 R.append("")
-R.append(
-    "정상 사용에 영향을 주지 않는 범위에서 확정 3건(F1~F3)과 검증 필요 하드닝 3건(N1~N3)을 모두 수정하고 "
-    "`tests/test_m5_unit.py`에 회귀 테스트 6개를 추가했다:\n"
-    "- **F1 (`agentbox/audit.py`):** `SCHEMA`에 `CREATE INDEX IF NOT EXISTS idx_audit_sandbox_id ON audit (sandbox_id, id)`를 추가하고, `verify()`·`verify_archives()`가 `_VERIFY_BATCH = 200`행씩 끊어 읽고 해시 계산은 `self._lock` 밖에서 수행하도록 수정했다.\n"
-    "- **F2 (`agentbox/gui_bursts.py`, `agentbox/service.py`):** `GuiBursts.covers(sid)`가 `burst.get('container_id') == self.sandboxes.get(sid)['container_id']`까지 확인하고, `restore_sandbox`가 `sandboxes.restore` 뒤에 `self.bursts.end(sid, 'sandbox_restored')`를 호출해 복원 중 열린 옛 구간을 닫도록 수정했다.\n"
-    "- **F3 (`agentbox/preview.py`, `agentbox/sandbox.py`):** `preview_command`가 명령에 `{` 또는 `~`가 있으면 주의 문구를 남기고 매칭이 없을 때 `'삭제 시도 (중괄호·틸드 확장 — 명령 원문 확인)'`으로 표시하며, `_expand`가 앞쪽 `~`/`~/`를 `$HOME`으로 펼치도록 수정했다.\n"
-    "- **N1 (`agentbox/api.py`, `agentbox/web.py`, `deploy/Caddyfile`):** `secure_cookie(request)`가 참(`AGENTBOX_SECURE_COOKIE=1` 또는 `https`/`wss` 요청)일 때 `same_origin()`이 `Origin`의 `https` 스킴까지 요구하도록 하고, `deploy/Caddyfile`에 `Strict-Transport-Security` 헤더를 추가했다(로컬 평문 HTTP 개발 환경은 기존대로 동작).\n"
-    "- **N2 (`agentbox/sandbox.py`, `agentbox/sandbox_desktop.py`):** `list_dir`가 `_exec_head`(`_timed` + `_Head` 64KiB 스트리밍 상한)를 쓰고, `outbox_list`(`_timed` + `head -c 524288`), `_expand`(`head -z -n`), `screenshot`(`rm -f` + 일반 파일 확인 + `head -c 16MiB`)에 상한을 걸었다.\n"
-    "- **N3 (`agentbox/sandbox.py`, `agentbox/service.py`):** `SandboxManager._detect_runtime()`이 `client.info()`의 `DockerRootDir`를 저장하고, `AgentBox.disk_low()`가 접근 가능한 `docker_root`의 남은 공간도 함께 확인하도록 수정했다."
-)
+R.append("- 수정 여부와 범위는 소유자가 정한다. F2와 F3는 같은 곳(정책의 지시 파일 판정)을 고치므로 함께 고치는 것이 낫다.")
+R.append("- 검증 필요 2건은 배포 구성 확인(compose의 Docker 저장소 위치)과 macOS 확인(U+0130)이 필요하다.")
 R.append("")
 
 # ------------------------------------------------------------------ FINDINGS-DETAIL.md
 D = [
     "# run-7 확정 상세",
     "",
-    f"{c('findings.json')}의 확정(`confirmed`) 레코드를 한국어로 옮긴 문서다. 판정, 심각도, 근거는 JSON과 같으며, 항목마다 아래에 영어 레코드 원문(기준)을 접어 두었다. 줄 번호는 감사 기준 {c('3580df0')}을 따른다. 보고 이후 확정 3건과 검증 필요 3건 모두 수정 완료되었다.",
+    f"{c('findings.json')}의 확정(`confirmed`) 레코드를 한국어로 옮긴 문서다. 판정, 심각도, 근거는 JSON과 같으며, 항목마다 아래에 영어 레코드 원문(기준)을 접어 두었다. 줄 번호는 감사 기준 {c('3580df0')}을 따른다. 보고 전용이며 수정은 소유자가 정한다.",
     "",
 ]
 for r in conf:
@@ -277,7 +255,7 @@ for r in conf:
 N = [
     "# run-7 검증 필요 항목",
     "",
-    "코드 상의 동작은 샌드박스와 일회용 Docker 컨테이너에서 확인했으나, 실제 악용 가능성과 영향이 운영 배포 구성(리버스 프록시, 파일시스템 파티션 분리, 호스트 리소스 한도)에 좌우되어 `needs_validation`으로 분류한 항목이다. 항목마다 막힌 지점과 검증 계획을 한국어로 옮겼고, 아래에 영어 레코드 원문(기준)을 접어 두었다.",
+    "코드의 동작은 샌드박스와 일회용 Docker 컨테이너에서 확인했으나, 실제 영향이 운영 배포 구성(파일 시스템 분리)이나 감사 환경에 없는 OS(macOS)에 좌우되어 `needs_validation`으로 분류한 항목이다. 항목마다 막힌 지점과 검증 계획을 한국어로 옮겼고, 아래에 영어 레코드 원문(기준)을 접어 두었다.",
     "",
 ]
 for r in nv:
