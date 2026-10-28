@@ -222,8 +222,12 @@ class Policy:
                 # cfg/settings.json에 쓰면 요청 경로만으로는 지시 파일이 아니다 (보안 검수 IF-1 단발 F2)
                 if tool not in PATH_TOOLS:
                     continue
+                if args.get("resolve_failed"):
+                    # 컨테이너 안에서 링크를 풀지 못했으면 실제 대상을 모른다. 요청 경로만 보고 넘기면 일부러 풀기를
+                    # 실패시켜(pid 상한 채우기 등) 링크 너머 지시 파일에 쓸 수 있다 (보안 검수 run-7 F3). 맞는 것으로 본다
+                    return Decision(r["action"], r["id"], r.get("reason"), [str(args.get("path", ""))])
                 hit = next((x for x in (args.get("path"), args.get("resolved_path"))
-                            if isinstance(x, str) and instruction_files.kind(x)), None)
+                            if isinstance(x, str) and instruction_files.target_kind(x)), None)
                 if hit is None:
                     continue
                 return Decision(r["action"], r["id"], r.get("reason"), [hit])

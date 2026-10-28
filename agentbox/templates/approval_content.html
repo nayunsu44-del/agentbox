@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}승인 요청 {{ a.id }} 쓸 내용{% endblock %}
+{% block main %}
+<section>
+  <h2>승인 요청 <code>{{ a.id }}</code> · 쓸 내용 전체</h2>
+  {# 승인 목록은 2초마다 다시 그려서 앞부분만 싣는다. 이 화면은 다시 받지 않으니 전체를 공백 그대로 보인다 (보안 검수 run-7 F1) #}
+  <p class="mut">샌드박스 <a href="/ui/sandboxes/{{ a.sandbox_id }}">{{ a.sandbox_id }}</a> · <code>{{ a.tool }} {{ a.args.path }}</code>
+     · {{ a.args.content | length }}자 · 상태 {{ a.status }}</p>
+  {% if a.preview.instruction_file %}<p class="err">에이전트 지시 파일({{ a.preview.instruction_file }}). 받아 간 쪽의 다른 에이전트가 이 내용을 지시로 읽는다.</p>{% endif %}
+  <pre class="instruction-content">{{ a.args.content }}</pre>
+  <p class="mut">승인·거절은 승인 목록에서 한다.</p>
+</section>
+{% endblock %}

@@ -232,22 +232,33 @@ class AgentBox:
             return {k: v for k, v in result.items() if k in ("path", "bytes", "sha256", "deleted")}
         return result
 
-    def _resolved(self, sid: str, tool: str, args: dict[str, Any]) -> str | None:
-        """write_file·delete_file 대상을 컨테이너 안에서 링크까지 푼 실제 경로. 원본에 'cfg -> .claude' 같은 링크가
-        있으면 cfg/settings.json에 쓰는 것은 .claude/settings.json에 쓰는 것이다 (보안 검수 IF-1 단발 F2).
-        링크를 새로 만드는 것은 exec(ln)라 승인 대상이다. 풀지 못하면 None (요청 경로로만 판단)."""
+    def _resolved(self, sid: str, tool: str, args: dict[str, Any]) -> tuple[str | None, bool]:
+        """write_file·delete_file 대상을 컨테이너 안에서 링크까지 푼 실제 경로와, 풀지 못했는지.
+        원본에 'cfg -> .claude' 같은 링크가 있으면 cfg/settings.json에 쓰는 것은 .claude/settings.json에 쓰는 것이다
+        (보안 검수 IF-1 단발 F2). 풀기는 에이전트가 일부러 실패시킬 수 있다(컨테이너 pid 상한을 채우는 허용 명령).
+        그때 요청 경로로만 보면 링크 너머에 승인 없이 쓰므로, 실패를 따로 알려 정책이 닫힌 쪽으로 판단하게 한다
+        (보안 검수 run-7 F3). 경로 자체가 허용 범위 밖이면 실제 쓰기가 거절하므로 실패로 치지 않는다."""
         if tool not in ("write_file", "delete_file"):
-            return None
+            return None, False
         resolve = getattr(self.sandboxes, "resolve", None)
         if resolve is None:
-            return None
+            return None, False
+        path = str(args.get("path", ""))
         try:
-            return resolve(sid, str(args.get("path", "")))
-        except Exception:   # 풀지 못하면 요청 경로로만 본다. 링크 루프처럼 풀 수 없는 경로는 실제 쓰기도 실패한다
-            return None
+            safe_path(path)
+        except SandboxError:
+            return None, False
+        try:
+            return resolve(sid, path), False
+        except Exception:
+            return None, True
 
     def _policy_args(self, sid: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
-        real = self._resolved(sid, tool, args)
+        # 판단용 키는 서비스만 정한다. 에이전트가 넣은 값은 지운다
+        args = {k: v for k, v in args.items() if k not in ("resolved_path", "resolve_failed")}
+        real, failed = self._resolved(sid, tool, args)
+        if failed:
+            return {**args, "resolve_failed": True}
         return {**args, "resolved_path": real} if real else args
 
     def _preview(self, sid: str, tool: str, args: dict[str, Any]) -> dict[str, Any]:
@@ -263,11 +274,14 @@ class AgentBox:
                 effect = "덮어쓰기" if exists else "새 파일 만들기"
                 la = self._logged_args(tool, args)
                 notes.append(f"쓸 내용 {la['content_bytes']} bytes, sha256 {la['content_sha256'][:16]}…")
-            real = self._resolved(sid, tool, args)
-            k = IF.kind(p) or (IF.kind(real) if real else None)
+            real, failed = self._resolved(sid, tool, args)
+            k = IF.target_kind(p) or (IF.target_kind(real) if real else None)
             affected = [{"path": p, "effect": effect}]
             if real and real != p:
                 affected.append({"path": real, "effect": "링크를 따라간 실제 대상"})
+            if failed:
+                notes.append("링크를 따라간 실제 대상을 컨테이너 안에서 확인하지 못함. 링크 너머의 다른 파일에 쓸 수 있음")
+                k = k or "알 수 없음 (실제 대상을 확인하지 못함)"
             out = {"tool": tool, "cwd": WORKSPACE, "affected": affected, "notes": notes}
             if k:
                 notes.append(f"에이전트 지시 파일({k}). 결과함으로 받아 가면 다른 에이전트가 이 내용을 지시로 자동으로 읽는다. "
@@ -363,6 +377,15 @@ class AgentBox:
             self.log_best_effort(sid, tool, "tool_blocked", {"reason": "argument_too_long", "args": long,
                                                              "limit": TOOL_ARG_MAX}, actor="system")
             raise ServiceError(413, f"도구 인자가 너무 김: {', '.join(long)} (최대 {TOOL_ARG_MAX}자). 나눠서 호출할 것")
+        if tool == "write_file":
+            # 쓰기 상한은 원래 실행 때만 봤다. 그 전에 승인 대기 행이 본문 상한(8MiB)까지의 내용을 담아
+            # 승인 화면이 그것을 다시 그리게 된다. 판단 전에 같은 상한으로 막는다 (보안 검수 run-7 F1)
+            size = len(str(args.get("content", "")).encode("utf-8"))
+            limit = getattr(self.sandboxes.settings, "max_write_bytes", 0)
+            if limit and size > limit:
+                self.log_best_effort(sid, tool, "tool_blocked", {"reason": "content_too_large", "bytes": size,
+                                                                 "limit": limit}, actor="system")
+                raise ServiceError(413, f"쓸 내용이 너무 큼: {size} bytes (최대 {limit})")
         try:
             req_id = self.audit.append(actor=actor, event="tool_request", sandbox_id=sid, tool=tool,
                                        payload={"args": self._logged_args(tool, args)})

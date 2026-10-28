@@ -600,7 +600,8 @@ class SandboxManager(DesktopTools):
     def _expand(self, c, pattern: str, limit: int = 200) -> list[str]:
         """컨테이너 안에서 틸드(~)와 glob만 펼친다. 명령 치환은 일어나지 않는다."""
         script = ('cd /workspace; IFS=; '
-                  'case "$1" in "~") pat="$HOME";; "~/"*) pat="$HOME/${1#~/}";; *) pat="$1";; esac; '
+                  # ${1#~/}는 dash가 패턴의 ~를 먼저 $HOME으로 펼쳐 앞의 '~/'를 떼지 못한다. 앞 두 글자를 뗀다 (run-7)
+                  'case "$1" in "~") pat="$HOME";; "~/"*) pat="$HOME/${1#??}";; *) pat="$1";; esac; '
                   'for p in $pat; do if [ -e "$p" ] || [ -L "$p" ]; then printf "%s\\000" "$p"; fi; done '
                   '| head -z -n "$2"')
         res = c.exec_run(_timed(_PREVIEW_TIMEOUT, "sh", "-c", script, "_", pattern, str(limit + 1)),
