@@ -27,6 +27,8 @@ from typing import Any, Callable
 
 import httpx
 
+from .instruction_files import with_notice
+
 SYSTEM_PROMPT = (
     "너는 격리된 리눅스 샌드박스 안에서 사용자의 파일 작업을 돕는 에이전트다. "
     "작업 폴더는 /workspace (원본 /source 의 복사본, 쓰기 가능), 원본 /source 는 읽기 전용이다. "
@@ -116,7 +118,7 @@ class ToolClient:
     def call_text(self, tool: str, args: dict[str, Any]) -> str:
         res = self.call(tool, args)
         if tool == "read_file" and "content" in res:
-            text = res["content"] + ("\n…(잘림)" if res.get("truncated") else "")
+            text = with_notice(res, res["content"] + ("\n…(잘림)" if res.get("truncated") else ""))
         elif tool == "list_dir" and "listing" in res:
             text = res["listing"]
         else:

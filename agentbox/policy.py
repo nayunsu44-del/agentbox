@@ -18,6 +18,10 @@ from typing import Any
 
 import yaml
 
+from . import instruction_files
+
+PATH_TOOLS = {"list_dir", "read_file", "write_file", "delete_file"}   # path 인자로 대상을 정하는 도구
+
 ALLOW = "allow"
 DENY = "deny"
 REQUIRE_APPROVAL = "require_approval"
@@ -73,6 +77,11 @@ def _words(command: str, depth: int = 0) -> list[str]:
         if _relex_changes(t):
             out.extend(_words(t, depth + 1))
     return out
+
+
+def command_words(command: str) -> list[str]:
+    """명령에 등장하는 단어(경로 그대로). 지시 파일을 가리키는지 볼 때 쓴다 (IF-1)."""
+    return [w for w in (w.strip("'\"\\;&|()<>") for w in _words(command)) if w]
 
 
 def command_names(command: str) -> set[str]:
@@ -207,6 +216,17 @@ class Policy:
             if r.get("tool") not in (None, "*", tool):
                 continue
             match = r.get("match") or {}
+            if match.get("instruction_files"):
+                # 경로 인자가 에이전트 지시 파일(CLAUDE.md, AGENTS.md, .claude/ 등)을 가리킬 때만 맞는다 (IF-1).
+                # resolved_path는 서비스가 컨테이너 안에서 링크를 푼 실제 대상이다. 'cfg -> .claude' 링크를 거쳐
+                # cfg/settings.json에 쓰면 요청 경로만으로는 지시 파일이 아니다 (보안 검수 IF-1 단발 F2)
+                if tool not in PATH_TOOLS:
+                    continue
+                hit = next((x for x in (args.get("path"), args.get("resolved_path"))
+                            if isinstance(x, str) and instruction_files.kind(x)), None)
+                if hit is None:
+                    continue
+                return Decision(r["action"], r["id"], r.get("reason"), [hit])
             wanted = [str(c) for c in match.get("commands", [])]
             only = [str(c) for c in match.get("only_commands", [])]
             if only:

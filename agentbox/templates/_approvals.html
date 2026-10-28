@@ -6,6 +6,11 @@
   <p class="mut" style="margin:4px 0">맞은 규칙: {{ a.rule_id }} — {{ a.rule_reason }}</p>
   {% if a.tool == "exec" %}
     <div>실제로 실행될 명령 <span class="mut">(작업 폴더 {{ a.preview.cwd }})</span>:</div><pre>{{ a.args.command }}</pre>
+  {% elif a.preview.instruction_file and a.args.content is string %}
+    {# 지시 파일 쓰기는 내용이 곧 위험이다. 공백·줄바꿈 그대로, 자르지 않고 보여 준다 (단발 F1). 크기는 max_write_bytes로 묶인다 #}
+    <div>실제로 실행될 도구: <code>{{ a.tool }} {{ a.args.path }}</code></div>
+    <div>쓸 내용 전체 ({{ a.args.content | length }}자, 에이전트 지시 파일):</div>
+    <pre class="instruction-content" style="max-height:480px">{{ a.args.content }}</pre>
   {% else %}
     <div>실제로 실행될 도구:</div><pre>{{ a.tool }} {{ a.args | short(400) }}</pre>
   {% endif %}

@@ -52,7 +52,8 @@ async function send(files) {
   msg.textContent = files.length + "개 보내는 중…";
   const r = await fetch("/sandboxes/{{ sb.id }}/files", { method: "POST", body: fd, credentials: "same-origin" });
   const body = await r.json().catch(() => ({}));
-  msg.textContent = r.ok ? body.map((x) => x.path + " (" + x.bytes + " bytes)").join(", ") + " 넣음"
+  msg.textContent = r.ok ? body.map((x) => x.path + " (" + x.bytes + " bytes)"
+                                     + (x.instruction_file ? " ⚠ 에이전트 지시 파일(" + x.instruction_file + ")" : "")).join(", ") + " 넣음"
                          : "실패: " + (body.detail || r.status);
   htmx.trigger(document.body, "audit-changed");
 }

@@ -393,7 +393,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
 
     @app.get("/sandboxes/{sid}/outbox")
     def outbox(sid: str, p: Principal = Depends(screen_human)):
-        return guard(lambda: box.sandboxes.outbox_list(sid))
+        return guard(lambda: box.outbox(sid))
 
     @app.get("/sandboxes/{sid}/outbox/{name}")
     def outbox_file(sid: str, name: str, p: Principal = Depends(screen_human)):

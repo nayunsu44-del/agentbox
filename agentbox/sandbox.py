@@ -484,6 +484,16 @@ class SandboxManager(DesktopTools):
             raise SandboxError(f"/workspace 아래 파일만 쓰거나 지울 수 있음: {path}")
         return p
 
+    def resolve(self, sid: str, path: str) -> str:
+        """컨테이너 안에서 링크를 따라간 실제 경로 (없는 끝 조각은 그대로). 정책이 지시 파일 쓰기를 판단할 때 쓴다."""
+        c = self._require_running(sid)
+        p = safe_path(path)
+        res = c.exec_run(_timed(_READ_TIMEOUT, "realpath", "-m", "--", p), user=AGENT_UID, demux=True)
+        out = (res.output[0] or b"").decode("utf-8", errors="replace").rstrip("\n")
+        if res.exit_code != 0 or not out.startswith("/"):
+            raise SandboxError(f"경로를 풀지 못함: {p}")
+        return out
+
     def exists(self, sid: str, path: str) -> bool:
         c = self._require_running(sid)
         p = safe_path(path)

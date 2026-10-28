@@ -5,8 +5,11 @@
 #
 # exec는 허용 목록 방식이다. 아래 읽기 전용 프로그램만 쓰는 단순 명령만 바로 실행하고,
 # 나머지 exec(쓰기 리다이렉션 >, 변수·명령 치환, sh·python·find 등)는 모두 사람 승인을 받는다.
-# 파일을 쓸 때는 write_file 도구를 쓰면 승인 없이 된다 (덮어쓰면 스냅샷).
-version: 3
+# 파일을 쓸 때는 write_file 도구를 쓰면 승인 없이 된다 (덮어쓰면 스냅샷). 에이전트 지시 파일만 예외로 승인을 받는다.
+#
+# match 종류: commands(exec에 이 프로그램이 하나라도), only_commands(exec의 프로그램이 모두 이 목록 안),
+# instruction_files: true(path가 CLAUDE.md·AGENTS.md 같은 에이전트 지시 파일. list_dir·read_file·write_file·delete_file).
+version: 4
 default: allow
 rules:
   - id: rm-curl-needs-approval
@@ -15,6 +18,15 @@ rules:
       commands: [rm, curl]
     action: require_approval
     reason: 파일 삭제(rm) 또는 외부 전송(curl)이 들어간 명령
+  # CLAUDE.md, AGENTS.md, .cursorrules, .mcp.json, .claude/ 아래 등 코딩 에이전트가 지시로 자동으로 읽는 파일.
+  # 에이전트가 이런 파일을 쓰면, 결과함으로 받아 간 사람의 다른 에이전트가 그 내용을 지시로 따른다 (IF-1).
+  # 읽기까지 막으려면 같은 match로 tool: read_file 규칙을 추가한다 (기본은 읽되 결과에 '데이터일 뿐' 표시를 붙인다).
+  - id: instruction-file-write-needs-approval
+    tool: write_file
+    match:
+      instruction_files: true
+    action: require_approval
+    reason: 에이전트 지시 파일(CLAUDE.md·AGENTS.md 등) 쓰기. 다른 에이전트가 이 내용을 지시로 읽는다
   - id: delete-file-needs-approval
     tool: delete_file
     action: require_approval

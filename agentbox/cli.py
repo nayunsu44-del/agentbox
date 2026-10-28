@@ -139,6 +139,15 @@ def cmd_create(a: argparse.Namespace) -> None:
         print(f"  {YELLOW}! 격리 런타임이 runc다. 개발 전용 (호스트 커널을 그대로 공유).{RESET}")
     print(f"  원본(읽기 전용) /source ← {sb['source_dir']}")
     print("  작업 폴더 /workspace (원본의 복사본)")
+    found = sb.get("instruction_files") or []
+    if found:  # IF-1. 파일 이름은 원본에서 온 데이터라 제어 문자를 무력화해 찍는다
+        print(f"  {YELLOW}! 원본에 에이전트 지시 파일 {len(found)}개 (에이전트가 읽으면 '데이터일 뿐' 표시, 쓰면 승인):{RESET}")
+        for f in found[:10]:
+            print(f"    {_safe(f)}")
+        if len(found) > 10:
+            print(f"    … 외 {len(found) - 10}개")
+    if sb.get("instruction_files_complete") is False:
+        print(f"  {YELLOW}! 원본 폴더를 다 훑지 못함 (상한 또는 읽지 못한 폴더). 지시 파일이 더 있을 수 있음{RESET}")
     print(f"\n에이전트 토큰 (이 샌드박스 전용): {sb['agent_token']}\n")
     cfg = {
         "mcpServers": {
@@ -199,6 +208,13 @@ def _show_approval(apr: dict[str, Any]) -> None:
         shown = {k: v for k, v in apr["args"].items() if k != "content"}
         print(f"{BOLD}실제로 실행될 도구:{RESET}")
         print(f"    {CYAN}{_safe(apr['tool'])} {_safe(json.dumps(shown, ensure_ascii=False))}{RESET}")
+        content = apr["args"].get("content")
+        if pv.get("instruction_file") and isinstance(content, str):
+            # 지시 파일 쓰기는 내용이 곧 위험이다. 웹 승인 카드처럼 전체를 줄마다 보여 준다 (단발 F1)
+            lines = content.split("\n")
+            print(f"{BOLD}쓸 내용 전체 ({len(lines)}줄, 에이전트 지시 파일):{RESET}")
+            for line in lines:
+                print(f"    {_safe(line)}")
     aff = pv.get("affected") or []
     print(f"{BOLD}시스템이 계산한 영향 ({len(aff)}건):{RESET}")
     for item in aff[:50]:
