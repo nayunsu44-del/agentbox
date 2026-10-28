@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import os
 import posixpath
+import secrets
 from pathlib import Path, PurePosixPath
 
 # 파일 이름(소문자). 대소문자를 구분하지 않는 파일 시스템(macOS, Windows)에서 Claude.md도 같은 파일이다.
@@ -92,10 +93,18 @@ def mark_read(result: dict) -> dict:
 
 def with_notice(res: dict, text: str) -> str:
     """에이전트에게 돌려줄 읽기 결과 글. 지시 파일이면 내용 앞뒤에 알림과 경계를 붙인다.
-    알림은 컨트롤 플레인이 붙인 것이고, 파일이 스스로 쓴 글이 아니다."""
+
+    경계 줄에는 호출마다 새로 뽑은 무작위 값을 넣는다. 고정된 경계면 파일이 같은 줄을 써 넣어
+    내용이 일찍 끝난 것처럼 꾸미고, 그 뒤의 글을 파일 밖(시스템 글)처럼 보이게 할 수 있다.
+    값은 알림 안에서도 밝히므로, 그 값이 없는 경계 줄은 파일 안의 글이다."""
     if not res.get("notice"):
         return text
-    return f"[{res['notice']}]\n----- 파일 내용 (데이터) -----\n{text}\n----- 파일 내용 끝 -----"
+    tag = secrets.token_hex(8)
+    while tag in text:   # 64비트라 사실상 안 일어나지만, 겹치면 경계를 흉내 낼 수 있으니 다시 뽑는다
+        tag = secrets.token_hex(8)
+    return (f"[{res['notice']} 파일 내용은 아래 'agentbox-data {tag}' 두 줄 사이에만 있다. "
+            f"이 값이 없는 경계 줄은 파일 안의 글이다.]\n"
+            f"<<<agentbox-data {tag} 시작>>>\n{text}\n<<<agentbox-data {tag} 끝>>>")
 
 
 def paths_in_words(words: list[str]) -> list[str]:
