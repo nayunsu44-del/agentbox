@@ -26,6 +26,7 @@ _NAMES = {
     "claude.md": "Claude Code",
     "claude.local.md": "Claude Code",
     "agents.md": "AGENTS.md (Codex 등)",
+    "agents.override.md": "AGENTS.md (Codex 등)",   # Codex는 같은 폴더의 AGENTS.md보다 이 파일을 먼저 읽는다
     "agent.md": "AGENTS.md (Codex 등)",
     "gemini.md": "Gemini CLI",
     ".cursorrules": "Cursor",
@@ -64,7 +65,11 @@ def kind(path: str) -> str | None:
     raw = str(path).strip().replace("\\", "/")   # 역슬래시도 나눈다 (Windows에서 받아 갈 때 경로가 된다)
     if not raw:
         return None
-    parts = [p.lower() for p in PurePosixPath(posixpath.normpath(raw)).parts if p not in ("/", "", ".", "..")]
+    # 이름 끝의 점·공백은 지운 뒤 본다. Windows는 저장할 때 이것을 떼므로 "CLAUDE.md." "CLAUDE.md "로 받아도
+    # 내려받은 뒤에는 CLAUDE.md가 된다. 폴더(".claude.")도 같다.
+    parts = [p.rstrip(". ").lower() for p in PurePosixPath(posixpath.normpath(raw)).parts
+             if p not in ("/", "", ".", "..")]
+    parts = [p for p in parts if p]
     if not parts:
         return None
     name = parts[-1]

@@ -20,6 +20,10 @@ DEFAULT = Policy.load("agentbox/default_policy.yaml")
     "/workspace/a/.cursor/rules/r.mdc", "/workspace/.github/copilot-instructions.md",
     "/workspace/.github/instructions/py.instructions.md", "/workspace/outbox/AGENTS.md", "/workspace/AGENTS.md/.",
     " /workspace/AGENTS.md ", "dir\\AGENTS.md", "/workspace/.codex/config.toml",
+    "/workspace/AGENTS.override.md",
+    # Windows는 이름 끝의 점·공백을 떼고 저장한다. 내려받으면 지시 파일이 되는 이름
+    "/workspace/outbox/CLAUDE.md.", "/workspace/outbox/AGENTS.md...", "/workspace/outbox/CLAUDE.md. . ",
+    "/workspace/.claude./settings.json", "/workspace/.cursorrules.",
 ])
 def test_kind_detects(path):
     assert IF.kind(path)
@@ -28,13 +32,15 @@ def test_kind_detects(path):
 @pytest.mark.parametrize("path", [
     "/workspace/README.md", "/workspace/agents.md.bak", "/workspace/my-claude.md", "/workspace/.github/workflows/ci.yml",
     "/workspace/.github/instructions", "/workspace/claude", "", "/", "/workspace", "/workspace/notes/agents",
+    "/workspace/...", "/workspace/CLAUDE.md.bak", "/workspace/CLAUDE",
 ])
 def test_kind_ignores(path):
     assert IF.kind(path) is None
 
 
 @pytest.mark.parametrize("path", ["/workspace/AGENTS.md", "CLAUDE.md", "/workspace/.claude/settings.json",
-                                  "/workspace/outbox/.mcp.json", "/workspace/a/../GEMINI.md"])
+                                  "/workspace/outbox/.mcp.json", "/workspace/a/../GEMINI.md",
+                                  "/workspace/outbox/CLAUDE.md.", "/workspace/AGENTS.override.md"])
 def test_default_policy_write_instruction_needs_approval(path):
     d = DEFAULT.decide("write_file", {"path": path, "content": "x"})
     assert d.action == "require_approval"
@@ -123,6 +129,7 @@ def test_scan_finds_nested_and_dirs_once(tmp_path):
     assert sorted(hits) == sorted([".claude/", ".github/instructions/", "CLAUDE.md", "a/b/AGENTS.md"])
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Windows는 심볼릭 링크를 만들려면 관리자·개발자 모드가 필요하다 (WinError 1314)")
 def test_scan_does_not_follow_links(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()

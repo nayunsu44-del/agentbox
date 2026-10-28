@@ -261,7 +261,7 @@ agentbox ui                    # 1회용 로그인 링크 (60초). 또는 http:/
 | 쓰기 | 기본 정책 `instruction-file-write-needs-approval`이 `write_file`을 사람 승인으로 보낸다. 승인 카드에 지시 파일이라는 메모가 붙는다. `exec`로 쓰는 경로(`>`, `cp`, `sh`)는 원래 승인 대상이다 |
 | 결과함 | 지시 파일에 배지와 경고를 붙인다 |
 
-알아보는 이름: `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENT.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.goosehints`, `copilot-instructions.md`, `.mcp.json`, 그리고 `.claude/`, `.cursor/`, `.windsurf/`, `.continue/`, `.gemini/`, `.codex/`, `.roo/`, `.github/{instructions,prompts,chatmodes}/` 아래 전부 (대소문자 무시). 목록은 `agentbox/instruction_files.py`에 있다.
+알아보는 이름: `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `AGENT.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.goosehints`, `copilot-instructions.md`, `.mcp.json`, 그리고 `.claude/`, `.cursor/`, `.windsurf/`, `.continue/`, `.gemini/`, `.codex/`, `.roo/`, `.github/{instructions,prompts,chatmodes}/` 아래 전부 (대소문자 무시, 이름 끝의 점·공백은 떼고 본다. Windows가 저장할 때 떼기 때문에 `CLAUDE.md.`도 내려받으면 `CLAUDE.md`가 된다). 목록은 `agentbox/instruction_files.py`에 있다.
 
 읽기까지 막고 싶으면 정책에 규칙을 더한다 (`match.instruction_files`는 `list_dir`·`read_file`·`write_file`·`delete_file`의 `path`에 맞는다):
 
