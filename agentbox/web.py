@@ -257,6 +257,14 @@ def register(app: FastAPI, box: AgentBox, settings, human_token: str, *, guard: 
     def approvals_frag(request: Request, sandbox_id: str | None = None, p=Depends(browser_human)):
         return approvals_view(request, sandbox_id)
 
+    @app.get("/ui/approvals/{aid}/content", include_in_schema=False)
+    def approval_content(request: Request, aid: str, p=Depends(browser_human)):
+        """write_file 승인의 쓸 내용 전체. 2초마다 다시 그리는 목록에는 앞부분만 싣는다 (보안 검수 run-7 F1)."""
+        a = box.approvals.get(aid)
+        if not a or a.get("tool") != "write_file" or not isinstance((a.get("args") or {}).get("content"), str):
+            raise HTTPException(404, "내용을 볼 수 있는 승인 요청이 없음 (끝난 요청은 내용 대신 크기·해시만 남는다)")
+        return render(request, "approval_content.html", a=a)
+
     @app.post("/ui/approvals/{aid}/{decision}", include_in_schema=False)
     def decide(request: Request, aid: str, decision: str, sandbox_id: str = "", p=Depends(browser_human)):
         if decision not in ("approve", "deny"):

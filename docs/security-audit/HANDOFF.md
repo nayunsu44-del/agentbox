@@ -327,3 +327,10 @@ pytest                                                 # 160 passed
   - 스킬은 git 게이트웨이가 막아 GitHub tarball(`c1c8a8c`)로 받았다.
   - 단위 테스트 기준선(sbx): 270 통과, 1 건너뜀, 1 실패. 실패는 `test_m4_unit` overlap으로, `sudo`가 없어서 난다.
 - **남은 일:** 수정 여부는 소유자가 정한다. F2와 F3는 같은 정책 판정을 고치므로 함께 고치는 것이 낫다. N1은 macOS 확인, N2는 배포의 Docker 저장소 위치 확인이 필요하다.
+- **수정(소유자 지시, 2026-10-28, 브랜치 `fix-run7`):** 확정 3건과 N1을 고쳤다. N2는 고치지 않았다(배포 구성 확인 필요).
+  - F1: 승인 목록 카드는 쓸 내용 앞 4096자만 싣고, 다시 받지 않는 `/ui/approvals/{id}/content`에서 전체를 본다. `write_file` 내용이 `max_write_bytes`를 넘으면 승인 요청 전에 413. 실측: 대기 20건 `GET /ui/approvals`가 83.9MB·13.7초 → 368KB·1.2초. 남은 1.2초는 대기 행 20개(각 1MiB)를 SQLite에서 읽고 JSON을 푸는 비용이다.
+  - F2: `instruction_files.target_kind()`가 대상 자체가 지시 폴더인 경우도 맞힌다. 정책·미리보기가 쓴다.
+  - F3: `_resolved`가 풀기 실패를 따로 알리고, 정책의 `match.instruction_files`는 `resolve_failed`면 맞는 것으로 본다. 에이전트가 넣은 `resolved_path`·`resolve_failed`는 지운다. 미리보기에 '실제 대상을 확인하지 못함'을 보인다.
+  - N1: `_norm`이 NFKD 뒤 결합 문자(Mn)를 떼고 casefold한다. `gemİni.md`도 지시 파일로 본다.
+  - 하드닝: `_expand`의 `${1#~/}`를 `${1#??}`로 바꿔 틸드가 실제로 펼쳐진다.
+  - 회귀 테스트 9개(`tests/test_instruction_files.py` 끝). 단위 280 통과(실패 1은 알려진 `sudo` overlap). 실제 Docker로 다시 돌린 parent-live 3건(링크 쓰기, 틸드, pid 채우기)에서 모두 승인으로 가거나 바르게 펼쳐졌다.

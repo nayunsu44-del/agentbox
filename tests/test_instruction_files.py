@@ -364,3 +364,103 @@ def test_cli_approval_shows_full_instruction_content(capsys):
     cli._show_approval(apr)
     out = capsys.readouterr().out
     assert "숨긴 지시" in out and "\x1b[2J" not in out
+
+
+# --- 보안 검수 run-7 회귀 테스트 ---
+
+def test_kind_folds_combining_marks():
+    """N1: casefold는 'İ'(U+0130)를 'i'+결합 점으로 펼친다. 대소문자를 가리지 않는 파일 시스템이 같은 파일로 볼 수 있다."""
+    assert IF.kind("/workspace/outbox/gem\u0130ni.md") == "Gemini CLI"
+    assert IF.kind("/workspace/outbox/CLAUDE\u0301.md") == "Claude Code"      # 결합 문자를 끼운 이름
+    assert IF.kind("/workspace/r\u00e9sum\u00e9.md") is None                 # 다른 이름은 그대로 지시 파일이 아니다
+
+
+@pytest.mark.parametrize("real", ["/workspace/.claude", "/workspace/.claude/", "/workspace/.github/instructions"])
+def test_policy_gates_write_whose_target_is_an_instruction_dir(real):
+    """F2: 'cfg -> .claude' 링크 자체에 쓰면 mv가 링크를 따라 .claude 안에 쓴다. 대상 자체가 지시 폴더여도 승인."""
+    d = DEFAULT.decide("write_file", {"path": "/workspace/cfg", "content": "x", "resolved_path": real})
+    assert d.action == "require_approval" and d.rule_id == "instruction-file-write-needs-approval"
+
+
+def test_target_kind_does_not_flag_plain_github_dir():
+    assert IF.target_kind("/workspace/.github") is None and IF.target_kind("/workspace/.github/workflows") is None
+    assert IF.target_kind("/workspace/.claude") == "Claude Code"
+
+
+class _FailSb(_ResolveSb):
+    def resolve(self, sid, path):
+        raise RuntimeError("fork 실패 (pid 상한)")
+
+
+def test_resolve_failure_fails_closed():
+    """F3: 풀기를 일부러 실패시켜도(pid 상한 채우기) 요청 경로로만 판단해 링크 너머에 쓰지 않는다."""
+    box = AgentBox.__new__(AgentBox)
+    box.sandboxes = _FailSb(None)
+    args = {"path": "/workspace/cfg/settings.json", "content": "악성 지시"}
+    pa = box._policy_args("sb", "write_file", args)
+    assert pa.get("resolve_failed") and "resolved_path" not in pa
+    d = DEFAULT.decide("write_file", pa)
+    assert d.action == "require_approval" and d.rule_id == "instruction-file-write-needs-approval"
+    pv = box._preview("sb", "write_file", args)
+    assert pv["instruction_file"] and any("확인하지 못함" in n for n in pv["notes"])
+    # 허용 범위 밖 경로는 실제 쓰기가 거절하므로 실패로 치지 않는다
+    assert "resolve_failed" not in box._policy_args("sb", "write_file", {"path": "/etc/passwd", "content": "x"})
+
+
+def test_agent_cannot_supply_resolution_keys():
+    box = AgentBox.__new__(AgentBox)
+    box.sandboxes = _ResolveSb("/workspace/notes.md")
+    pa = box._policy_args("sb", "write_file", {"path": "/workspace/notes.md", "content": "x",
+                                               "resolved_path": "/workspace/x", "resolve_failed": True})
+    assert pa["resolved_path"] == "/workspace/notes.md" and "resolve_failed" not in pa
+
+
+def _approvals_env():
+    from jinja2 import Environment, FileSystemLoader
+
+    from agentbox import web
+    env = Environment(loader=FileSystemLoader("agentbox/templates"), autoescape=True, finalize=web._shown)
+    env.filters["short"] = web._short
+    return env
+
+
+def test_approval_card_caps_polled_content_and_links_full_view():
+    """F1: 2초마다 다시 그리는 승인 목록에는 앞부분만 싣고, 전체는 따로 본다."""
+    tail = "끝에 숨긴 지시"
+    apr = {"id": "apr_1", "sandbox_id": "sb", "created_at": "2026-01-01T00:00:00.000", "tool": "write_file",
+           "rule_id": "instruction-file-write-needs-approval", "rule_reason": "r",
+           "args": {"path": "/workspace/outbox/CLAUDE.md", "content": "\x01" * 200_000 + tail},
+           "preview": {"affected": [], "notes": [], "instruction_file": "Claude Code"}}
+    html = _approvals_env().get_template("_approvals.html").render(
+        pending=[apr] * 20, done=[], sandbox_id="sb", timeout=300, error=None)
+    assert tail not in html and "/ui/approvals/apr_1/content" in html and "자를 이 카드에서 뺐다" in html
+    assert len(html) < 2_000_000                               # 대기 20개 x 20만 자도 요청 하나가 작게 남는다
+
+
+def test_approval_content_page_shows_everything(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from conftest import build_fake_app
+    app, box, human = build_fake_app(tmp_path, monkeypatch)
+    content = "# 규칙\n" + "x" * 10_000 + "\n    끝에 숨긴 지시\x1b[2J"
+    apr = box.approvals.create(sandbox_id="sb_x", tool="write_file",
+                               args={"path": "/workspace/outbox/CLAUDE.md", "content": content},
+                               rule_id="instruction-file-write-needs-approval", rule_reason="r",
+                               preview={"affected": [], "notes": [], "instruction_file": "Claude Code"})
+    c = TestClient(app)
+    H = {"Authorization": f"Bearer {human}"}
+    r = c.get(f"/ui/approvals/{apr['id']}/content", headers=H)
+    assert r.status_code == 200 and "\n    끝에 숨긴 지시" in r.text and "\x1b" not in r.text
+    assert c.get("/ui/approvals/apr_none/content", headers=H).status_code == 404
+
+
+def test_write_file_content_over_limit_is_refused_before_approval(tmp_path, monkeypatch):
+    """F1: 쓰기 상한은 승인 대기 행을 만들기 전에 본다. 아니면 본문 상한(8MiB)까지의 내용이 대기 행·승인 화면에 남는다."""
+    from agentbox.service import ServiceError
+    from conftest import build_fake_app
+    app, box, human = build_fake_app(tmp_path, monkeypatch)
+    box.sandboxes.settings.max_write_bytes = 1000
+    with pytest.raises(ServiceError) as e:
+        box.call_tool("sb_x", "write_file", {"path": "/workspace/CLAUDE.md", "content": "x" * 1001})
+    assert getattr(e.value, "status", None) == 413
+    assert not box.approvals.list(sandbox_id="sb_x")

@@ -70,8 +70,13 @@ def _norm(name: str) -> str:
       대소문자를 구분하지 않는 파일 시스템(macOS, Windows)에서는 이런 이름이 같은 파일이 될 수 있다.
     - 첫 ':' 뒤를 뗀다: NTFS는 'CLAUDE.md::$DATA'를 CLAUDE.md의 기본 데이터 스트림으로 연다.
     - 끝의 점·공백을 뗀다: Windows는 저장할 때 이것을 떼므로 'CLAUDE.md.'도 내려받으면 CLAUDE.md가 된다.
+    - 결합 문자(Mn)를 뗀다: casefold는 'İ'(U+0130)를 'i'+U+0307로 펼쳐 'gemİni.md'가 gemini.md로 보이지 않는다.
+      대소문자를 가리지 않는 파일 시스템이 이 둘을 같은 파일로 볼 수 있으니 판정은 더 넓은 쪽으로 한다
+      (보안 검수 run-7 N1). 'é' 같은 이름도 'e'로 보지만, 그 결과는 차단이 아니라 표시·승인이다.
     """
-    n = unicodedata.normalize("NFKC", name).casefold()
+    n = unicodedata.normalize("NFKD", name)
+    n = "".join(c for c in n if unicodedata.category(c) != "Mn").casefold()
+    n = "".join(c for c in unicodedata.normalize("NFKD", n) if unicodedata.category(c) != "Mn")
     n = n.split(":", 1)[0]
     return n.rstrip(". ")
 
@@ -106,6 +111,14 @@ def kind(path: str) -> str | None:
         if p == ".github" and parts[i + 1] in _GITHUB_DIRS and i + 1 < len(parts) - 1:
             return "GitHub Copilot"
     return None
+
+
+def target_kind(path: str) -> str | None:
+    """쓰기·지우기 대상으로서의 kind. 대상 자체가 지시 폴더(.claude, .github/instructions 등)여도 맞는다.
+    'cfg -> .claude' 링크에 write_file을 하면 mv가 링크를 따라 .claude 안에 쓰는데, kind()는 마지막 조각을
+    폴더로 보지 않아 놓친다 (보안 검수 run-7 F2). scan()이 폴더에 '/_'를 붙여 보는 것과 같은 방식이다."""
+    p = str(path).rstrip("/")
+    return kind(p) or (kind(p + "/_") if p else None)
 
 
 def notice(k: str) -> str:
