@@ -1,0 +1,3 @@
+docker_root: /host-docker-root | problem: None
+free(docker_root) GiB: 84.9 | free(home) GiB: 15.4
+host: daemon root /projects/sandbox/.scratch/docker/data on /dev/loop1, /tmp on tmpfs

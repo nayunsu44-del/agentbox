@@ -324,7 +324,10 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
     def list_approvals(status: str | None = Query(default=None), sandbox_id: str | None = None,
                        p: Principal = Depends(human_only)):
         box.expire_stale()
-        return box.approvals.list(status=status, sandbox_id=sandbox_id)
+        # 목록은 승인 CLI가 1초마다 받는다. 인자 전체(쓸 내용 최대 1MiB씩)를 싣지 않고 감사 로그와 같은 모양
+        # (크기·sha256·앞부분)으로 줄인다. 전체는 GET /approvals/{id}로 받는다 (보안 검수 run-7 후속 검증)
+        return [{**a, "args": box._logged_args(a["tool"], a["args"] or {})}
+                for a in box.approvals.list(status=status, sandbox_id=sandbox_id)]
 
     @app.get("/approvals/{aid}")
     def get_approval(aid: str, p: Principal = Depends(principal)):

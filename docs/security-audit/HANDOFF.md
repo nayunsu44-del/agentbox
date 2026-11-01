@@ -334,3 +334,12 @@ pytest                                                 # 160 passed
   - N1: `_norm`이 NFKD 뒤 결합 문자(Mn)를 떼고 casefold한다. `gemİni.md`도 지시 파일로 본다.
   - 하드닝: `_expand`의 `${1#~/}`를 `${1#??}`로 바꿔 틸드가 실제로 펼쳐진다.
   - 회귀 테스트 9개(`tests/test_instruction_files.py` 끝). 단위 280 통과(실패 1은 알려진 `sudo` overlap). 실제 Docker로 다시 돌린 parent-live 3건(링크 쓰기, 틸드, pid 채우기)에서 모두 승인으로 가거나 바르게 펼쳐졌다.
+- **후속 수정(PR #29 검증 결과 반영, 2026-10-28, 브랜치 `fix-run7-followup`):** 소유자가 고른 방향대로 고쳤다.
+  - F1 우회: `content` 키 면제를 `write_file`에만 둔다. 다른 도구에 붙인 `content`는 16KiB 상한으로 413. 실측: `delete_file` + 1.3M자 content → 413.
+  - F1 남은 비용: `GET /approvals` 목록은 인자를 감사 로그 모양(크기·sha256·앞부분)으로 줄인다. 승인 CLI는 보여 줄 때만 `GET /approvals/{id}`로 전체를 받는다. 실측: 대기 5건 × 1MB 목록 4.8KB·0.19초.
+  - F1 설계상 약점: 4096자를 넘는 지시 파일 쓰기 카드에는 승인 버튼 대신 '전체 내용 보고 승인' 링크만 있다(거절은 카드에서도 된다). 승인은 전체 내용 화면(`POST /ui/approvals/{id}/content/approve`)에서만 받고, 카드 경로의 승인은 서버가 거절한다. CLI(`POST /approvals/{id}`)는 터미널에 전체를 보여 주므로 그대로다.
+  - F3 사용성: 미리보기가 실패해도(`exists()`까지 실패) `write_file` 카드는 지시 파일 표시·'실제 대상을 확인하지 못함' 경고·전체 보기를 유지한다(`_failed_preview`).
+  - N1 남은 것: `ı`(U+0131)는 `i`로 보고 보이지 않는 서식 문자(Cf)는 떼고 판정한다. macOS 확인 없이 넓게 잡는 쪽.
+  - N2: `AGENTBOX_DOCKER_ROOT` 설정을 더했다. compose는 호스트 Docker 저장소(`AGENTBOX_DOCKER_DATA_ROOT`, 기본 `/var/lib/docker`)를 `/host-docker-root`에 읽기 전용으로 붙인다. 잴 수 없으면 시작할 때 경고(`serve` 출력)와 `disk_docker_root_unreachable` 기록을 남긴다. 실측: 붙이면 두 파일 시스템을 따로 잰다.
+  - N-1: README 알려진 한계에 'GUI 경로로 지시 파일 쓰기 승인도 우회된다'를 더했다. 방향(D2·E)은 그대로 보류.
+  - 회귀 테스트 11개(`tests/test_instruction_files.py` 끝, 모두 수정 전 코드에서 실패). 단위 290 통과(실패 1은 알려진 `sudo` overlap). IF 수용 6개 통과. parent-live: `agents/parent-live/artifacts/followup_fixes_live.out`, `docker_root_mount_live.out`.

@@ -117,6 +117,8 @@ def cmd_serve(a: argparse.Namespace) -> None:
           + ("  (TLS 프록시 뒤)" if behind else ""))
     print(f"  격리 런타임: {box.sandboxes.runtime}   이미지: {s.image}")
     print(f"  감사 DB: {s.db_path}")
+    if box.docker_root_problem:
+        print(f"{YELLOW}! {box.docker_root_problem}{RESET}", file=sys.stderr)
     print(f"  사람 토큰: {s.home / 'human_token'} (파일에 저장됨)")
     extra: dict[str, Any] = {}
     if tls:
@@ -241,6 +243,10 @@ def cmd_approve(a: argparse.Namespace) -> None:
                 continue
             for apr in todo:
                 seen.add(apr["id"])
+                # 목록은 인자를 줄여 준다. 보여 주고 결정할 것은 전체를 받아서 본다
+                apr = _check(c.get(f"/approvals/{apr['id']}"))
+                if apr.get("status") != "pending":
+                    continue
                 _show_approval(apr)
                 if a.auto:
                     ans = a.auto

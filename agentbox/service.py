@@ -97,6 +97,23 @@ class AgentBox:
         self._busy_lock = threading.Lock()
         self._low_disk = False   # 지난번 disk_low() 판단. 바뀔 때만 기록한다
         self.bursts = GuiBursts(sandboxes, self.desktop, self.log_best_effort, self._takeover_pending, self._busy_lock)
+        self.docker_root_problem = self._check_docker_root()
+
+    def _check_docker_root(self) -> str | None:
+        """disk_low()가 Docker 저장소(컨테이너 쓰기 층·스냅샷 이미지)의 남은 공간을 잴 수 있는지. 컨테이너 안에서 도는
+        컨트롤 플레인(compose)은 데몬의 DockerRootDir가 붙어 있지 않아 재지 못한다. 그때는 DB 디스크만 보므로 시작할 때
+        한 번 알린다. AGENTBOX_DOCKER_ROOT로 붙인 경로를 주면 그것을 잰다 (보안 검수 run-7 N2)."""
+        root = getattr(self.sandboxes, "docker_root", None)
+        if root is None or getattr(getattr(self.sandboxes, "settings", None), "min_free_bytes", 0) <= 0:
+            return None
+        try:
+            shutil.disk_usage(root)
+            return None
+        except OSError as e:
+            msg = (f"Docker 저장소 {root}의 남은 공간을 잴 수 없음 ({e.__class__.__name__}). 디스크 보호선은 DB 디스크만 본다. "
+                   "Docker 저장소가 다른 디스크면 그 경로를 읽기 전용으로 붙이고 AGENTBOX_DOCKER_ROOT로 알려 줄 것")
+            self.log_best_effort(None, None, "disk_docker_root_unreachable", {"docker_root": str(root), "message": msg})
+            return msg
 
     def capture_path(self, aid: str) -> Path | None:
         if not self.captures or not aid.replace("_", "").isalnum():
@@ -291,6 +308,19 @@ class AgentBox:
         return {"tool": tool, "cwd": WORKSPACE, "affected": [],
                 "notes": ["시스템이 영향을 계산하지 못함. 도구 인자 원문을 확인할 것."]}
 
+    @staticmethod
+    def _failed_preview(tool: str, args: dict[str, Any], err: Exception) -> dict[str, Any]:
+        """미리보기가 실패했을 때의 카드. 컨테이너가 pid 상한에 걸리면 exists()·resolve()가 같이 실패한다.
+        그때도 지시 파일 표시와 '실제 대상을 확인하지 못함' 경고, 쓸 내용 전체 보기는 남긴다 (보안 검수 run-7 후속 검증)."""
+        out: dict[str, Any] = {"command": args.get("command"), "affected": [], "notes": [f"미리보기 실패: {err}"]}
+        if tool in ("write_file", "delete_file"):
+            path = str(args.get("path", ""))
+            out["affected"] = [{"path": path, "effect": "확인하지 못함 (미리보기 실패)"}]
+            out["notes"].append("링크를 따라간 실제 대상을 컨테이너 안에서 확인하지 못함. 링크 너머의 다른 파일에 쓰거나 지울 수 있음")
+            if tool == "write_file":
+                out["instruction_file"] = IF.target_kind(path) or "알 수 없음 (실제 대상을 확인하지 못함)"
+        return out
+
     def _needs_snapshot(self, sid: str, tool: str, args: dict[str, Any]) -> bool:
         """AP-2: 삭제·덮어쓰기는 승인 여부와 상관없이 직전에 스냅샷."""
         if tool == "delete_file":
@@ -370,8 +400,11 @@ class AgentBox:
             raise ServiceError(404, f"알 수 없는 도구: {tool}")
         self.sandboxes.get(sid)  # 없으면 SandboxError
         # 문자열이 아닌 값도 잰다: 정책은 str(args["command"])로 읽으므로 목록에 넣어도 같은 비용이 든다
+        # 쓸 내용(content)은 write_file에서만 이 상한에서 빼고 max_write_bytes로 따로 잰다. 다른 도구에 붙인 content는
+        # 실행에 쓰이지 않는데도 승인 대기 행·승인 화면에 그대로 남는다 (보안 검수 run-7 후속 검증, F1 우회)
         long = [k for k, v in args.items()
-                if k != "content" and len(v if isinstance(v, str) else json.dumps(v, default=str)) > TOOL_ARG_MAX]
+                if not (tool == "write_file" and k == "content")
+                and len(v if isinstance(v, str) else json.dumps(v, default=str)) > TOOL_ARG_MAX]
         if long:
             # 정책 판단과 승인 미리보기는 명령 길이에 비례해 CPU·exec를 쓴다. 판단 전에 길이부터 막는다 (보안 검수 run-5)
             self.log_best_effort(sid, tool, "tool_blocked", {"reason": "argument_too_long", "args": long,
@@ -443,7 +476,7 @@ class AgentBox:
         try:
             preview = self._preview(sid, tool, args)
         except Exception as e:  # 미리보기가 실패해도 승인은 사람에게 넘긴다
-            preview = {"command": args.get("command"), "affected": [], "notes": [f"미리보기 실패: {e}"]}
+            preview = self._failed_preview(tool, args, e)
         preview = bound_payload(preview)  # 대기 행도 감사 로그와 같은 크기로 (보안 검수 run-5)
         if actor == "agent" and self.disk_low():
             # 호출을 받을 때의 확인 뒤에 판단·미리보기가 오래 걸릴 수 있다. 행을 쓰기 직전에 다시 본다

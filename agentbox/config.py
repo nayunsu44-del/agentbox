@@ -78,6 +78,9 @@ class Settings:
     # 화면을 인수한 사람이 제어 연결 없이 이만큼 지나면 에이전트에게 자동으로 돌려준다.
     takeover_idle: int = field(default_factory=lambda: int(_env("AGENTBOX_TAKEOVER_IDLE", "600")))
     docker_cli: str = field(default_factory=lambda: _env("AGENTBOX_DOCKER_CLI", "docker"))
+    # disk_low()가 남은 공간을 잴 Docker 저장소 경로. 비우면 데몬이 알려 주는 DockerRootDir. compose처럼 컨트롤
+    # 플레인이 컨테이너 안에서 돌면 그 경로가 없으므로, 호스트 Docker 저장소를 읽기 전용으로 붙이고 여기에 준다.
+    docker_root: str = field(default_factory=lambda: _env("AGENTBOX_DOCKER_ROOT", ""))
     # TLS 뒤에서 돌 때(직접 인증서 또는 TLS 프록시) 세션 쿠키에 Secure를 붙인다.
     secure_cookie: bool = field(default_factory=lambda: _env("AGENTBOX_SECURE_COOKIE", "") in ("1", "true", "yes"))
 

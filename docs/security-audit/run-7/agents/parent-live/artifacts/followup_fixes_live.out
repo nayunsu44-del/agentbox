@@ -1,0 +1,6 @@
+6 passed in 4.05s
+docker_root_problem: Docker 저장소 /nonexistent/docker의 남은 공간을 잴 수 없음 (FileNotFoundError). 디스크 보호선은 DB 디스크만 본다. Docker 저장소가 다른 디스크면 그 경로를 읽기 전용으로 붙이고 AGENTBOX_DOCKER_ROOT로 알려 줄 것
+delete_file + 1.3M content -> 413 도구 인자가 너무 김: content (최대 16384자). 나눠서 호출할 것
+GET /approvals (5 pending x 1MB): 4776 bytes, 0.19s; content in list: False
+write_file under pid exhaustion -> 202 pending | card instruction_file: 알 수 없음 (실제 대상을 확인하지 못함) | notes: ['쓸 내용 8 bytes, sha256 9c4d6ca92cfdccf5…', '링크를 따라간 실제 대상을 컨테이너 안에서 확인하지 못함. 링크 너머의 ', '에이전트 지시 파일(알 수 없음 (실제 대상을 확인하지 못함)). 결과함']
+.claude/settings.json: {}
