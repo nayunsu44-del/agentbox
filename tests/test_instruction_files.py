@@ -545,6 +545,30 @@ def test_long_instruction_card_approves_only_from_full_view(tmp_path, monkeypatc
     assert r.status_code == 303 and calls[-1] == (long["id"], True)
 
 
+def test_long_content_on_delete_stays_approvable_from_card(tmp_path, monkeypatch):
+    """Trail #1 지적: delete_file에 붙은 긴 content는 실행에 쓰이지 않는다. 전체 내용 화면은 write_file만 받으므로
+    이 요청을 그쪽으로 보내면 어디서도 승인할 수 없게 된다. 카드에서 승인하고, 쓸 내용처럼 보여 주지도 않는다."""
+    from fastapi.testclient import TestClient
+
+    from conftest import build_fake_app
+    app, box, human = build_fake_app(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr(box, "decide", lambda aid, approve, **kw: calls.append((aid, approve)))
+    apr = box.approvals.create(sandbox_id="sb_x", tool="delete_file",
+                               args={"path": "/workspace/CLAUDE.md", "content": "a" * 5000},
+                               rule_id="r", rule_reason="r",
+                               preview={"affected": [{"path": "/workspace/CLAUDE.md", "effect": "삭제"}], "notes": [],
+                                        "instruction_file": "Claude Code"})
+    c = TestClient(app)
+    H = {"Authorization": f"Bearer {human}"}
+    html = c.get("/ui/approvals", headers=H).text
+    assert f'hx-post="/ui/approvals/{apr["id"]}/approve' in html and "전체 내용 보고 승인" not in html
+    assert f'/ui/approvals/{apr["id"]}/content' not in html                # 404가 나는 링크를 내주지 않는다
+    assert "쓸 내용" not in html and "/workspace/CLAUDE.md" in html         # 삭제 대상은 영향 표에 남는다
+    c.post(f"/ui/approvals/{apr['id']}/approve", headers=H)
+    assert calls == [(apr["id"], True)]
+
+
 def test_docker_root_unreachable_is_reported_once():
     """N2: Docker 저장소를 잴 수 없으면(compose 안 등) 시작할 때 알리고 기록한다."""
     from pathlib import Path

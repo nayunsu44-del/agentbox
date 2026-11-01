@@ -34,10 +34,13 @@ CARD_CONTENT_MAX = 4096
 
 
 def needs_full_view(a: dict[str, Any]) -> bool:
-    """카드에 다 보이지 않아 전체 내용 화면에서만 승인할 수 있는 요청인지."""
+    """카드에 다 보이지 않아 전체 내용 화면에서만 승인할 수 있는 지시 파일 쓰기인지.
+
+    전체 내용 화면은 write_file만 받는다. 다른 도구에 붙은 content는 실행에 쓰이지 않으므로 카드에서 승인한다.
+    """
     content = (a.get("args") or {}).get("content")
-    return bool((a.get("preview") or {}).get("instruction_file")) and isinstance(content, str) \
-        and len(content) > CARD_CONTENT_MAX
+    return a.get("tool") == "write_file" and bool((a.get("preview") or {}).get("instruction_file")) \
+        and isinstance(content, str) and len(content) > CARD_CONTENT_MAX
 ACTORS = {"agent": "AI", "human": "사람", "system": "시스템"}
 # HTML 이스케이프는 < > & 따옴표만 바꾼다. 양방향(bidi) 재배치 문자가 남으면 브라우저가 글자 순서를 바꿔 보여서,
 # 승인 화면의 명령이 실제와 다르게 읽힌다 (보안 검수 run-3 v13). 터미널의 cli._safe와 같은 문자를 같은 모양으로
