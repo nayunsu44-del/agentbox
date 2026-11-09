@@ -212,6 +212,15 @@ def test_parse_outbox_empty():
     "echo x >/dev/nullevil",      # '/dev/null' 로 시작하는 다른 파일 → 승인
     "echo x >/dev/null/../out",   # /dev/null 아래 경로처럼 보이는 것 → 승인
     "echo x >&1foo",              # fd 복제가 아닌 파일 리다이렉트 → 승인
+    # 차등 퍼저로 찾은 변형: 숫자 뒤가 낱말 글자가 아니어도 bash는 파일 이름으로 잇는다
+    "echo x >&2~/../CLAUDE.md",   # 'mkdir 2~' 뒤면 /workspace/CLAUDE.md 에 쓴다
+    "echo x >&2}",
+    "echo x >&2\\;",
+    "ls 2>&1*",
+    "echo x >&2\r",
+    "echo x >/dev/null~",
+    "echo x >/dev/null\\ y",
+    "echo x >\r/dev/null",
 ])
 def test_devnull_lookalike_redirect_needs_approval(cmd):
     assert simple_programs(cmd) is None
@@ -242,6 +251,14 @@ def test_devnull_and_fd_dup_still_read_only(cmd, progs):
     "ls ;<<<x tee /workspace/out",
     "echo hi ;<&0 sh -c id",
     "cat <<EOF",                   # heredoc도 승인으로 (본문을 정책이 명령으로 가려 보지 못한다)
+    # 차등 퍼저(정책 대 bash)로 찾은 변형: '<' 다음 토큰을 대상으로 건너뛰다 구분자를 삼킨다
+    "wc \\<;\tchmod 777 x",        # '\<'는 bash에서 글자. 렉서는 '<'로 돌려준다
+    "wc '<' ; chmod 777 x",
+    "wc '<' ; chmod ls",           # 건너뛴 자리 다음 단어가 허용 이름이면 통째로 허용됐다
+    'ls "<" && sh -c id',
+    "touch time <> /dev/null & chmod 777 x",     # _DEVNULL이 '> /dev/null'만 벗겨 '<'가 남는다
+    "touch <* \n\t<>\t/dev/null\tcp a b",
+    "ls <>/dev/null sh -c id",
 ])
 def test_redirect_glued_to_separator_needs_approval(cmd):
     assert simple_programs(cmd) is None

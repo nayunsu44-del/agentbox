@@ -100,7 +100,10 @@ def command_names(command: str) -> set[str]:
 # 출력을 버리는 리다이렉션은 파일을 바꾸지 않으므로 읽기 전용 판정에서 빼고 본다.
 # 단, '/dev/null' 뒤나 'N>&M' 뒤에 파일 이름 글자가 이어지면(예: '>&2evil', '>/dev/nullx')
 # 그건 진짜 파일 리다이렉션이므로 벗겨내지 않는다(뒤의 '>' 검사가 승인으로 보내도록).
-_DEVNULL = re.compile(r"\d*>>?\s*/dev/null(?![\w./-])|\d*>&\d+(?![\w./-])")
+# 뒤가 '}' '~' '\;' 같은 글자여도 bash는 단어를 잇는다: 'echo x >&2~/../CLAUDE.md'는 fd 복제가 아니라
+# '2~/../CLAUDE.md' 파일에 쓴다(mkdir 2~ 뒤). 그래서 단어가 거기서 끝날 때(공백·구분자·문자열 끝)만 벗긴다 (퍼저로 찾음).
+_WORD_END = r"(?=[ \t\n;&|()<>]|$)"
+_DEVNULL = re.compile(rf"\d*>>?[ \t]*/dev/null{_WORD_END}|\d*>&\d+{_WORD_END}")
 
 # bash에서 '#'이 주석을 여는 자리(줄 맨 앞, 또는 따옴표 밖 공백·구분자 바로 뒤).
 _COMMENT_BOUNDARY = set(" \t\n\r;&|()")
@@ -155,6 +158,10 @@ def simple_programs(command: str) -> set[str] | None:
     # bash 주석('#')이 있으면 정책 렉서와 bash의 해석이 갈린다. 승인으로 보낸다.
     if has_bash_comment(command):
         return None
+    if "<>" in command:
+        # 읽기·쓰기로 여는 리다이렉션. 아래 _DEVNULL이 '<> /dev/null'에서 '> /dev/null'만 벗기면 '<'만 남아
+        # 그 뒤의 프로그램을 리다이렉션 대상으로 보고 건너뛴다 ('touch x <> /dev/null & chmod …', 퍼저로 찾음).
+        return None
     cmd = _DEVNULL.sub(" ", command)
     if any(s in cmd for s in ("$", "`", ">", "<(")):
         return None
@@ -168,6 +175,13 @@ def simple_programs(command: str) -> set[str] | None:
     programs: set[str] = set()
     start, skip = True, False
     for t in tokens:
+        if skip:
+            if all(c in _LEX_PUNCT for c in t):
+                # '<' 뒤에 대상 대신 구분자가 왔다. 렉서는 따옴표를 벗겨 주므로 "wc '<' ; chmod …"의 '<'(글자)도
+                # 리다이렉션으로 보이는데, 그 뒤 ';' 다음의 프로그램을 대상으로 건너뛰면 인자로 본다 (퍼저로 찾음).
+                return None
+            skip = False
+            continue
         if all(c in ";&|()" for c in t):     # ; && || | |& ( ) 등. 다음 단어가 프로그램
             start = True
             continue
@@ -178,9 +192,6 @@ def simple_programs(command: str) -> set[str] | None:
             return None
         if t == "<":
             skip = True
-            continue
-        if skip:
-            skip = False
             continue
         if start:
             if "=" in t.split("/", 1)[0]:
