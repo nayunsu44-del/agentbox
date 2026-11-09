@@ -29,6 +29,8 @@ _ACTIONS = {ALLOW, DENY, REQUIRE_APPROVAL}
 
 _SHELL_PUNCT = set(";&|()<>`$")
 _LEX_PUNCT = set(";&|()<>")   # shlex가 단어를 끊는 문자 (_words의 punctuation_chars)
+# 에이전트(uid 1000)가 쓸 수 없는 시스템 프로그램 폴더. 허용 목록은 경로 없는 이름과 이 폴더 바로 아래만 맞춘다.
+_SYSTEM_BIN = {"/bin", "/usr/bin", "/sbin", "/usr/sbin"}
 
 
 @dataclass
@@ -169,6 +171,11 @@ def simple_programs(command: str) -> set[str] | None:
         if all(c in ";&|()" for c in t):     # ; && || | |& ( ) 등. 다음 단어가 프로그램
             start = True
             continue
+        if t != "<" and "<" in t and all(c in _LEX_PUNCT for c in t):
+            # ';<' '&&<' '|<' '<<' '<&' 처럼 '<'가 다른 구분 문자와 붙은 토큰. 렉서는 한 덩어리로 주지만 bash는
+            # 'pwd;</dev/null sh -c …'에서 ';' 뒤에 새 명령(sh)을 시작한다. 그 프로그램을 인자로 보고 넘기면
+            # 허용 목록 밖의 명령이 승인 없이 돈다. 따옴표 안의 같은 글자("<<")도 여기로 오지만 승인으로 가는 쪽이다.
+            return None
         if t == "<":
             skip = True
             continue
@@ -178,7 +185,15 @@ def simple_programs(command: str) -> set[str] | None:
         if start:
             if "=" in t.split("/", 1)[0]:
                 return None          # LD_PRELOAD=… cat 같은 접두는 허용 목록 밖
-            programs.add(t.rsplit("/", 1)[-1])
+            if "/" in t:
+                # 경로로 부른 프로그램은 시스템 폴더 바로 아래일 때만 이름으로 본다. './test'나 '/workspace/ls'는
+                # 이름만 허용 목록과 같을 뿐, 원본 폴더에 들어 있던(또는 에이전트가 만든) 다른 실행 파일이다.
+                folder, name = t.rsplit("/", 1)
+                if folder not in _SYSTEM_BIN:
+                    return None
+                programs.add(name)
+            else:
+                programs.add(t)
             start = False
     return programs
 

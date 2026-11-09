@@ -228,6 +228,58 @@ def test_devnull_and_fd_dup_still_read_only(cmd, progs):
     assert simple_programs(cmd) == progs
 
 
+# --- 검토 반영(2026-11-10): 구분자에 '<'를 붙여 뒤 명령을 인자로 보이게 하던 우회 ---
+# 렉서는 ';<'를 한 토큰으로 주지만 bash는 ';' 뒤에서 새 명령을 시작한다. 실제 컨테이너에서 sh·find·cp가 승인 없이 돌았다.
+@pytest.mark.parametrize("cmd", [
+    "pwd;</dev/null sh -c 'id'",
+    "ls ;</dev/null python3 -c 'print(1)'",
+    "ls &&</dev/null bash -c 'echo x'",
+    "ls ||</dev/null sh -c id",
+    "echo x |</dev/null sh -c 'echo y'",
+    "ls &</dev/null sh -c id",
+    "pwd;</dev/null find /workspace -name old-report.md -delete",
+    "pwd;</dev/null cp /workspace/new-report.md /workspace/outbox/CLAUDE.md",
+    "ls ;<<<x tee /workspace/out",
+    "echo hi ;<&0 sh -c id",
+    "cat <<EOF",                   # heredoc도 승인으로 (본문을 정책이 명령으로 가려 보지 못한다)
+])
+def test_redirect_glued_to_separator_needs_approval(cmd):
+    assert simple_programs(cmd) is None
+    assert ALLOWLIST.decide("exec", {"command": cmd}).action == "require_approval"
+
+
+# 허용 목록은 이름만 봤다. './test'나 '/workspace/ls'는 이름이 같은 다른 실행 파일이다.
+@pytest.mark.parametrize("cmd", [
+    "./test",
+    "/workspace/ls -la",
+    "outbox/cat x",
+    "ls; ./date",
+    "/bin/../workspace/ls",
+    "/usr/local/bin/ls",
+])
+def test_program_called_by_path_outside_system_dirs_needs_approval(cmd):
+    assert simple_programs(cmd) is None
+    assert ALLOWLIST.decide("exec", {"command": cmd}).action == "require_approval"
+
+
+@pytest.mark.parametrize("cmd,progs", [
+    ("cat < a.txt", {"cat"}),                    # 띄어 쓴 입력 리다이렉션은 그대로 허용
+    ("cat <a.txt | wc -l", {"cat", "wc"}),
+    ("< a.txt cat", {"cat"}),
+    ("/bin/ls -l && /usr/bin/wc x", {"ls", "wc"}),
+    ("true && ls", {"true", "ls"}),
+])
+def test_plain_input_redirect_and_system_paths_still_read_only(cmd, progs):
+    assert simple_programs(cmd) == progs
+    assert ALLOWLIST.decide("exec", {"command": cmd}).rule_id == "read-only-exec"
+
+
+def test_true_and_false_are_in_the_default_allowlist():
+    # YAML이 따옴표 없는 true·false를 불리언으로 읽어 목록에 'True'·'False'가 들어가 있었다
+    for cmd in ("true", "false"):
+        assert ALLOWLIST.decide("exec", {"command": cmd}).rule_id == "read-only-exec"
+
+
 # 보안 검수 N-5: 터미널 승인 화면은 에이전트가 넣은 제어 문자로 다른 명령처럼 보이게 할 수 없다
 def test_terminal_approval_neutralizes_control_chars(monkeypatch, capsys):
     from agentbox import cli
