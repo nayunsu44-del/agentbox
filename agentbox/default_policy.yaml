@@ -36,7 +36,7 @@ rules:
     match:
       only_commands: [ls, cat, head, tail, wc, grep, egrep, fgrep, stat, file, du, df, pwd, cd, echo, printf,
                       date, id, whoami, uname, basename, dirname, realpath, readlink, sha256sum, sha1sum,
-                      md5sum, diff, cmp, cut, tr, nl, true, false, test, mkdir, touch]
+                      md5sum, diff, cmp, cut, tr, nl, "true", "false", test, mkdir, touch]
     action: allow
     reason: 읽기 전용 명령
   - id: exec-needs-approval

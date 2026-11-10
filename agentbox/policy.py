@@ -29,6 +29,8 @@ _ACTIONS = {ALLOW, DENY, REQUIRE_APPROVAL}
 
 _SHELL_PUNCT = set(";&|()<>`$")
 _LEX_PUNCT = set(";&|()<>")   # shlex가 단어를 끊는 문자 (_words의 punctuation_chars)
+# 에이전트(uid 1000)가 쓸 수 없는 시스템 프로그램 폴더. 허용 목록은 경로 없는 이름과 이 폴더 바로 아래만 맞춘다.
+_SYSTEM_BIN = {"/bin", "/usr/bin", "/sbin", "/usr/sbin"}
 
 
 @dataclass
@@ -98,7 +100,10 @@ def command_names(command: str) -> set[str]:
 # 출력을 버리는 리다이렉션은 파일을 바꾸지 않으므로 읽기 전용 판정에서 빼고 본다.
 # 단, '/dev/null' 뒤나 'N>&M' 뒤에 파일 이름 글자가 이어지면(예: '>&2evil', '>/dev/nullx')
 # 그건 진짜 파일 리다이렉션이므로 벗겨내지 않는다(뒤의 '>' 검사가 승인으로 보내도록).
-_DEVNULL = re.compile(r"\d*>>?\s*/dev/null(?![\w./-])|\d*>&\d+(?![\w./-])")
+# 뒤가 '}' '~' '\;' 같은 글자여도 bash는 단어를 잇는다: 'echo x >&2~/../CLAUDE.md'는 fd 복제가 아니라
+# '2~/../CLAUDE.md' 파일에 쓴다(mkdir 2~ 뒤). 그래서 단어가 거기서 끝날 때(공백·구분자·문자열 끝)만 벗긴다 (퍼저로 찾음).
+_WORD_END = r"(?=[ \t\n;&|()<>]|$)"
+_DEVNULL = re.compile(rf"\d*>>?[ \t]*/dev/null{_WORD_END}|\d*>&\d+{_WORD_END}")
 
 # bash에서 '#'이 주석을 여는 자리(줄 맨 앞, 또는 따옴표 밖 공백·구분자 바로 뒤).
 _COMMENT_BOUNDARY = set(" \t\n\r;&|()")
@@ -153,6 +158,10 @@ def simple_programs(command: str) -> set[str] | None:
     # bash 주석('#')이 있으면 정책 렉서와 bash의 해석이 갈린다. 승인으로 보낸다.
     if has_bash_comment(command):
         return None
+    if "<>" in command:
+        # 읽기·쓰기로 여는 리다이렉션. 아래 _DEVNULL이 '<> /dev/null'에서 '> /dev/null'만 벗기면 '<'만 남아
+        # 그 뒤의 프로그램을 리다이렉션 대상으로 보고 건너뛴다 ('touch x <> /dev/null & chmod …', 퍼저로 찾음).
+        return None
     cmd = _DEVNULL.sub(" ", command)
     if any(s in cmd for s in ("$", "`", ">", "<(")):
         return None
@@ -166,19 +175,36 @@ def simple_programs(command: str) -> set[str] | None:
     programs: set[str] = set()
     start, skip = True, False
     for t in tokens:
+        if skip:
+            if all(c in _LEX_PUNCT for c in t):
+                # '<' 뒤에 대상 대신 구분자가 왔다. 렉서는 따옴표를 벗겨 주므로 "wc '<' ; chmod …"의 '<'(글자)도
+                # 리다이렉션으로 보이는데, 그 뒤 ';' 다음의 프로그램을 대상으로 건너뛰면 인자로 본다 (퍼저로 찾음).
+                return None
+            skip = False
+            continue
         if all(c in ";&|()" for c in t):     # ; && || | |& ( ) 등. 다음 단어가 프로그램
             start = True
             continue
+        if t != "<" and "<" in t and all(c in _LEX_PUNCT for c in t):
+            # ';<' '&&<' '|<' '<<' '<&' 처럼 '<'가 다른 구분 문자와 붙은 토큰. 렉서는 한 덩어리로 주지만 bash는
+            # 'pwd;</dev/null sh -c …'에서 ';' 뒤에 새 명령(sh)을 시작한다. 그 프로그램을 인자로 보고 넘기면
+            # 허용 목록 밖의 명령이 승인 없이 돈다. 따옴표 안의 같은 글자("<<")도 여기로 오지만 승인으로 가는 쪽이다.
+            return None
         if t == "<":
             skip = True
-            continue
-        if skip:
-            skip = False
             continue
         if start:
             if "=" in t.split("/", 1)[0]:
                 return None          # LD_PRELOAD=… cat 같은 접두는 허용 목록 밖
-            programs.add(t.rsplit("/", 1)[-1])
+            if "/" in t:
+                # 경로로 부른 프로그램은 시스템 폴더 바로 아래일 때만 이름으로 본다. './test'나 '/workspace/ls'는
+                # 이름만 허용 목록과 같을 뿐, 원본 폴더에 들어 있던(또는 에이전트가 만든) 다른 실행 파일이다.
+                folder, name = t.rsplit("/", 1)
+                if folder not in _SYSTEM_BIN:
+                    return None
+                programs.add(name)
+            else:
+                programs.add(t)
             start = False
     return programs
 
