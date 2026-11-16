@@ -375,6 +375,7 @@ Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테
 | (M3) 웹 로그인·파일 넣기·결과함·웹 승인·화면 캡처·타임라인·검증 | `tests/test_m3_acceptance.py` |
 | (추가) LLM API 루프: 승인·거절 후 결과 전달, 두 API 형식 | `tests/test_agent.py` |
 | (추가) 에이전트 지시 파일 표시·쓰기 승인 (IF-1) | `tests/test_instruction_files.py`, `tests/test_instruction_files_acceptance.py` |
+| (추가) exec 허용 목록 차등 퍼저: 정책이 허용한 명령을 실제 bash로 돌려 실행된 프로그램·쓰기를 견줌 (Docker 불필요). 오래 돌리려면 `python -m tests.policy_fuzz --executed 200000` | `tests/test_policy_fuzz.py`, `tests/policy_fuzz.py` |
 | (M4) 재시작 뒤 로그인 유지, 남은 인수를 `server_restart`로 짝 맞춤, 쿠키·티켓 해시 저장, Secure 쿠키, 평문 바인딩 거부 | `tests/test_m4_unit.py`, `tests/test_m4_acceptance.py` |
 
 ## 요구사항 진행 상황
