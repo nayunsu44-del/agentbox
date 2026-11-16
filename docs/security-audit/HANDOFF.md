@@ -1,17 +1,27 @@
 # 보안 감사 핸드오프 (agentbox)
 
-다른 세션이 이어받기 위한 요약. 근거는 `docs/security-audit/run-1/`(1차 감사)과 `docs/security-audit/run-2/`(실측 검증)에 있다.
+다른 세션이 이어받기 위한 요약. 맨 위 두 절이 지금 상태이고, 그 아래는 run별 기록이다(오래된 것부터). 근거는 각 `run-N/REPORT.md`에 있다.
 
-## 한눈에 보기
+## 한눈에 보기 (2026-11-16 기준)
 
-- **무엇:**
-  - run-1: Cloudflare `security-audit` 스킬(6단계)로 agentbox 전체를 감사했다. 기준 커밋 `7fc501f`.
-  - run-2: run-1이 남긴 needs_validation 5건을 실제 Docker에서 검증했다.
-- **브랜치·PR:** run-4는 `ccr-17444317-ygb3a1`, draft PR #15(아래 "4차 감사(run-4) 결과"). run-3은 `ccr-e2c70e17-r0gmhn`, draft PR #8(아래 "3차 감사(run-3) 진행 상태"). run-1·2 때 작업 브랜치는 `ccr-e10bee8e-6wt669`. PR #1(감사 수정·CI), #2(화면 링크 세션 범위), #3(FIFO), #4(runc 차단), #5(GUI 백그라운드 정리·세션 만료, `8e4db9e`)는 `main`에 병합됐다. 병합할 때마다 작업 브랜치를 최신 `main`에서 다시 시작한다.
-- **현재 상태:** 감사 확정 9건 중 **8건 수정 완료**, **N-1(High)은 방안 C·A·G + 백그라운드 정리로 부분 완화**(복구·경고·기록·정리, 승인 우회는 남음). 기각 1건. README "아직 고치지 않은 것" 항목(비밀값 가림, 화면 링크 세션, FIFO, runc)도 모두 고쳤다.
-- **테스트:** 전체 `pytest` 214개 통과(run-3 수정 회귀 테스트 9개 포함, 2026-10-22)(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
+- **감사:** run-1~run-7을 마쳤다. 마지막 감사 기준은 `main` `3580df0`(run-7, 2026-10-28)이다. 확정된 것은 모두 고쳤고, 고치지 않고 남긴 것은 아래 '남은 일'의 N-1뿐이다.
+- **run-7 뒤에 들어간 수정(감사받지 않음):**
+  - PR #29·#32: run-7 확정 F1~F3·N1 수정과 그 후속 (아래 '7차 감사' 절).
+  - PR #33(2026-11-10): exec 허용 목록 우회 4건 (아래 '11월 수정' 절).
+  - 브랜치 `ccr-f6f6ab01-iito9a`(2026-11-16, 병합 전): 차등 퍼저를 저장소에 넣고 퍼저가 찾은 해석 차이 3종 수정 (같은 절).
+- **테스트:** Docker 없이 359개 통과, 6개 건너뜀(2026-11-16, 건너뛴 것은 Docker가 필요한 수용 테스트 파일). Docker와 데스크톱 이미지가 있는 전체 실행은 CI의 acceptance 작업이 맡고, 건너뛴 것이 있으면 실패한다.
+- **차등 퍼저:** `tests/policy_fuzz.py`(하니스), `tests/test_policy_fuzz.py`(씨앗 고정 400개). 오래 돌리려면 `python -m tests.policy_fuzz --executed 200000`. `--policy-module`로 옛 판 `policy.py`를 넣어 볼 수 있다.
 
-## 전체 목록
+## 남은 일
+
+1. **다음 감사(run-8).** 범위는 `3580df0..main`의 `agentbox/`·`tests/` 변경분이다. `policy.py`의 exec 허용 목록은 11월에만 해석 차이가 7종 나왔으니 1순위다. 프로필·호출 상한·모델은 시작할 때 소유자에게 확인한다.
+2. **N-1(High, 부분 완화).** GUI 도구로 터미널을 열면 exec 허용 목록·승인·지시 파일 쓰기 승인을 거치지 않는다. 구간 스냅샷·경고·바뀐 파일 기록만 있다. 더 막으려면 `run-2/N-1-OPTIONS.md`의 D2(시간 제한 GUI 허가)나 E(화면 계정의 `/workspace` 쓰기 분리) 중에서 소유자가 정해야 한다. 보류 중이다.
+3. **LLM 공급자로 가는 데이터.** README '알려진 한계'에 후보 4개가 있다. 작은 것부터: 도구 결과를 돌려주기 전 비밀값 가림, 돌려준 결과의 크기·sha256 기록.
+4. **감사 로그 바깥 앵커.** 끝부분을 잘라낸 로그는 체인만으로 못 잡는다(README '알려진 한계').
+5. **승인 테이블 가림.** run-4 보류 항목이다. 상한·정리는 들어갔지만 `approvals.py`·`service.py`에는 비밀값 가림 호출이 없다(2026-11-16 확인).
+6. **퍼저가 위반으로 세지 않는 부류.** `"<"`, `\;1`처럼 따옴표·역슬래시로 글자가 된 구분자로 시작하는 이름. 정책 렉서는 구분자로 읽고 bash는 그 이름의 프로그램을 찾는다. 그런 이름의 프로그램이 없고 정책이 더 끊어 읽는 방향이라 그대로 뒀다. 정책에서 막으려면 `grep 'a\|b'` 같은 명령도 승인이 필요해진다.
+
+## run-1·2 전체 목록 (기록)
 
 | 출처 | 내용 | 심각도 | 상태 | 커밋 |
 |---|---|---|---|---|
@@ -35,22 +45,6 @@ PR #1에 Codex 리뷰 4건(P1 1·P2 3)이 달렸고 모두 재현한 뒤 `860fe0
 
 새 설정은 README 환경 변수 표에 있다: `AGENTBOX_SNAPSHOT_QUOTA`(기본 50), `AGENTBOX_TOOL_CONCURRENCY`(기본 4), `AGENTBOX_GUI_SNAPSHOT_IDLE`·`_INTERVAL`(기본 60·600).
 
-## 다음 작업: 3차 감사 (run-3)
-
-사용자와 합의한 계획. 시작 전에 PR #5 병합 여부와 프로필·서브에이전트 상한을 사용자에게 확인한다.
-
-- **방법:** Cloudflare `security-audit` 스킬 전체 감사 모드(6단계: 정찰 → 헌팅 → 후보 검증 → findings.json → 독립 재검증 → 보고서).
-  스킬은 세션 임시 경로에 있었으니 다시 받는다: `git clone --depth 1 https://github.com/cloudflare/security-audit-skill`.
-- **이전 런:** `run-1/`, `run-2/`의 coverage-ledger·findings를 prior-run으로 넘긴다. 고친 9건은 코드가 바뀌었으니 재검증 단위로, 기각 1건은 같은 주장 재보고 금지.
-- **우선순위:** `7fc501f` 이후 바뀐 코드(소스 9개 파일): 스트리밍 exec·전용 스레드 풀·스냅샷 상한/락(service·sandbox·api), GUI 구간·파일 목록·프로세스 정리(service·sandbox), 비밀값 가림(audit), 세션 범위·만료(desktop·api·web), FIFO 제한(sandbox), runc 차단(cli).
-- **검증:** Docker와 데스크톱 이미지가 있으니 후보를 이 세션의 일회용 컨테이너에서 재현한다(1차처럼 needs_validation으로 남기지 않는다). 차등 퍼저(정책 vs bash)와 `run-2/repro/`를 활용.
-- **프로필:** 제안은 `standard`(서브에이전트 30~40회). 결과는 `docs/security-audit/run-3/`. 확정 건은 재현 → 수정 → 회귀 테스트 → PR.
-
-## 남은 일
-
-1. **N-1 후속(선택).** 방안 C·A·G로 복구 지점·경고·바뀐 파일 기록은 생겼지만 승인 우회는 남는다. 더 막아야 하면 `run-2/N-1-OPTIONS.md`의 D2(시간 제한 GUI 허가)나 E(화면 계정의 `/workspace` 쓰기 분리)를 검토한다. 백그라운드 프로세스 보완(돌려줄 때 화면 계정의 남은 프로세스 정리)도 후보다.
-2. **PR #1.** 사용자 요청으로 ready(리뷰 가능) 상태로 바꿨다. 리뷰·병합은 사용자 몫이다.
-3. **3차 감사(선택).** 같은 스킬을 `run-2/`를 prior-run 입력으로 다시 돌리면, 바뀐 코드(스트리밍 exec, 전용 스레드 풀, 스냅샷 상한)를 우선 볼 수 있다. 결과는 `docs/security-audit/run-3/`에 둔다.
 
 ## 이어서 작업하는 환경 만들기 (새 세션)
 
@@ -343,3 +337,20 @@ pytest                                                 # 160 passed
   - N2: `AGENTBOX_DOCKER_ROOT` 설정을 더했다. compose는 호스트 Docker 저장소(`AGENTBOX_DOCKER_DATA_ROOT`, 기본 `/var/lib/docker`)를 `/host-docker-root`에 읽기 전용으로 붙인다. 잴 수 없으면 시작할 때 경고(`serve` 출력)와 `disk_docker_root_unreachable` 기록을 남긴다. 실측: 붙이면 두 파일 시스템을 따로 잰다.
   - N-1: README 알려진 한계에 'GUI 경로로 지시 파일 쓰기 승인도 우회된다'를 더했다. 방향(D2·E)은 그대로 보류.
   - 회귀 테스트 11개(`tests/test_instruction_files.py` 끝, 모두 수정 전 코드에서 실패). 단위 290 통과(실패 1은 알려진 `sudo` overlap). IF 수용 6개 통과. parent-live: `agents/parent-live/artifacts/followup_fixes_live.out`, `docker_root_mount_live.out`.
+
+## 11월 수정 — exec 허용 목록 (감사 밖, 2026-11-10 · 2026-11-16)
+
+감사 run이 아니라 검토와 차등 퍼저로 찾은 것이다. 모두 `agentbox/policy.py`의 `simple_programs`가 bash와 다르게 읽던 곳이고, 고친 뒤에는 승인으로 간다. 회귀 테스트는 `tests/test_unit.py`에 있다.
+
+- **PR #33(`9a8bd84`, `6d462e5`):**
+  - 구분자에 `<`를 붙인 명령(`pwd;</dev/null sh -c …`)에서 뒤 프로그램을 인자로 봤다. 실제 컨테이너에서 `sh`·`find -delete`·`cp`가 승인 없이 돌았다.
+  - 경로로 부른 프로그램(`./test`, `/workspace/ls`)을 이름만 보고 허용했다. 시스템 폴더 바로 아래일 때만 허용 목록과 견준다.
+  - `<` 다음 토큰을 대상으로 건너뛰다 구분자를 삼켰다(`wc '<' ; chmod ls`, `<> /dev/null`).
+  - fd 복제로 보이는 파일 리다이렉션(`>&2~/../CLAUDE.md`). `mkdir 2~` 뒤 승인 없이 지시 파일에 썼다.
+  - `default_policy.yaml`의 `true`·`false`가 YAML 불리언으로 읽혀 허용 목록에 없었다.
+- **브랜치 `ccr-f6f6ab01-iito9a`(`31ccf0d`):** PR #33에 쓴 퍼저는 저장소에 없어서 새로 만들었다. 옛 판 `policy.py` 두 개에 돌리면 위 우회를 다시 찾는다. 지금 판에서 찾은 것:
+  - `ls2>&1`: 단어 끝의 숫자를 fd 번호로 보고 벗겨 `ls`로 읽었다. bash는 `ls2`를 찾는다. 기본 이미지에서는 `/bin/diff3`가 `diff`로 허용됐다(읽기 전용이라 영향은 낮다).
+  - `wc \>&2`: 역슬래시 뒤의 `>`는 글자인데 리다이렉션으로 벗겼다. bash는 `&` 뒤의 `2`를 새 명령으로 돌린다.
+  - `cd\r`: shlex는 `\r`을 공백으로 보지만 bash는 단어 글자로 본다.
+  - 수정 뒤 씨앗 2개로 45,000개를 돌려 위반 0건. Docker 없이 돌린 것이라 실제 컨테이너에서는 확인하지 않았다.
+- CI 단위 작업(3.11·3.13)에 빠져 있던 `test_m5_unit.py`, `test_retention.py`와 퍼저 테스트를 더했다.

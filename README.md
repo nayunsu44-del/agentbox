@@ -50,7 +50,7 @@ Debian 13 KVM VM(4 vCPU, `/dev/kvm` 없음), runsc release-20261012.0에서 검�
 | `exec true` 1회 | 27 ms | 30 ms |
 | 스냅샷 | 174 ms | 192 ms |
 
-시간은 이미지 캐시 상태에서 5회 평균. 지금 전체 테스트는 runsc에서 119개가 통과한다 (데스크톱 이미지가 없으면 데스크톱 항목은 건너뜀). 데모도 runsc에서 전송 실패, 승인 대기, 원본 무사, 해시 체인 검증, 복원 후 파일 4개 복구까지 모두 같게 나온다.
+시간은 이미지 캐시 상태에서 5회 평균. 이 표는 최소 데모 시점에 잰 것이다. 지금 전체 테스트는 CI가 실제 Docker 위에서 돌린다 (아래 "테스트"). 데모도 runsc에서 전송 실패, 승인 대기, 원본 무사, 해시 체인 검증, 복원 후 파일 4개 복구까지 모두 같게 나온다.
 
 ### docker compose + TLS로 설치 (NF-5)
 
@@ -320,6 +320,7 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 | `AGENTBOX_MAX_UPLOAD_BODY` | 256MB | 파일 넣기 요청 하나(여러 파일)의 본문 상한. 넘으면 413 |
 | `AGENTBOX_MAX_CONNECTIONS` | `256` | 동시에 처리하는 연결·요청 수(`agentbox serve`의 uvicorn `limit_concurrency`). 넘으면 503. 0이면 끈다 |
 | `AGENTBOX_APPROVAL_TIMEOUT` | `300` | 승인 대기 상한(초) |
+| `AGENTBOX_APPROVAL_WAIT` | `900` | MCP 서버(`agentbox-mcp`)가 승인·화면 반환을 기다리는 최대 시간(초). 서버의 승인 기한(`AGENTBOX_APPROVAL_TIMEOUT`)이 먼저 끝날 수 있다 |
 | `AGENTBOX_DESKTOP_IMAGE` | `agentbox-desktop:0.1` | desktop 템플릿 이미지 |
 | `AGENTBOX_DESKTOP_MEM` · `_CPUS` · `_PIDS` | `1536m` · `2.0` · `1024` | desktop 샌드박스 자원 상한 |
 | `AGENTBOX_TAKEOVER_IDLE` | `600` | 인수한 사람이 연결 없이 이만큼 지나면 에이전트에게 돌려줌(초) |
