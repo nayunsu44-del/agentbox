@@ -371,6 +371,37 @@ def test_printf_option_check_resets_after_separator():
     assert simple_programs("ls; printf -v x y") is None
 
 
+# 차등 퍼저(tests/policy_fuzz.py)로 찾은 변형: 정책이 읽은 이름과 bash가 찾는 이름이 다르다
+@pytest.mark.parametrize("cmd", [
+    "ls2>&1",                      # bash는 'ls2'를 찾는다. 숫자는 단어 맨 앞에 있을 때만 fd 번호
+    "diff3>&1 a b c",              # /bin/diff3가 'diff'로 허용됐다
+    "cat2>/dev/null",
+    "/bin/ls2>&1",
+    "wc \\>&2",                    # '\>'는 글자. bash는 'wc >'를 뒤로 보내고 '2'를 새 명령으로 돌린다
+    "true \\>&2",
+    "pwd <\\>&2",
+    "cd\r",                        # bash는 '\r'에서 단어를 끊지 않는다
+    "ls\r-la",
+    "ls ;cat\ra",
+])
+def test_names_bash_reads_differently_need_approval(cmd):
+    progs = simple_programs(cmd)
+    assert progs is None or not progs <= {"ls", "cat", "wc", "true", "pwd", "cd", "diff"}
+    assert ALLOWLIST.decide("exec", {"command": cmd}).action == "require_approval"
+
+
+@pytest.mark.parametrize("cmd,progs", [
+    ("ls 2>&1", {"ls"}),
+    ("ls 2>/dev/null | wc -l 2>&1", {"ls", "wc"}),
+    ("2>&1 ls", {"ls"}),
+    ("ls;2>/dev/null cat a", {"ls", "cat"}),
+    ("echo a2 >&2", {"echo"}),
+])
+def test_fd_number_at_word_start_still_read_only(cmd, progs):
+    assert simple_programs(cmd) == progs
+    assert ALLOWLIST.decide("exec", {"command": cmd}).rule_id == "read-only-exec"
+
+
 # 보안 검수 N-5: 터미널 승인 화면은 에이전트가 넣은 제어 문자로 다른 명령처럼 보이게 할 수 없다
 def test_terminal_approval_neutralizes_control_chars(monkeypatch, capsys):
     from agentbox import cli
