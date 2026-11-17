@@ -476,3 +476,51 @@ def test_window_owner_comes_from_x_server_not_net_wm_pid(home):
         assert net == [str(daemon).encode()]                              # 창이 적은 값은 데몬 pid (위조)
     finally:
         c.delete(f"/sandboxes/{sid}", headers=H)
+
+
+_CHURN = """
+import ctypes as C, time
+X = C.CDLL("libX11.so.6")
+X.XOpenDisplay.restype = C.c_void_p
+X.XDefaultRootWindow.argtypes, X.XDefaultRootWindow.restype = [C.c_void_p], C.c_ulong
+X.XCreateSimpleWindow.argtypes = [C.c_void_p, C.c_ulong] + [C.c_int] * 2 + [C.c_uint] * 3 + [C.c_ulong] * 2
+X.XCreateSimpleWindow.restype = C.c_ulong
+X.XStoreName.argtypes = [C.c_void_p, C.c_ulong, C.c_char_p]
+X.XMapWindow.argtypes = X.XDestroyWindow.argtypes = [C.c_void_p, C.c_ulong]
+X.XFlush.argtypes = [C.c_void_p]
+d = X.XOpenDisplay(None)
+root = X.XDefaultRootWindow(d)
+end = time.time() + 60
+while time.time() < end:
+    w = X.XCreateSimpleWindow(d, root, 10, 10, 50, 50, 0, 0, 0)
+    X.XStoreName(d, w, b"churn")
+    X.XMapWindow(d, w)
+    X.XFlush(d)
+    X.XDestroyWindow(d, w)
+    X.XFlush(d)
+"""
+
+
+@needs_desktop
+def test_window_owners_survive_windows_coming_and_going(home):
+    """창을 훑는 사이 창이 생겼다 사라져도 있던 창의 주인을 빠뜨리지 않는다. 예전의 'xdotool search | xargs'는
+    xdotool이 사라진 창에서 X 오류로 죽어 목록이 잘렸고(5번 중 1번꼴), 구간이 닫힐 때 패널 같은 창 있는
+    프로세스까지 낯선 프로세스로 멈췄다."""
+    import time
+
+    from agentbox.sandbox_desktop import DESKTOP_ENV, DESKTOP_USER
+    c, box, H, _ = _build()
+    sid = c.post("/sandboxes", json={"source_dir": None, "template": "desktop"}, headers=H).json()["id"]
+    try:
+        _, base = box.sandboxes.desktop_processes(sid)
+        assert base                                                       # 패널·바탕화면 등
+        ct = box.sandboxes._desktop(sid)
+        ct.exec_run(["python3", "-c", _CHURN], user=DESKTOP_USER, environment=DESKTOP_ENV, detach=True)
+        time.sleep(1)
+        missed = 0
+        for _ in range(25):
+            _, wins = box.sandboxes.desktop_processes(sid)
+            missed += not base <= wins
+        assert missed == 0
+    finally:
+        c.delete(f"/sandboxes/{sid}", headers=H)

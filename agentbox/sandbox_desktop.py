@@ -41,13 +41,32 @@ _SHOT = "/home/desktop/.cache/agentbox-shot.png"
 _SHOT_MAX = 16 * 1024 * 1024   # 캡처 PNG 상한 (소켓·큰 파일로 바꿔치기해 메모리를 불리는 것 방지)
 _BUTTONS = {"left": "1", "middle": "2", "right": "3"}
 _KEY_RE = re.compile(r"^[A-Za-z0-9_+]{1,40}$")
-# 창 id(인자)마다 그 창을 만든 X 클라이언트의 pid를 X 서버에 묻는다 (X-Resource 확장, XResQueryClientIds).
+# 보이는(viewable) 창마다 그 창을 만든 X 클라이언트의 pid를 X 서버에 묻는다 (X-Resource 확장, XResQueryClientIds).
 # X 서버가 소켓의 상대 pid(SO_PEERCRED)로 아는 값이라, 창이 스스로 적는 _NET_WM_PID와 달리 남의 pid를 댈 수 없다
 # (보안 검수 run-4 N4). 화면 계정의 파일(~/.local의 파이썬 모듈 등)을 읽지 않게 python3 -I로 돌린다.
+# 창 목록도 여기서 직접 훑는다. 예전의 'xdotool search | xargs'는 훑는 사이 창 하나가 사라지면 xdotool이
+# X 오류로 죽어 목록이 잘렸고, 파이프의 종료 코드는 xargs의 것이라 잘린 줄 몰랐다 (창이 생겼다 사라지는 동안
+# 5번 중 1번꼴로 패널 등 있던 창이 빠졌다). 사라진 창의 X 오류는 무시하고 그 창만 건너뛴다.
 _WINDOW_OWNERS = """
 import ctypes as C, sys
 x, r = C.CDLL("libX11.so.6"), C.CDLL("libXRes.so.1")
+ERR = C.CFUNCTYPE(C.c_int, C.c_void_p, C.c_void_p)
+on_error = ERR(lambda d, e: 0)
+x.XSetErrorHandler.argtypes = [ERR]
+x.XSetErrorHandler(on_error)
+W = C.c_ulong
 x.XOpenDisplay.restype, x.XOpenDisplay.argtypes = C.c_void_p, [C.c_char_p]
+x.XDefaultRootWindow.restype, x.XDefaultRootWindow.argtypes = W, [C.c_void_p]
+x.XQueryTree.argtypes = [C.c_void_p, W, C.POINTER(W), C.POINTER(W), C.POINTER(C.POINTER(W)), C.POINTER(C.c_uint)]
+x.XFree.argtypes = [C.c_void_p]
+class Attr(C.Structure): _fields_ = [
+    ("x", C.c_int), ("y", C.c_int), ("width", C.c_int), ("height", C.c_int), ("border_width", C.c_int),
+    ("depth", C.c_int), ("visual", C.c_void_p), ("root", W), ("cls", C.c_int), ("bit_gravity", C.c_int),
+    ("win_gravity", C.c_int), ("backing_store", C.c_int), ("backing_planes", C.c_ulong),
+    ("backing_pixel", C.c_ulong), ("save_under", C.c_int), ("colormap", W), ("map_installed", C.c_int),
+    ("map_state", C.c_int), ("all_event_masks", C.c_long), ("your_event_mask", C.c_long),
+    ("do_not_propagate_mask", C.c_long), ("override_redirect", C.c_int), ("screen", C.c_void_p)]
+x.XGetWindowAttributes.argtypes = [C.c_void_p, W, C.POINTER(Attr)]
 class Spec(C.Structure): _fields_ = [("client", C.c_ulong), ("mask", C.c_uint)]
 class Val(C.Structure): _fields_ = [("spec", Spec), ("length", C.c_long), ("value", C.c_void_p)]
 r.XResQueryClientIds.argtypes = [C.c_void_p, C.c_long, C.POINTER(Spec), C.POINTER(C.c_long), C.POINTER(C.POINTER(Val))]
@@ -56,11 +75,28 @@ r.XResClientIdsDestroy.argtypes = [C.c_long, C.POINTER(Val)]
 d = x.XOpenDisplay(None)
 if not d:
     sys.exit(3)
-for w in sys.argv[1:]:
-    s, n, v = Spec(int(w), 2), C.c_long(), C.POINTER(Val)()   # 2 = XRES_CLIENT_ID_PID_MASK
-    if r.XResQueryClientIds(d, 1, C.byref(s), C.byref(n), C.byref(v)) == 0:
-        print(*[r.XResGetClientPid(C.pointer(v[i])) for i in range(n.value)])
-        r.XResClientIdsDestroy(n, v)
+IS_VIEWABLE = 2
+root = x.XDefaultRootWindow(d)
+todo, seen, pids = [root], set(), set()
+while todo and len(seen) < 100000:
+    w = todo.pop()
+    if w in seen:
+        continue
+    seen.add(w)
+    if w != root:
+        a = Attr()
+        if not x.XGetWindowAttributes(d, w, C.byref(a)) or a.map_state != IS_VIEWABLE:
+            continue   # 사라졌거나 보이지 않는 창 (그 자식도 보이지 않는다)
+        s, m, v = Spec(w, 2), C.c_long(), C.POINTER(Val)()   # 2 = XRES_CLIENT_ID_PID_MASK
+        if r.XResQueryClientIds(d, 1, C.byref(s), C.byref(m), C.byref(v)) == 0:
+            pids.update(r.XResGetClientPid(C.pointer(v[i])) for i in range(m.value))
+            r.XResClientIdsDestroy(m, v)
+    rt, parent, kids, n = W(), W(), C.POINTER(W)(), C.c_uint()
+    if x.XQueryTree(d, w, C.byref(rt), C.byref(parent), C.byref(kids), C.byref(n)):
+        todo.extend(kids[i] for i in range(n.value))
+        if kids:
+            x.XFree(kids)
+print(*sorted(p for p in pids if p > 0))
 """
 
 
@@ -87,8 +123,7 @@ class DesktopTools:
         if res.exit_code != 0:  # 빈 목록을 기준으로 삼으면 구간이 끝날 때 데스크톱 세션 전체를 낯선 프로세스로 본다
             raise SandboxError(f"프로세스 목록 실패 (exit {res.exit_code})")
         procs = _parse_ps(res.output or b"")
-        res = self._x(c, ["sh", "-c", 'xdotool search --onlyvisible --name . 2>/dev/null'
-                                      ' | xargs -r /usr/bin/python3 -I -c "$0"', _WINDOW_OWNERS])
+        res = self._x(c, ["/usr/bin/python3", "-I", "-c", _WINDOW_OWNERS])
         if res.exit_code != 0:
             return procs, set()
         wins = {int(x) for x in (res.output[0] or b"").split() if x.isdigit()}
