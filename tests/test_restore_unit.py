@@ -308,3 +308,41 @@ def test_recover_removes_superseded_restored_container_and_deleted_leftovers(sm)
     gone = sm.client.containers.run(name=f"agentbox-{sid2}-restore-1", image="x", labels={RESTORE_LABEL: sid2})
     sm.delete(sid2)
     assert sm.recover_restores() == [gone.id]
+
+
+# --- 데스크톱 준비: X 서버만이 아니라 Xfce 세션이 다 뜰 때까지 기다린다 (만들기·복원) ---
+class _Booting:
+    """X 서버는 바로 뜨고, Xfce 구성 요소는 ps를 볼 때마다 하나씩 늘어나는 컨테이너."""
+
+    def __init__(self, stages):
+        self.stages = list(stages)
+        self.ps_calls = 0
+
+    def exec_run(self, argv, **kw):
+        if "ps" in argv:
+            rows = self.stages[min(self.ps_calls, len(self.stages) - 1)]
+            self.ps_calls += 1
+            return ExecResult(0, "".join(f"{pid} {name}\n" for pid, name in rows).encode())
+        return ExecResult(0, (b"1280 800", b""))
+
+
+def _desk_tools(monkeypatch):
+    from agentbox import sandbox_desktop as D
+    monkeypatch.setattr(D, "_SESSION_SETTLE", 0.0)
+    monkeypatch.setattr(D.time, "sleep", lambda s: None)
+    return SandboxManager.__new__(SandboxManager)
+
+
+def test_wait_display_waits_for_xfce_session_to_settle(monkeypatch):
+    sm = _desk_tools(monkeypatch)
+    x = [(28, "Xvfb")]
+    core = [(83, "xfwm4"), (98, "xfsettingsd"), (102, "xfce4-panel"), (123, "xfdesktop")]
+    c = _Booting([x, x + core[:2], x + core, x + core + [(107, "Thunar")], x + core + [(107, "Thunar")]])
+    sm._wait_display(c, timeout=5)
+    assert c.ps_calls == 5     # 구성 요소가 다 뜬 뒤에도 목록이 그대로일 때까지 기다렸다
+
+
+def test_wait_display_fails_when_session_never_starts(monkeypatch):
+    sm = _desk_tools(monkeypatch)
+    with pytest.raises(SandboxError, match="Xfce"):
+        sm._wait_display(_Booting([[(28, "Xvfb")]]), timeout=0.05)
