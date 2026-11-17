@@ -616,13 +616,26 @@ class SandboxManager(DesktopTools):
         data = content.encode("utf-8")
         if len(data) > self.settings.max_write_bytes:
             raise SandboxError(f"파일이 너무 큼: {len(data)} bytes (최대 {self.settings.max_write_bytes})")
+        # 없는 상위 폴더는 함께 만든다. exec의 mkdir은 승인 대상이라, 하위 폴더에 결과를 쓸 때마다 승인을 받지 않게.
+        # 지시 파일 위치(.claude/ 등) 아래라면 정책이 이 도구 호출 자체를 승인으로 보내므로 승인 뒤에만 폴더가 생긴다
+        parents_created = False
+        parent = posixpath.dirname(p)
+        if parent != WORKSPACE:
+            res = c.exec_run(["sh", "-c", 'umask 002; [ -d "$1" ] && exit 0; mkdir -p -- "$1" && exit 10', "_", parent],
+                             user=AGENT_UID, demux=True)
+            if res.exit_code not in (0, 10):
+                raise SandboxError(_truncate(res.output[1]) or f"상위 폴더를 만들지 못함 ({res.exit_code})")
+            parents_created = res.exit_code == 10
         tmp = f"{p}.agentbox-tmp-{secrets.token_hex(3)}"
         self._write_chunks(c, tmp, data)
         res = c.exec_run(["mv", "-f", "--", tmp, p], user=AGENT_UID, demux=True)
         if res.exit_code != 0:
             c.exec_run(["rm", "-f", "--", tmp], user=AGENT_UID)
             raise SandboxError(_truncate(res.output[1]) or f"쓰기 실패 ({res.exit_code})")
-        return {"path": p, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        out = {"path": p, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest()}
+        if parents_created:
+            out["created_dirs"] = parent   # 이번에 새로 만든 가장 안쪽 상위 폴더 (그 위도 없었다면 같이 생겼다)
+        return out
 
     def delete_file(self, sid: str, path: str) -> dict[str, Any]:
         c = self._require_running(sid)

@@ -88,7 +88,7 @@ def ls(e):
 def test_write_and_read_file(env):
     e = env
     r = tool(e, "write_file", path="nodir/summary.md", content="x")
-    assert r.status_code == 400  # 없는 폴더는 만들어 주지 않는다
+    assert r.status_code == 200 and r.json()["result"]["created_dirs"] == "/workspace/nodir"  # 없는 상위 폴더는 함께 만든다
     r = tool(e, "write_file", path="outbox/summary.md", content="# 요약\n한글 OK\n")  # 결과함은 처음부터 있다
     assert r.status_code == 200, r.text
     assert tool(e, "read_file", path="/workspace/outbox/summary.md").json()["result"]["content"] == "# 요약\n한글 OK\n"
