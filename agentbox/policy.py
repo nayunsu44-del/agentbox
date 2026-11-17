@@ -174,6 +174,7 @@ def simple_programs(command: str) -> set[str] | None:
         return None
     programs: set[str] = set()
     start, skip = True, False
+    prog: str | None = None   # 지금 명령 구간의 프로그램 이름 (구분자에서 비운다)
     for t in tokens:
         if skip:
             if all(c in _LEX_PUNCT for c in t):
@@ -183,7 +184,7 @@ def simple_programs(command: str) -> set[str] | None:
             skip = False
             continue
         if all(c in ";&|()" for c in t):     # ; && || | |& ( ) 등. 다음 단어가 프로그램
-            start = True
+            start, prog = True, None
             continue
         if t != "<" and "<" in t and all(c in _LEX_PUNCT for c in t):
             # ';<' '&&<' '|<' '<<' '<&' 처럼 '<'가 다른 구분 문자와 붙은 토큰. 렉서는 한 덩어리로 주지만 bash는
@@ -193,6 +194,11 @@ def simple_programs(command: str) -> set[str] | None:
         if t == "<":
             skip = True
             continue
+        if not start and prog == "printf" and t.startswith("-"):
+            # printf -v NAME … 은 셸 변수를 바꾼다. 'printf -v PATH …; ls'면 뒤의 ls가 바뀐 PATH에서 찾는다.
+            # printf의 옵션처럼 보이는 인자는 모두 승인으로 보낸다. -v, -vNAME, \-v, "-v"처럼 가린 형태도 여기서 잡힌다.
+            # 변수로 목적지를 고르는 형태('$'·'`')는 위의 검사에서 이미 승인으로 간다. 일반 printf 서식은 그대로 허용.
+            return None
         if start:
             if "=" in t.split("/", 1)[0]:
                 return None          # LD_PRELOAD=… cat 같은 접두는 허용 목록 밖
@@ -205,6 +211,7 @@ def simple_programs(command: str) -> set[str] | None:
                 programs.add(name)
             else:
                 programs.add(t)
+            prog = t.rsplit("/", 1)[-1]
             start = False
     return programs
 

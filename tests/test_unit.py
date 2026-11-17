@@ -297,6 +297,59 @@ def test_true_and_false_are_in_the_default_allowlist():
         assert ALLOWLIST.decide("exec", {"command": cmd}).rule_id == "read-only-exec"
 
 
+# printf -v 는 셸 변수를 바꾼다 (PATH 등). 'printf -v PATH …; ls'는 바뀐 PATH에서 뒤의 ls를 찾으므로
+# 읽기 전용 허용 목록으로 실행하면 안 된다. 변수로 목적지를 고르는 형태도 승인으로 보낸다.
+@pytest.mark.parametrize("cmd", [
+    # printf -v 로 PATH를 바꾸는 형태 (띄어쓰기, 붙여쓰기, 따옴표·이스케이프로 가린 -v, 경로로 부른 printf)
+    "printf -v PATH '%s' /workspace/tools; ls -la",
+    "printf -v PATH '%s' /workspace/tools && cat a.txt",
+    "printf -vPATH '%s' /workspace/tools; ls",
+    "printf '-v' PATH '%s' /workspace/tools; ls",
+    "printf \\-v PATH '%s' /workspace/tools; ls",
+    "/usr/bin/printf -v PATH '%s' .; cat notes.txt",
+    "cd /workspace && printf -v PATH '%s' . ; ls",
+    "ls | printf -v PATH '%s' /workspace/tools; ls",
+    "printf -v PATH '%s' . \n ls",
+    # 변수나 명령 치환으로 목적지를 계산하는 형태
+    "printf -v \"$name\" x; ls",
+    "printf -v $name x; ls",
+    "printf -v \"$(echo PATH)\" '%s' /workspace/tools; ls",
+    "printf -v `echo PATH` '%s' /workspace/tools; ls",
+    "dest=PATH; printf -v $dest '%s' /workspace/tools; ls",
+    # 옵션처럼 보이는 인자는 보수적으로 모두 승인 (--도 포함)
+    "printf -- -v x; ls",
+    "printf '-%s\\n' x",
+])
+def test_printf_options_and_variable_targets_need_approval(cmd):
+    assert simple_programs(cmd) is None
+    assert ALLOWLIST.decide("exec", {"command": cmd}).rule_id == "exec-needs-approval"
+
+
+@pytest.mark.parametrize("cmd,progs", [
+    # 일반 printf 서식과 인자는 기존처럼 읽기 전용 허용 목록에 남는다
+    ("printf '%s\\n' hello", {"printf"}),
+    ("printf %s x", {"printf"}),
+    ("printf '%d items\\n' 3 | wc -l", {"printf", "wc"}),
+    ("echo a | printf '%s' b", {"echo", "printf"}),
+    ("printf 'a=%s\\n' x; ls -la", {"printf", "ls"}),
+    ("ls; printf done", {"ls", "printf"}),
+    ("printf '%s\\n' \"$HOME\"", None),           # 변수 치환은 원래도 승인
+])
+def test_plain_printf_keeps_read_only_behavior(cmd, progs):
+    assert simple_programs(cmd) == progs
+    decision = ALLOWLIST.decide("exec", {"command": cmd})
+    if progs is None:
+        assert decision.rule_id == "exec-needs-approval"
+    else:
+        assert decision.rule_id == "read-only-exec"
+
+
+def test_printf_option_check_resets_after_separator():
+    # 앞 명령의 printf 옵션이 뒤 명령의 인자를 승인으로 바꾸면 안 되고, 뒤 printf 옵션은 여전히 막힌다
+    assert simple_programs("printf x; ls -v") == {"printf", "ls"}
+    assert simple_programs("ls; printf -v x y") is None
+
+
 # 보안 검수 N-5: 터미널 승인 화면은 에이전트가 넣은 제어 문자로 다른 명령처럼 보이게 할 수 없다
 def test_terminal_approval_neutralizes_control_chars(monkeypatch, capsys):
     from agentbox import cli
