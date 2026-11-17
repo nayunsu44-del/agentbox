@@ -127,7 +127,7 @@ async def read_file(path: str) -> str:
 
 @mcp.tool()
 async def write_file(path: str, content: str) -> str:
-    """/workspace 아래에 텍스트 파일을 쓴다 (최대 1MB). 있는 파일을 덮어쓰면 그 직전에 스냅샷이 남는다."""
+    """/workspace 아래에 텍스트 파일을 쓴다 (최대 1MB). 없는 상위 폴더는 함께 만든다. 있는 파일을 덮어쓰면 그 직전에 스냅샷이 남는다."""
     return _text(await _call("write_file", {"path": path, "content": content}))
 
 

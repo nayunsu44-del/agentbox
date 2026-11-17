@@ -225,7 +225,7 @@ agentbox desktop sb_xxx                                     # 1회용 링크 (60
 | 도구 | 템플릿 | 기본 정책 | 메모 |
 | --- | --- | --- | --- |
 | `list_dir`, `read_file` | 모두 | 허용 | `/workspace`, `/source` 아래만. `read_file`은 일반 파일만 (FIFO·폴더 등은 거부, 30초 제한) |
-| `write_file` | 모두 | 허용 | `/workspace` 아래만, 최대 1MB. 있는 파일을 덮어쓰면 직전에 스냅샷. 로그에는 내용 대신 크기·sha256 |
+| `write_file` | 모두 | 허용 | `/workspace` 아래만, 최대 1MB. 없는 상위 폴더는 함께 만든다(그래서 폴더를 만들려고 `mkdir` 승인을 받을 필요가 없다). 있는 파일을 덮어쓰면 직전에 스냅샷. 로그에는 내용 대신 크기·sha256 |
 | `delete_file` | 모두 | 승인 필요 | 파일 하나만 (폴더 불가). 승인 후 스냅샷 뜨고 삭제 |
 | `exec` | 모두 | 읽기 전용 명령만 허용, 나머지는 승인 필요 | 허용 목록: `ls` `cat` `head` `tail` `wc` `grep` `stat` `du` `echo` 등 (`default_policy.yaml`의 `read-only-exec`). 파일 쓰기 리다이렉션(`>`), 변수·명령 치환, `sh`·`python`·`find` 같은 명령과 파일·폴더를 만드는 `mkdir`·`touch`는 승인 대상. 파일을 쓸 때는 `write_file`을 쓴다 |
 | `screenshot`, `click`, `type`, `key` | desktop | 허용 | 화면 인수 중에는 423. 로그에는 이미지 대신 크기·sha256. **승인 없이 컨테이너 안 임의 실행과 같음** (위 주의 참고). `click`·`type`·`key`는 GUI 구간이 시작될 때(60초 쉬었다 다시 입력)와 구간 중 10분마다 직전에 스냅샷, 구간이 끝나면 바뀐 파일을 `gui_changes`로 기록 |

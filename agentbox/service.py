@@ -246,7 +246,7 @@ class AgentBox:
         if tool == "screenshot":
             return {k: result.get(k) for k in ("width", "height", "bytes", "sha256")}
         if tool in ("write_file", "delete_file", "list_dir"):
-            return {k: v for k, v in result.items() if k in ("path", "bytes", "sha256", "deleted")}
+            return {k: v for k, v in result.items() if k in ("path", "bytes", "sha256", "deleted", "created_dirs")}
         return result
 
     def _resolved(self, sid: str, tool: str, args: dict[str, Any]) -> tuple[str | None, bool]:
@@ -289,6 +289,9 @@ class AgentBox:
                 effect = "삭제" if exists else "삭제 시도 (현재 존재하지 않음)"
             else:
                 effect = "덮어쓰기" if exists else "새 파일 만들기"
+                parent = p.rsplit("/", 1)[0]
+                if not exists and parent != WORKSPACE and not self.sandboxes.exists(sid, parent):
+                    notes.append(f"없는 상위 폴더를 함께 만든다: {parent}")
                 la = self._logged_args(tool, args)
                 notes.append(f"쓸 내용 {la['content_bytes']} bytes, sha256 {la['content_sha256'][:16]}…")
             real, failed = self._resolved(sid, tool, args)

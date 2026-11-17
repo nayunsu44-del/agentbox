@@ -190,6 +190,31 @@ def test_mkdir_and_touch_wait_for_approval(env):
     assert "AGENTS.md" not in names and ".claude" not in names
 
 
+def test_write_file_creates_missing_parent_dirs(env):
+    """mkdir이 승인 대상이 된 뒤에도 하위 폴더에 결과를 쓸 수 있게, write_file이 없는 상위 폴더를 함께 만든다."""
+    e = env
+    w = lambda path, content="x": e.c.post(f"/sandboxes/{e.sid}/tools/write_file",
+                                           json={"args": {"path": path, "content": content}}, headers=e.A)
+    r = w("reports/2026/q1.md", "# q1")
+    assert r.status_code == 200, r.text
+    assert r.json()["result"]["created_dirs"] == "/workspace/reports/2026"
+    out = exec_(e, "cat /workspace/reports/2026/q1.md; echo; stat -c '%u %A' /workspace/reports/2026").json()["result"]
+    lines = out["stdout"].splitlines()
+    assert lines[0] == "# q1" and lines[1].startswith("1000 drwxrwx")   # 에이전트 소유, 그룹(데스크톱 계정)도 쓸 수 있음
+    r = w("reports/2026/q2.md")
+    assert r.status_code == 200 and "created_dirs" not in r.json()["result"]       # 이미 있으면 만들지 않는다
+    # 지시 파일 위치 아래는 승인 대상이고, 승인 전에는 폴더도 만들지 않는다
+    r = w("sub/.claude/settings.json", "{}")
+    assert r.status_code == 202
+    apr = e.c.get(f"/approvals/{r.json()['approval_id']}", headers=e.H).json()
+    assert "없는 상위 폴더를 함께 만든다: /workspace/sub/.claude" in apr["preview"]["notes"]
+    assert "sub" not in ls(e)
+    # 상위 경로가 파일이면 실패로 알린다 (서버 오류가 아니라)
+    r = w("old-report.md/x.txt")
+    assert r.status_code in (400, 409, 422), r.text
+    assert "old-report.md" in ls(e)
+
+
 def test_source_is_read_only_and_network_none(env):
     e = env
     # /sys/class/net은 gVisor에서 다르게 보이므로 /proc/net/dev로 인터페이스 목록을 본다.
