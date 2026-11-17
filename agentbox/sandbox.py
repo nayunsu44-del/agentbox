@@ -445,6 +445,13 @@ class SandboxManager(DesktopTools):
             probe = c.exec_run(["true"], user="0:0")
             if probe.exit_code != 0:
                 raise SandboxError(f"복원한 컨테이너가 명령을 실행하지 못함 (exit {probe.exit_code})")
+            # 에이전트 계정으로 작업 폴더를 쓸 수 있는지. gVisor를 --overlay2=none 없이 쓰면 스냅샷에 /workspace가
+            # 빠진다(README). 그대로 바꾸면 작업이 든 기존 컨테이너를 지우고 빈 컨테이너만 남는다
+            ws = c.exec_run(["sh", "-c", 'test -d "$1" || exit 3; test -w "$1" || exit 4', "_", WORKSPACE],
+                            user=AGENT_UID)
+            if ws.exit_code != 0:
+                why = {3: "없음", 4: "에이전트 계정이 쓸 수 없음"}.get(ws.exit_code, f"확인 실패 (exit {ws.exit_code})")
+                raise SandboxError(f"복원한 컨테이너의 {WORKSPACE}: {why}. 이 스냅샷으로 바꾸지 않음")
             if tpl.desktop:
                 self._wait_display(c)
             # 그사이 삭제됐으면 되살리지 않는다. 삭제는 상태로 토큰을 폐기하므로 덮어쓰면 토큰이 다시 살아난다 (run-4 F6).
