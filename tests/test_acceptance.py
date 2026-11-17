@@ -176,6 +176,20 @@ def test_audit_readonly_blocks_execution(env):
     assert out == "no"
 
 
+def test_mkdir_and_touch_wait_for_approval(env):
+    """mkdir·touch는 '읽기 전용' 허용 목록에서 뺐다. 승인 없이 에이전트 지시 파일(AGENTS.md, .claude/)을
+    만들 수 있었다. 승인 대기(202)에서 멈추고 아무것도 만들지 않는다. 읽기 명령은 그대로 바로 실행된다."""
+    e = env
+    for cmd in ("touch /workspace/AGENTS.md", "mkdir -p /workspace/.claude"):
+        r = exec_(e, cmd)
+        assert r.status_code == 202, (cmd, r.text)
+        assert r.json()["approval_id"]
+    r = exec_(e, "ls -A /workspace")
+    assert r.status_code == 200
+    names = r.json()["result"]["stdout"].split()
+    assert "AGENTS.md" not in names and ".claude" not in names
+
+
 def test_source_is_read_only_and_network_none(env):
     e = env
     # /sys/class/net은 gVisor에서 다르게 보이므로 /proc/net/dev로 인터페이스 목록을 본다.

