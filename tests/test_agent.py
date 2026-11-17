@@ -29,7 +29,7 @@ SCRIPT = [
 ]
 
 
-def openai_mock(record):
+def openai_mock(record, script=SCRIPT):
     app = FastAPI()
 
     @app.post("/chat/completions")
@@ -37,8 +37,8 @@ def openai_mock(record):
         body = await req.json()
         record.append({"headers": dict(req.headers), "body": body})
         n = sum(1 for m in body["messages"] if m["role"] == "tool")
-        if n < len(SCRIPT):
-            name, args = SCRIPT[n]
+        if n < len(script):
+            name, args = script[n]
             msg = {"role": "assistant", "content": None, "tool_calls": [
                 {"id": f"call_{n}", "type": "function",
                  "function": {"name": name, "arguments": json.dumps(args)}}]}
@@ -50,7 +50,7 @@ def openai_mock(record):
     return app
 
 
-def anthropic_mock(record):
+def anthropic_mock(record, script=SCRIPT):
     app = FastAPI()
 
     @app.post("/v1/messages")
@@ -60,8 +60,8 @@ def anthropic_mock(record):
         results = [b for m in body["messages"] if m["role"] == "user" and isinstance(m["content"], list)
                    for b in m["content"] if b.get("type") == "tool_result"]
         n = len(results)
-        if n < len(SCRIPT):
-            name, args = SCRIPT[n]
+        if n < len(script):
+            name, args = script[n]
             content = [{"type": "text", "text": f"{n + 1}단계"},
                        {"type": "tool_use", "id": f"toolu_{n}", "name": name, "input": args}]
             stop = "tool_use"
@@ -136,13 +136,13 @@ def test_agent_loop_approved(plane, provider):
     if provider == "openai":
         assert first["headers"]["authorization"] == "Bearer sk-test-123"
         assert first["body"]["messages"][0]["role"] == "system"
-        assert {t["function"]["name"] for t in first["body"]["tools"]} == {"list_dir", "read_file", "exec"}
+        assert {t["function"]["name"] for t in first["body"]["tools"]} == {"list_dir", "read_file", "write_file", "exec"}
         ids = [m["tool_call_id"] for m in record[-1]["body"]["messages"] if m["role"] == "tool"]
         assert ids == ["call_0", "call_1", "call_2"]
     else:
         assert first["headers"]["x-api-key"] == "sk-test-123"
         assert "샌드박스" in first["body"]["system"]
-        assert {t["name"] for t in first["body"]["tools"]} == {"list_dir", "read_file", "exec"}
+        assert {t["name"] for t in first["body"]["tools"]} == {"list_dir", "read_file", "write_file", "exec"}
     # 감사 로그에 에이전트 요청·승인·실행이 남고 체인이 온전하다
     events = [e["event"] for e in human_client.get("/audit", headers=H).json()]
     assert events.count("tool_request") >= 4 and "approval_decision" in events and "snapshot" in events
@@ -171,3 +171,33 @@ def test_agent_token_cannot_be_human(capsys, monkeypatch):
 def test_make_chat_requires_model():
     with pytest.raises(ValueError):
         ag.make_chat(ag.LLMConfig(provider="openai", model=""))
+
+
+# 대본: 파일 읽기 → 하위 폴더에 요약 쓰기. write_file은 승인 없이 바로 실행되고 없는 폴더도 만든다
+WRITE_SCRIPT = [
+    ("read_file", {"path": "/workspace/old-report.md"}),
+    ("write_file", {"path": "/workspace/outbox/2026/summary.md", "content": "# 요약\n매출 10억\n"}),
+]
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+def test_agent_saves_result_with_write_file_without_approval(plane, provider):
+    """결과를 파일로 남길 때 exec 리다이렉션 대신 write_file을 쓰므로 승인을 기다리지 않는다."""
+    app, human_client, H, sb = plane
+    record: list = []
+    mock = openai_mock(record, WRITE_SCRIPT) if provider == "openai" else anthropic_mock(record, WRITE_SCRIPT)
+    cfg = ag.LLMConfig(provider=provider, base_url="http://llm", model="test-model", api_key="sk-test-123")
+    chat = ag.make_chat(cfg, client=TestClient(mock))
+    pending: list[str] = []
+    tools = ag.ToolClient("http://plane", sb["id"], sb["agent_token"], client=TestClient(app),
+                          poll_interval=0.1, on_pending=pending.append)
+    res = ag.run("보고서를 요약해 결과함에 둬", chat, tools)
+    assert res.stopped == "done" and not pending
+    assert [c["name"] for c in res.tool_calls] == ["read_file", "write_file"]
+    written = json.loads(res.tool_calls[1]["result"])
+    assert written["path"] == "/workspace/outbox/2026/summary.md" and written["created_dirs"] == "/workspace/outbox/2026"
+    got = human_client.post(f"/sandboxes/{sb['id']}/tools/read_file",
+                            json={"args": {"path": "/workspace/outbox/2026/summary.md"}}, headers=H).json()
+    assert got["result"]["content"] == "# 요약\n매출 10억\n"
+    system = record[0]["body"]["messages"][0]["content"] if provider == "openai" else record[0]["body"]["system"]
+    assert "write_file" in system

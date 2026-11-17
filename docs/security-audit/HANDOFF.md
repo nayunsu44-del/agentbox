@@ -359,6 +359,6 @@ pytest                                                 # 160 passed
 
 - **검토만 하고 고치지 않은 것:** 복원 전 `end_desktop()`(GUI 변경 기록 `bursts.end`는 이전 컨테이너가 있을 때 해야 하므로 순서 유지), 준비 대기의 제한 시간 넘김(리뷰 P3, 늦게 확인돼도 실제로 준비된 것이라 성공을 실패로 바꾸면 손해).
 - **남은 일:**
-  - 내장 에이전트 루프(`agentbox agent`)에는 `write_file`이 없어(`list_dir`·`read_file`·`exec`), 결과를 저장할 때마다 exec 리다이렉션 승인이 필요하다. MCP 서버에는 있다. 붙일지는 소유자가 정한다.
+  - ~~내장 에이전트 루프에 `write_file`이 없음~~ → 소유자 결정으로 추가했다(PR #39). 도구 4개, 시스템 프롬프트가 결과를 `write_file`로 `/workspace/outbox`에 쓰라고 이른다.
   - 빈 폴더만 만드는 것은 여전히 exec `mkdir` 승인이다.
 - **이 클라우드 컨테이너에서 Docker로 검증하는 법:** `dockerd`가 설치돼 있어 root로 바로 띄울 수 있다(`nohup dockerd >/tmp/dockerd.log 2>&1 &`, 이미지 저장소는 overlayfs). `docker pull buildpack-deps:noble-curl`은 Docker Hub 요청 제한(429)에 걸리면 잠시 뒤 다시 받는다. `docker build -t agentbox-desktop:0.1 images/desktop` 뒤 `pytest -q -rs`로 478개, 건너뜀 0을 확인했다. 런타임은 runc뿐이다(gVisor 없음).
