@@ -102,8 +102,13 @@ def command_names(command: str) -> set[str]:
 # 그건 진짜 파일 리다이렉션이므로 벗겨내지 않는다(뒤의 '>' 검사가 승인으로 보내도록).
 # 뒤가 '}' '~' '\;' 같은 글자여도 bash는 단어를 잇는다: 'echo x >&2~/../CLAUDE.md'는 fd 복제가 아니라
 # '2~/../CLAUDE.md' 파일에 쓴다(mkdir 2~ 뒤). 그래서 단어가 거기서 끝날 때(공백·구분자·문자열 끝)만 벗긴다 (퍼저로 찾음).
+# 앞의 숫자는 단어가 그 숫자로 시작할 때만 fd 번호다. 'ls2>&1'에서 bash는 'ls2'라는 프로그램을 찾고 '>&1'만
+# 리다이렉션으로 본다. 숫자까지 벗기면 정책은 'ls'로 보고 허용한다 (/bin/diff3가 그렇게 돈다. 퍼저로 찾음).
 _WORD_END = r"(?=[ \t\n;&|()<>]|$)"
-_DEVNULL = re.compile(rf"\d*>>?[ \t]*/dev/null{_WORD_END}|\d*>&\d+{_WORD_END}")
+_FD = r"(?:(?<![^ \t\n;&|()<>])\d+)?"
+# 역슬래시 뒤의 '>'는 글자다. 'wc \>&2'에서 bash는 '>'를 인자로 넘기고 '&' 뒤의 '2'를 새 명령으로 돌린다.
+_GT = r"(?<!\\)>"
+_DEVNULL = re.compile(rf"{_FD}{_GT}>?[ \t]*/dev/null{_WORD_END}|{_FD}{_GT}&\d+{_WORD_END}")
 
 # bash에서 '#'이 주석을 여는 자리(줄 맨 앞, 또는 따옴표 밖 공백·구분자 바로 뒤).
 _COMMENT_BOUNDARY = set(" \t\n\r;&|()")
@@ -169,6 +174,9 @@ def simple_programs(command: str) -> set[str] | None:
         lex = shlex.shlex(cmd.replace("\n", " ; "), posix=True, punctuation_chars=";&|()<>")
         lex.whitespace_split = True
         lex.commenters = ""
+        # bash는 공백·탭·줄바꿈에서만 단어를 끊는다. shlex 기본값은 '\r'도 공백으로 봐서 'cd\r'을 'cd'로 읽는데,
+        # bash는 'cd\r'이라는 이름을 찾는다. '\r'을 단어 글자로 남겨 허용 목록과 맞지 않게 한다 (퍼저로 찾음).
+        lex.whitespace = " \t\n"
         tokens = list(lex)
     except ValueError:
         return None
