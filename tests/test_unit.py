@@ -291,6 +291,27 @@ def test_plain_input_redirect_and_system_paths_still_read_only(cmd, progs):
     assert ALLOWLIST.decide("exec", {"command": cmd}).rule_id == "read-only-exec"
 
 
+@pytest.mark.parametrize("cmd", [
+    "touch /workspace/AGENTS.md",          # 승인 없이 에이전트 지시 파일을 만들던 것
+    "mkdir -p /workspace/.claude",
+    "touch /workspace/.claude/settings.json",
+    "touch -d 2000-01-01 /workspace/a.txt",
+    "mkdir 2~",                             # 리다이렉션 우회를 잇던 디딤돌 ('>&2~/../CLAUDE.md')
+    "ls && mkdir d",
+    "/usr/bin/touch x",
+])
+def test_mkdir_and_touch_need_approval(cmd):
+    """mkdir·touch는 파일 시스템을 바꾼다. '읽기 전용' 목록에 있어 승인 없이 돌던 것을 뺐다."""
+    d = ALLOWLIST.decide("exec", {"command": cmd})
+    assert d.action == "require_approval" and d.rule_id == "exec-needs-approval"
+
+
+@pytest.mark.parametrize("cmd", ["ls -la /workspace", "cat a.txt | wc -l", "test -d /workspace/.claude",
+                                 "stat AGENTS.md", "grep -r x . && echo ok"])
+def test_read_commands_still_run_without_approval(cmd):
+    assert ALLOWLIST.decide("exec", {"command": cmd}).rule_id == "read-only-exec"
+
+
 def test_true_and_false_are_in_the_default_allowlist():
     # YAML이 따옴표 없는 true·false를 불리언으로 읽어 목록에 'True'·'False'가 들어가 있었다
     for cmd in ("true", "false"):

@@ -140,7 +140,10 @@ def test_delete_file_needs_approval_snapshot_and_restore(env):
 
 def test_delete_file_refuses_directory(env):
     e = env
-    tool(e, "exec", command="mkdir -p d")
+    r = tool(e, "exec", command="mkdir -p d")       # mkdir도 승인 대상 (기본 정책)
+    assert r.status_code == 202
+    e.c.post(f"/approvals/{r.json()['approval_id']}", json={"decision": "approve"}, headers=e.H)
+    assert "d" in ls(e)
     aid = tool(e, "delete_file", path="d").json()["approval_id"]
     res = e.c.post(f"/approvals/{aid}", json={"decision": "approve"}, headers=e.H).json()
     assert res["status"] == "failed"

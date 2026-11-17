@@ -5,6 +5,8 @@
 #
 # exec는 허용 목록 방식이다. 아래 읽기 전용 프로그램만 쓰는 단순 명령만 바로 실행하고,
 # 나머지 exec(쓰기 리다이렉션 >, 변수·명령 치환, sh·python·find 등)는 모두 사람 승인을 받는다.
+# 파일·폴더를 만드는 mkdir·touch도 목록에 넣지 않는다. 승인 없이 에이전트 지시 파일(AGENTS.md, .claude/)을
+# 만들 수 있고, 리다이렉션 우회를 잇는 디딤돌이 된다 ('mkdir 2~' 뒤 '>&2~/../CLAUDE.md').
 # 파일을 쓸 때는 write_file 도구를 쓰면 승인 없이 된다 (덮어쓰면 스냅샷). 에이전트 지시 파일만 예외로 승인을 받는다.
 #
 # match 종류: commands(exec에 이 프로그램이 하나라도), only_commands(exec의 프로그램이 모두 이 목록 안),
@@ -36,7 +38,7 @@ rules:
     match:
       only_commands: [ls, cat, head, tail, wc, grep, egrep, fgrep, stat, file, du, df, pwd, cd, echo, printf,
                       date, id, whoami, uname, basename, dirname, realpath, readlink, sha256sum, sha1sum,
-                      md5sum, diff, cmp, cut, tr, nl, "true", "false", test, mkdir, touch]
+                      md5sum, diff, cmp, cut, tr, nl, "true", "false", test]
     action: allow
     reason: 읽기 전용 명령
   - id: exec-needs-approval
