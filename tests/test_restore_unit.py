@@ -24,13 +24,19 @@ class FakeContainer:
         self.image = image
         self.labels = dict(labels or {})
         self.exec_code = d.new_exec_code
+        self.workspace_code = d.new_workspace_code
         self.execs: list = []
+        self.users: list = []
 
     def exec_run(self, argv, **kw):
         if self.id not in self.d.by_id:
             raise NotFound("container gone")
         self.execs.append(argv)
-        return ExecResult(self.exec_code, (b"", b"") if kw.get("demux") else b"")
+        self.users.append(kw.get("user"))
+        code = self.exec_code
+        if argv[:2] == ["sh", "-c"] and "test -w" in argv[2]:
+            code = code or self.workspace_code
+        return ExecResult(code, (b"", b"") if kw.get("demux") else b"")
 
     def remove(self, force=False):
         if self.id in self.d.refuse_remove:
@@ -93,6 +99,7 @@ class FakeDocker:
         self.by_id: dict[str, FakeContainer] = {}
         self.fail_start = False
         self.new_exec_code = 0
+        self.new_workspace_code = 0
         self.refuse_remove: set[str] = set()
         self.on_run = None
         self.containers = FakeContainers(self)
@@ -131,6 +138,7 @@ def test_restore_swaps_after_new_container_is_ready(sm):
     assert new.labels[RESTORE_LABEL] == sid
     assert new.image.startswith("agentbox-snap:")
     assert new.execs[0] == ["true"]                         # 바꾸기 전에 명령이 도는지 확인
+    assert new.execs[1][-1] == "/workspace" and new.users[1] == S.AGENT_UID   # 에이전트 계정으로 작업 폴더 확인
     assert _names(sm) == [f"agentbox-{sid}"]
 
 
@@ -154,6 +162,18 @@ def test_restore_probe_failure_keeps_old_container(sm):
     with pytest.raises(SandboxError, match="명령을 실행하지 못함"):
         sm.restore(sid, snap)
     assert sm.get(sid)["container_id"] == old and _names(sm) == [f"agentbox-{sid}"]
+
+
+@pytest.mark.parametrize("code,why", [(3, "없음"), (4, "쓸 수 없음")])
+def test_restore_without_writable_workspace_keeps_old_container(sm, code, why):
+    """gVisor를 --overlay2=none 없이 쓰면 스냅샷에 /workspace가 빠진다. 그 스냅샷으로 바꾸면 작업이 든
+    기존 컨테이너를 지우고 빈 컨테이너만 남으므로, 에이전트 계정으로 쓸 수 있는지 보고 아니면 바꾸지 않는다."""
+    sid, old, snap = _make(sm)
+    sm.client.new_workspace_code = code
+    with pytest.raises(SandboxError, match=why):
+        sm.restore(sid, snap)
+    assert sm.get(sid)["container_id"] == old and _names(sm) == [f"agentbox-{sid}"]
+    assert sm.exec(sid, "ls")["exit_code"] == 0
 
 
 def test_restore_desktop_not_ready_keeps_old_container(sm, monkeypatch):
