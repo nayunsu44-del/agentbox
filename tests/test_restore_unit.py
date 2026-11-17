@@ -322,6 +322,8 @@ class _Booting:
         if "ps" in argv:
             rows = self.stages[min(self.ps_calls, len(self.stages) - 1)]
             self.ps_calls += 1
+            if rows is None:    # ps 실패
+                return ExecResult(1, b"")
             return ExecResult(0, "".join(f"{pid} {name}\n" for pid, name in rows).encode())
         return ExecResult(0, (b"1280 800", b""))
 
@@ -346,3 +348,14 @@ def test_wait_display_fails_when_session_never_starts(monkeypatch):
     sm = _desk_tools(monkeypatch)
     with pytest.raises(SandboxError, match="Xfce"):
         sm._wait_display(_Booting([[(28, "Xvfb")]]), timeout=0.05)
+
+
+@pytest.mark.parametrize("gap", ["ps_failed", "part_missing"])
+def test_wait_display_restarts_settle_after_a_gap(monkeypatch, gap):
+    """같은 목록을 두 번 봤어도 그 사이 ps가 실패했거나 구성 요소가 빠졌으면 안정으로 치지 않고 다시 센다."""
+    sm = _desk_tools(monkeypatch)
+    full = [(28, "Xvfb"), (83, "xfwm4"), (98, "xfsettingsd"), (102, "xfce4-panel"), (123, "xfdesktop")]
+    middle = None if gap == "ps_failed" else full[:3]
+    c = _Booting([full, middle, full, full])
+    sm._wait_display(c, timeout=5)
+    assert c.ps_calls == 4     # 사이가 끊긴 뒤 같은 목록을 연속으로 두 번 본 다음에야 준비

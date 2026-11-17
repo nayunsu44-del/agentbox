@@ -116,16 +116,17 @@ class DesktopTools:
         while time.monotonic() < deadline:
             # root로 본다. 화면 계정으로 돌리면 이 ps 자체가 화면 계정 프로세스 목록을 바꾼다
             res = c.exec_run(_timed(_X_TIMEOUT, "ps", "-u", DESKTOP_USER, "-o", "pid=,comm="))
-            if res.exit_code == 0:
-                rows = [ln.split(None, 1) for ln in (res.output or b"").decode(errors="replace").splitlines()]
+            rows = [ln.split(None, 1) for ln in (res.output or b"").decode(errors="replace").splitlines()]
+            names = {r[1].strip() for r in rows if len(r) == 2}
+            if res.exit_code != 0 or not _SESSION_PARTS <= names:
+                last = None   # 못 봤거나 덜 뜬 사이는 안정으로 치지 않는다. 연속으로 본 시간만 센다
+            else:
                 pids = frozenset(r[0] for r in rows if r)
-                names = {r[1].strip() for r in rows if len(r) == 2}
                 now = time.monotonic()
-                if _SESSION_PARTS <= names:
-                    if pids != last:
-                        last, since = pids, now
-                    elif now - since >= _SESSION_SETTLE:
-                        return
+                if pids != last:
+                    last, since = pids, now
+                elif now - since >= _SESSION_SETTLE:
+                    return
             time.sleep(0.3)
         raise SandboxError("데스크톱 세션(Xfce)이 다 뜨지 않음")
 
