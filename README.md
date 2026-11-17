@@ -50,7 +50,7 @@ Debian 13 KVM VM(4 vCPU, `/dev/kvm` 없음), runsc release-20261012.0에서 검�
 | `exec true` 1회 | 27 ms | 30 ms |
 | 스냅샷 | 174 ms | 192 ms |
 
-시간은 이미지 캐시 상태에서 5회 평균. 지금 전체 테스트는 runsc에서 119개가 통과한다 (데스크톱 이미지가 없으면 데스크톱 항목은 건너뜀). 데모도 runsc에서 전송 실패, 승인 대기, 원본 무사, 해시 체인 검증, 복원 후 파일 4개 복구까지 모두 같게 나온다.
+시간은 이미지 캐시 상태에서 5회 평균. 이 검증 당시 전체 테스트는 runsc에서 119개가 통과했다 (데스크톱 이미지가 없으면 데스크톱 항목은 건너뜀). 지금의 테스트 수는 아래 "테스트" 절에 있다. 데모도 runsc에서 전송 실패, 승인 대기, 원본 무사, 해시 체인 검증, 복원 후 파일 4개 복구까지 모두 같게 나온다.
 
 ### docker compose + TLS로 설치 (NF-5)
 
@@ -115,7 +115,7 @@ agentbox approve        # 승인 요청이 오면 여기서 y/N
 
 ### LLM API로 에이전트 돌리기
 
-`agentbox agent`가 LLM API를 직접 부르는 에이전트 루프다. LLM은 도구 3개만 쓰고, 도구는 에이전트 토큰으로 컨트롤 플레인을 부른다. 승인 대기가 걸리면 결정이 날 때까지 기다렸다가 결과를 LLM에 넘긴다.
+`agentbox agent`가 LLM API를 직접 부르는 에이전트 루프다. LLM은 도구 4개(`list_dir`, `read_file`, `write_file`, `exec`)만 쓰고, 도구는 에이전트 토큰으로 컨트롤 플레인을 부른다. 승인 대기가 걸리면 결정이 날 때까지 기다렸다가 결과를 LLM에 넘긴다.
 
 ```bash
 agentbox create ./demo/reports --env-file agent.env      # 사람 쪽
@@ -261,7 +261,7 @@ agentbox ui                    # 1회용 로그인 링크 (60초). 또는 http:/
 | 쓰기 | 기본 정책 `instruction-file-write-needs-approval`이 `write_file`을 사람 승인으로 보낸다. 대상은 컨테이너 안에서 링크를 푼 실제 경로로도 본다(`cfg -> .claude`이면 `cfg/settings.json`도, 링크 `cfg` 자체도 지시 파일). 링크를 풀지 못하면 지시 파일로 보고 승인을 받는다. 승인 카드는 쓸 내용 앞 4096자를 공백 그대로 보이고, '전체 내용 보기'에서 전체를 본다. 4096자를 넘으면 카드에서는 거절만 할 수 있고, 승인은 전체 내용 화면에서 끝까지 본 뒤에만 한다. 미리보기가 실패해도(컨테이너 pid 상한 등) 지시 파일 표시와 '실제 대상을 확인하지 못함' 경고는 남는다. 쓸 내용이 `max_write_bytes`를 넘으면 승인 요청을 만들지 않는다(413). `exec`로 쓰는 경로(`>`, `cp`, `ln`, `sh`)는 원래 승인 대상이다 |
 | 결과함 | 웹 화면에 배지와 경고를 붙이고, JSON API(`GET /sandboxes/{id}/outbox`)에 `instruction_file`을 넣는다. 내려받으면 반출 기록에도 남는다 |
 
-알아보는 이름: `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `AGENT.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.goosehints`, `copilot-instructions.md`, `.mcp.json`, 그리고 `.claude/`, `.cursor/`, `.windsurf/`, `.continue/`, `.gemini/`, `.codex/`, `.roo/`, `.github/{instructions,prompts,chatmodes}/` 아래 전부 (유니코드 NFKD로 풀어 결합 문자와 보이지 않는 서식 문자(U+200B 등)를 떼고 casefold해서 대소문자·전각·`ſ`·`İ`·`ı`·악센트가 붙은 글자를 같게 보고, 이름 끝의 점·공백과 첫 `:` 뒤는 떼고 본다. Windows가 저장할 때 끝의 점·공백을 떼고 NTFS는 `CLAUDE.md::$DATA`를 `CLAUDE.md`로 열기 때문이다). 목록은 `agentbox/instruction_files.py`에 있다.
+알아보는 이름: `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.md`, `AGENTS.override.md`, `AGENT.md`, `GEMINI.md`, `.cursorrules`, `.windsurfrules`, `.clinerules`, `.goosehints`, `copilot-instructions.md`, `.mcp.json`, 그리고 `.claude/`, `.cursor/`, `.windsurf/`, `.clinerules/`, `.continue/`, `.gemini/`, `.codex/`, `.roo/`, `.github/{instructions,prompts,chatmodes}/` 아래 전부 (유니코드 NFKD로 풀어 결합 문자와 보이지 않는 서식 문자(U+200B 등)를 떼고 casefold해서 대소문자·전각·`ſ`·`İ`·`ı`·악센트가 붙은 글자를 같게 보고, 이름 끝의 점·공백과 첫 `:` 뒤는 떼고 본다. Windows가 저장할 때 끝의 점·공백을 떼고 NTFS는 `CLAUDE.md::$DATA`를 `CLAUDE.md`로 열기 때문이다). 목록은 `agentbox/instruction_files.py`에 있다.
 
 읽기까지 막고 싶으면 정책에 규칙을 더한다 (`match.instruction_files`는 `list_dir`·`read_file`·`write_file`·`delete_file`의 `path`에 맞는다):
 
@@ -322,6 +322,7 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 | `AGENTBOX_APPROVAL_TIMEOUT` | `300` | 승인 대기 상한(초) |
 | `AGENTBOX_DESKTOP_IMAGE` | `agentbox-desktop:0.1` | desktop 템플릿 이미지 |
 | `AGENTBOX_DESKTOP_MEM` · `_CPUS` · `_PIDS` | `1536m` · `2.0` · `1024` | desktop 샌드박스 자원 상한 |
+| `AGENTBOX_APPROVAL_WAIT` | `900` | (MCP 서버 쪽) 승인 결정·화면 반환을 기다리는 최대 초. 서버의 승인 기한(`AGENTBOX_APPROVAL_TIMEOUT`)이 먼저 끝날 수 있다 |
 | `AGENTBOX_TAKEOVER_IDLE` | `600` | 인수한 사람이 연결 없이 이만큼 지나면 에이전트에게 돌려줌(초) |
 | `AGENTBOX_DOCKER_CLI` | `docker` | 화면 연결에 쓰는 docker 명령 |
 | `AGENTBOX_SECURE_COOKIE` | (끔) | `1`이면 쿠키에 Secure |
@@ -357,7 +358,7 @@ claude -p "오래된 보고서를 지우고 요약본을 결과함에 둬" --too
 pytest           # Docker가 있어야 수용 테스트까지 돈다
 ```
 
-Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테스트는 건너뛴다. GitHub Actions(`.github/workflows/ci.yml`)는 PR과 `main` 푸시마다 단위 테스트(Python 3.11·3.13)와, 데스크톱 이미지를 빌드한 실제 Docker 위의 전체 테스트를 돌린다. 전체 테스트에서 하나라도 건너뛰면 실패로 본다.
+Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테스트는 건너뛴다. 2026-11-17 기준 전체 478개다(runc, 데스크톱 포함, 건너뜀 0). GitHub Actions(`.github/workflows/ci.yml`)는 PR과 `main` 푸시마다 단위 테스트(Python 3.11·3.13)와, 데스크톱 이미지를 빌드한 실제 Docker 위의 전체 테스트를 돌린다. 전체 테스트에서 하나라도 건너뛰면 실패로 본다.
 
 문서의 수용 테스트와의 대응:
 
@@ -376,6 +377,9 @@ Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테
 | (추가) LLM API 루프: 승인·거절 후 결과 전달, 두 API 형식 | `tests/test_agent.py` |
 | (추가) 에이전트 지시 파일 표시·쓰기 승인 (IF-1) | `tests/test_instruction_files.py`, `tests/test_instruction_files_acceptance.py` |
 | (M4) 재시작 뒤 로그인 유지, 남은 인수를 `server_restart`로 짝 맞춤, 쿠키·티켓 해시 저장, Secure 쿠키, 평문 바인딩 거부 | `tests/test_m4_unit.py`, `tests/test_m4_acceptance.py` |
+| (추가) 복원이 실패해도 기존 컨테이너·DB 유지, 복원 중 도구 호출 거절, 서버가 복원 도중 죽은 뒤 정리, 데스크톱 준비 대기 | `tests/test_restore_unit.py`, `tests/test_m4_acceptance.py::test_restore_racing_delete_does_not_resurrect` |
+| (추가) `mkdir`·`touch`는 승인 대기, `write_file`이 없는 상위 폴더를 만듦 | `test_mkdir_and_touch_wait_for_approval`, `test_write_file_creates_missing_parent_dirs` |
+| (추가) GUI 구간이 데스크톱 세션을 멈추지 않음, 창이 생겼다 사라져도 창 주인을 빠뜨리지 않음 | `test_gui_background_jobs_stopped_when_burst_closes`, `test_window_owners_survive_windows_coming_and_going` |
 
 ## 요구사항 진행 상황
 
@@ -414,8 +418,9 @@ Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테
 ## 알려진 한계
 
 - **정책은 첫 번째 방어선일 뿐이다.** 기본 정책은 exec를 허용 목록으로 다뤄 `find -delete`, `python -c`, `r$(echo m)` 같은 우회도 승인 앞에서 멈추지만, 허용 목록 안의 명령이 예상 밖의 일을 할 가능성은 남는다. 최종 방어선은 네트워크 차단과 원본 읽기 전용이다. 데모가 일부러 느슨한 정책으로 `/dev/tcp` 전송을 통과시키고 네트워크에서 막히는 것을 보여주는 이유다.
-- 허용 목록 때문에 쓰기 리다이렉션(`echo a > f`)이나 스크립트 실행도 매번 승인이 필요하다. 에이전트가 파일을 쓸 때는 `write_file`을 쓰게 하면 승인 횟수가 줄어든다. 운영에 맞게 `AGENTBOX_POLICY`로 목록을 바꾼다.
+- 허용 목록 때문에 쓰기 리다이렉션(`echo a > f`), 스크립트 실행, 파일·폴더를 만드는 `mkdir`·`touch`도 매번 승인이 필요하다. 에이전트가 파일을 쓸 때는 `write_file`을 쓰게 하면 승인 횟수가 줄어든다(없는 상위 폴더도 함께 만든다). MCP 서버와 내장 에이전트 루프(`agentbox agent`) 모두 이 도구가 있고, 내장 에이전트의 시스템 프롬프트도 결과를 `write_file`로 저장하라고 이른다. 운영에 맞게 `AGENTBOX_POLICY`로 목록을 바꾼다.
 - **끝부분을 잘라낸 로그는 체인만으로 못 잡는다.** 중간 수정·삭제는 잡지만, 마지막 몇 줄을 통째로 지우면 남은 체인은 온전하다. 마지막 해시를 바깥(다른 서버, 인쇄물 등)에 주기적으로 남기는 앵커가 필요하다. 정리의 기준점도 같은 DB 안에 있으므로, DB 파일을 직접 고칠 수 있는 사람은 기준점까지 함께 위조할 수 있다.
+- 복원은 새 컨테이너가 준비된 뒤에 바꾸므로, 그동안(데스크톱은 Xfce가 다 뜰 때까지 2~3초) 그 샌드박스의 도구 호출은 "복원 중"으로 거절된다. 복원을 요청하기 전에 시작한 호출은 이전 컨테이너에서 끝나고 결과는 전환 때 버려진다. 복원 도중 서버가 죽어 남은 컨테이너는 다음 시작 때 정리하는데, 이 정리는 같은 데이터 폴더에 서버가 하나만 돈다고 가정한다.
 - 실행이 끝난 뒤 결과 기록이 실패하면 그 실행은 되돌릴 수 없다. 다음 호출은 요청 기록 단계에서 막힌다.
 - **LLM 공급자에게 가는 데이터는 막지 못한다.** 샌드박스는 네트워크가 막혀 있어 컨테이너 안에서 밖으로 보낼 수 없지만, 에이전트 루프(`agentbox agent`, MCP 클라이언트)는 도구 결과(읽은 파일 내용, 명령 출력, 파일 목록, 화면 캡처)를 대화에 담아 LLM API로 보낸다. 그래서 에이전트가 본 `/workspace` 내용은 공급자(OpenAI, Anthropic 등) 서버로 나간다. 이 요청은 에이전트 쪽에서 나가므로 컨트롤 플레인은 보지도 막지도 기록하지도 않는다. 지금은 밖으로 내보내면 안 되는 자료에는 망 안의 모델(`AGENTBOX_LLM_BASE_URL`, vLLM·Ollama 등)을 쓰고, 에이전트에게 보여도 되는 폴더만 `source_dir`로 넣는 것으로 다룬다. 추후 개선 후보:
   - 도구 결과를 에이전트에게 돌려주기 전에 비밀값을 가린다(감사 로그의 가림 규칙 재사용).
@@ -430,7 +435,7 @@ Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테
 - 인수 기록의 `client_bytes`는 브라우저가 보낸 RFB 바이트 수(화면 갱신 요청 포함)다. 키·마우스 입력 하나하나를 기록하지는 않는다.
 - 데스크톱 이미지는 약 1.35GB이고, 데스크톱 샌드박스 하나가 메모리 1.5GB·CPU 2개를 상한으로 쓴다.
 - 검수(2026-10-22)에서 나온 것 중 아직 고치지 않은 것:
-  - 데스크톱 템플릿의 GUI 도구(`click`·`type`·`key`)는 컨트롤 플레인이 막지 않는 실행 경로다. 에이전트가 터미널을 열어(예: Ctrl+Alt+T) uid 1001로 명령을 실행하거나 파일 관리자·편집기로 `/workspace`를 바꿀 수 있고, exec 허용 목록과 승인은 적용되지 않는다. 대신 GUI 구간마다 스냅샷을 떠서 되돌릴 수 있고, 바뀐 파일은 `gui_changes`로 기록된다(막지는 않는다). 되돌리면 그 구간의 정상 작업도 같이 사라진다. GUI로 띄운 백그라운드 프로세스는 구간이 끝날 때 멈추지만, 창을 가진 앱 안에서 도는 일은 남는다. 창 주인은 창이 스스로 적는 `_NET_WM_PID`가 아니라 X 서버가 확인한 클라이언트 pid로 판단하고, 남긴 프로세스는 `gui_processes_kept`로 기록하며 구간이 끝날 때마다 다시 판단한다. 다만 프로세스가 직접 창을 하나 띄우면 남는다. X 서버도 화면 계정으로 돌기 때문에, 그 계정이 X 서버를 바꿔치기하는 것까지는 막지 못한다. 감사 로그에는 입력한 문자열이 남는다. 화면 계정의 홈(`/home/desktop`)은 컨테이너가 시작할 때마다(만들기·복원) 이미지의 처음 상태로 돌아가므로, 거기 써 둔 autostart·`.bashrc` 같은 것은 복원 뒤 다시 실행되지 않는다. 남길 결과물은 `/workspace`에 둔다.
+  - 데스크톱 템플릿의 GUI 도구(`click`·`type`·`key`)는 컨트롤 플레인이 막지 않는 실행 경로다. 에이전트가 터미널을 열어(예: Ctrl+Alt+T) uid 1001로 명령을 실행하거나 파일 관리자·편집기로 `/workspace`를 바꿀 수 있고, exec 허용 목록과 승인은 적용되지 않는다. 대신 GUI 구간마다 스냅샷을 떠서 되돌릴 수 있고, 바뀐 파일은 `gui_changes`로 기록된다(막지는 않는다). 되돌리면 그 구간의 정상 작업도 같이 사라진다. GUI로 띄운 백그라운드 프로세스는 구간이 끝날 때 멈추지만, 창을 가진 앱 안에서 도는 일은 남는다. 데스크톱 샌드박스는 만들기·복원 때 Xfce 세션이 다 뜰 때까지 기다리므로 첫 GUI 구간이 데스크톱 세션(패널, 설정 데몬 등)을 새 프로세스로 잡지 않는다. 창 주인은 창이 스스로 적는 `_NET_WM_PID`가 아니라 X 서버가 확인한 클라이언트 pid로 판단하고(보이는 창을 직접 훑어, 그 사이 창이 생겼다 사라져도 다른 창을 빠뜨리지 않는다), 남긴 프로세스는 `gui_processes_kept`로 기록하며 구간이 끝날 때마다 다시 판단한다. 다만 프로세스가 직접 창을 하나 띄우면 남는다. X 서버도 화면 계정으로 돌기 때문에, 그 계정이 X 서버를 바꿔치기하는 것까지는 막지 못한다. 감사 로그에는 입력한 문자열이 남는다. 화면 계정의 홈(`/home/desktop`)은 컨테이너가 시작할 때마다(만들기·복원) 이미지의 처음 상태로 돌아가므로, 거기 써 둔 autostart·`.bashrc` 같은 것은 복원 뒤 다시 실행되지 않는다. 남길 결과물은 `/workspace`에 둔다.
   - 같은 GUI 경로로 에이전트 지시 파일 쓰기 승인도 우회된다. 화면 계정이 터미널·편집기로 `CLAUDE.md`나 `.claude/` 아래를 쓰면 승인 카드 없이 바뀌고, 결과함 배지와 `gui_changes`로만 드러난다. 위험을 받아들일 수 없으면 데스크톱 템플릿 대신 CLI 템플릿을 쓴다.
   - `source_dir`는 데이터 폴더와 겹치는 경로만 거부한다. 그 밖의 경로(예: 홈 폴더)는 그대로 복사되고, 컨테이너 root가 권한 검사 없이 복사하므로 0600 파일도 에이전트가 읽게 된다. 에이전트에게 보여도 되는 폴더만 고를 것.
 - **에이전트 지시 파일은 이름으로만 알아본다.** 표시는 경고이지 차단이 아니다. 이름이 다른 파일(README, 주석, 보고서 본문)에 숨긴 지시는 알아보지 못하고, `exec`가 glob(`cat *`)이나 변수로 지시 파일을 읽으면 출력에 알림이 붙지 않는다. 알림을 따를지는 결국 에이전트(모델)에 달려 있으므로, 최종 방어선은 여전히 승인·네트워크 차단·원본 읽기 전용이다. 새 도구가 쓰는 파일 이름은 목록에 직접 더해야 한다.

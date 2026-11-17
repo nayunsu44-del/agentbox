@@ -9,7 +9,8 @@
   - run-2: run-1이 남긴 needs_validation 5건을 실제 Docker에서 검증했다.
 - **브랜치·PR:** run-4는 `ccr-17444317-ygb3a1`, draft PR #15(아래 "4차 감사(run-4) 결과"). run-3은 `ccr-e2c70e17-r0gmhn`, draft PR #8(아래 "3차 감사(run-3) 진행 상태"). run-1·2 때 작업 브랜치는 `ccr-e10bee8e-6wt669`. PR #1(감사 수정·CI), #2(화면 링크 세션 범위), #3(FIFO), #4(runc 차단), #5(GUI 백그라운드 정리·세션 만료, `8e4db9e`)는 `main`에 병합됐다. 병합할 때마다 작업 브랜치를 최신 `main`에서 다시 시작한다.
 - **현재 상태:** 감사 확정 9건 중 **8건 수정 완료**, **N-1(High)은 방안 C·A·G + 백그라운드 정리로 부분 완화**(복구·경고·기록·정리, 승인 우회는 남음). 기각 1건. README "아직 고치지 않은 것" 항목(비밀값 가림, 화면 링크 세션, FIFO, runc)도 모두 고쳤다.
-- **테스트:** 전체 `pytest` 214개 통과(run-3 수정 회귀 테스트 9개 포함, 2026-10-22)(Docker 수용 테스트·데스크톱 포함, 건너뛴 것 0개).
+- **최신(2026-11-17):** run-7 뒤 복원·정책·데스크톱 결함 5건을 고쳐 PR #34~#38로 병합했다(맨 아래 "2026-11-17 작업" 절). 위의 브랜치·상태 설명은 run-1·2 때 기록이고, 감사 회차별 결과는 아래 각 절에 있다.
+- **테스트:** 전체 `pytest` 478개 통과(2026-11-17, 이 클라우드 컨테이너의 Docker(runc)와 데스크톱 이미지, 건너뛴 것 0개). 2026-10-22 run-3 때는 214개였다.
 
 ## 전체 목록
 
@@ -343,3 +344,21 @@ pytest                                                 # 160 passed
   - N2: `AGENTBOX_DOCKER_ROOT` 설정을 더했다. compose는 호스트 Docker 저장소(`AGENTBOX_DOCKER_DATA_ROOT`, 기본 `/var/lib/docker`)를 `/host-docker-root`에 읽기 전용으로 붙인다. 잴 수 없으면 시작할 때 경고(`serve` 출력)와 `disk_docker_root_unreachable` 기록을 남긴다. 실측: 붙이면 두 파일 시스템을 따로 잰다.
   - N-1: README 알려진 한계에 'GUI 경로로 지시 파일 쓰기 승인도 우회된다'를 더했다. 방향(D2·E)은 그대로 보류.
   - 회귀 테스트 11개(`tests/test_instruction_files.py` 끝, 모두 수정 전 코드에서 실패). 단위 290 통과(실패 1은 알려진 `sudo` overlap). IF 수용 6개 통과. parent-live: `agents/parent-live/artifacts/followup_fixes_live.out`, `docker_root_mount_live.out`.
+
+## 2026-11-17 작업 — 복원·정책·데스크톱 (PR #34~#38, 감사 밖 수정)
+
+감사 회차가 아니라 리뷰로 찾은 결함을 고친 작업이다. 모두 `main`에 병합됐다(브랜치 `ccr-a59eeb75-pln4vr`, PR마다 `main`에서 다시 시작).
+
+| PR | 병합 | 내용 | 근거 |
+|---|---|---|---|
+| #34 | `6ce1190` | 복원이 기존 컨테이너를 먼저 지우고 새 것을 만들었다. 새 것이 뜨지 못하면 작업 상태도 스냅샷 상태도 없이 DB만 지워진 컨테이너를 `running`으로 가리켰다. 이제 임시 이름(`agentbox-<sid>-restore-*`)으로 띄워 확인한 뒤에만 DB를 바꾸고(`container_id`까지 비교, run-4 F6 유지) 이전 것을 지운다. 바꾸는 동안 그 샌드박스의 컨테이너 조회는 "복원 중"으로 거절한다. 복원 컨테이너에 `agentbox.restore_of=<sid>` 라벨을 붙이고, 서버 시작 때 `recover_restores`가 남은 임시·이전 컨테이너와 못 바꾼 이름을 정리한다 | 실행·확인·DB 갱신 실패 테스트 3개가 이전 코드에서 실패 |
+| #35 | `cf7cee2` | 복원 확인을 root `true`에서 에이전트 계정의 `/workspace` 존재·쓰기까지로 넓혔다. gVisor를 `--overlay2=none` 없이 쓰면 스냅샷에 `/workspace`가 빠져, 작업이 든 컨테이너를 빈 것으로 바꿨다 | 테스트 3개가 이전 코드에서 실패 |
+| #36 | `17403b2` | 데스크톱 준비(`_wait_display`)가 X 서버만 기다려 Xfce가 1~2초 늦게 떴다. 그 사이 첫 GUI 입력이 구간을 열면 `xfsettingsd`·Thunar 데몬은 매번, 패널은 창 감지가 빗나갈 때 멈춰졌다(#34·#35 CI의 간헐 실패 `test_gui_background_jobs_stopped_when_burst_closes`). 이제 `xfwm4`·`xfce4-panel`·`xfdesktop`·`xfsettingsd`가 뜨고 화면 계정 프로세스 목록이 1초 동안 그대로일 때까지 기다린다(끊긴 관측은 안정 시간에 넣지 않음, 리뷰 P2). 만들기·복원이 2~3초 길어졌다 | 강화한 GUI 테스트가 이전 코드에서 매번 실패(Thunar, xfsettingsd) |
+| #37 | `2c2dae7` | `read-only-exec`에 `mkdir`·`touch`가 있어 승인 없이 `AGENTS.md`·`.claude/`를 만들 수 있었다(`write_file`이면 승인). `mkdir`은 #33에서 막은 리다이렉션 우회의 디딤돌이기도 했다. 목록에서 빼 승인 대기(202)로 보낸다 | 정책 테스트 7개, 수용 테스트(200 → 202)가 이전 정책에서 실패 |
+| #38 | `b25e651` | (1) 창 주인 감지의 `xdotool search \| xargs`가 훑는 사이 창이 사라지면 X 오류로 죽어 목록이 잘렸다(파이프 종료 코드는 xargs 것이라 몰랐다). 창이 생겼다 사라지는 동안 60번 중 12번 패널 등이 빠졌다. 이제 창 주인 스크립트가 `XQueryTree`로 직접 훑고 X 오류는 그 창만 건너뛴다(창 주인은 그대로 X-Resource pid, run-4 N4). (2) `write_file`이 없는 상위 폴더를 에이전트 계정으로 만든다(`created_dirs`). 지시 파일 위치 아래는 승인 전에 폴더도 생기지 않는다 | (1) 수용 테스트가 이전 코드에서 25번 중 12번 누락 (2) "없는 폴더는 만들지 않는다"던 기존 테스트를 새 동작으로 고침 |
+
+- **검토만 하고 고치지 않은 것:** 복원 전 `end_desktop()`(GUI 변경 기록 `bursts.end`는 이전 컨테이너가 있을 때 해야 하므로 순서 유지), 준비 대기의 제한 시간 넘김(리뷰 P3, 늦게 확인돼도 실제로 준비된 것이라 성공을 실패로 바꾸면 손해).
+- **남은 일:**
+  - ~~내장 에이전트 루프에 `write_file`이 없음~~ → 소유자 결정으로 추가했다(PR #39). 도구 4개, 시스템 프롬프트가 결과를 `write_file`로 `/workspace/outbox`에 쓰라고 이른다.
+  - 빈 폴더만 만드는 것은 여전히 exec `mkdir` 승인이다.
+- **이 클라우드 컨테이너에서 Docker로 검증하는 법:** `dockerd`가 설치돼 있어 root로 바로 띄울 수 있다(`nohup dockerd >/tmp/dockerd.log 2>&1 &`, 이미지 저장소는 overlayfs). `docker pull buildpack-deps:noble-curl`은 Docker Hub 요청 제한(429)에 걸리면 잠시 뒤 다시 받는다. `docker build -t agentbox-desktop:0.1 images/desktop` 뒤 `pytest -q -rs`로 478개, 건너뜀 0을 확인했다. 런타임은 runc뿐이다(gVisor 없음).
