@@ -140,7 +140,7 @@ agentbox agent "보고서를 요약해" --env-file agent.env \
 | `AGENTBOX_LLM_PROVIDER` | `openai`(기본, 호환 서버 포함) 또는 `anthropic` |
 | `AGENTBOX_LLM_BASE_URL` | API 주소. 기본은 각 회사 공식 주소 |
 | `AGENTBOX_LLM_MODEL` | 모델 이름 (필수, `--model`로도 가능) |
-| `AGENTBOX_LLM_API_KEY` | API 키. 없으면 `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`. 사내 서버는 비워도 됨 |
+| `AGENTBOX_LLM_API_KEY` | API 키. 비어 있으면 `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`를 쓴다. 키를 받지 않는 망 안의 서버(vLLM, Ollama 등)라면 둘 다 비워 둔다 |
 
 `--token`에 사람 토큰(`hum_…`)을 넣으면 실행을 거부한다. 사람 토큰이 있으면 에이전트가 스스로 승인할 수 있기 때문이다.
 

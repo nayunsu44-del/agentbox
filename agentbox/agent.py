@@ -13,7 +13,7 @@ LLM은 도구 4개(list_dir, read_file, write_file, exec)만 쓸 수 있고, 도
   AGENTBOX_LLM_BASE_URL  API 주소 (기본: openai → https://api.openai.com/v1,
                          anthropic → https://api.anthropic.com)
   AGENTBOX_LLM_MODEL     모델 이름 (필수)
-  AGENTBOX_LLM_API_KEY   API 키 (없으면 OPENAI_API_KEY / ANTHROPIC_API_KEY, 사내 서버면 비워도 됨)
+  AGENTBOX_LLM_API_KEY   API 키 (비어 있으면 OPENAI_API_KEY·ANTHROPIC_API_KEY. 키를 받지 않는 망 안의 서버면 비워 둔다)
   AGENTBOX_URL, AGENTBOX_SANDBOX_ID, AGENTBOX_AGENT_TOKEN  컨트롤 플레인 접속 정보
 """
 
