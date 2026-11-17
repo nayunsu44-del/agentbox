@@ -801,6 +801,19 @@ class AgentBox:
             n += 1
         return n
 
+    def recover_restores(self) -> list[str]:
+        """서버를 켤 때: 지난 실행에서 복원 도중 죽어 남은 컨테이너(임시 것·밀려난 이전 것)를 지운다.
+        정리는 Docker 쪽 일이라 정리나 기록을 못 해도 서버는 띄운다. 남은 것은 다음 시작 때 다시 본다."""
+        try:
+            removed = self.sandboxes.recover_restores()
+        except Exception as e:
+            self.log_best_effort(None, None, "restore_recovery_failed", {"error": str(e)[:500]})
+            return []
+        if removed:
+            self.log_best_effort(None, None, "restore_leftovers_removed",
+                                 {"reason": "server_restart", "container_ids": removed})
+        return removed
+
     def end_ui_session(self, cookie: str | None) -> str | None:
         """로그아웃: 세션을 지우고, 그 세션이 인수한 화면은 돌려주고, 열린 화면 연결을 끊는다."""
         session = self.desktop.end_session(cookie)

@@ -383,7 +383,7 @@ Docker나 데스크톱 이미지(`agentbox-desktop:0.1`)가 없으면 수용 테
 | --- | --- | --- |
 | SB-1 생성·삭제 | 완료 | 템플릿 `cli`(기본), `desktop` |
 | SB-2 일시정지·재개 | 완료 | |
-| SB-3 스냅샷·복원 | 완료 | `docker commit`, 작업 폴더가 컨테이너 레이어에 있어 스냅샷에 포함됨 |
+| SB-3 스냅샷·복원 | 완료 | `docker commit`, 작업 폴더가 컨테이너 레이어에 있어 스냅샷에 포함됨. 복원은 새 컨테이너를 임시 이름으로 띄워 확인한 뒤에만 바꾸므로, 실패하면 기존 컨테이너가 그대로 남는다. 바꾸는 동안의 도구 호출은 거절하고, 복원 도중 서버가 죽어 남은 컨테이너는 다음 시작 때 정리한다 |
 | SB-4 네트워크 차단 | 완료 | `network=none` |
 | SB-5 자원 상한 | 일부 | CPU·메모리·프로세스 수 적용. 디스크는 `AGENTBOX_DISK` (overlay가 xfs+pquota일 때만 동작) |
 | SB-6 격리 백엔드 감지 | 완료 | Docker에 등록된 런타임 중 kata-fc → runsc(gVisor) → runc 순으로 강한 것 선택. runc와 runsc(systrap)에서 검증, Firecracker(kata-fc)는 미검증. 밖에 열 때 runc밖에 없으면 뜨지 않음(`--allow-runc`로 허용) |

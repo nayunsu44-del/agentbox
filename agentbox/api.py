@@ -169,6 +169,7 @@ def build(settings: Settings | None = None) -> tuple[FastAPI, AgentBox, str]:
         captures=settings.home / "captures",
     )
     box.recover_takeovers()
+    box.recover_restores()
     novnc_dir = settings.home / "novnc"
     # 도구 호출은 사람 API와 다른 스레드 풀에서 돈다. exec는 제한 시간 내내 스레드를 붙잡으므로,
     # 같은 풀을 쓰면 에이전트가 승인·삭제 같은 사람 API를 멈춰 세울 수 있다.

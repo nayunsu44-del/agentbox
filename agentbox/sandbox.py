@@ -40,6 +40,9 @@ _PREVIEW_TIMEOUT = 10   # 승인 미리보기의 glob 펼치기·find 한 번. �
 _WRITE_CHUNK = 64 * 1024     # 인자 하나의 커널 상한(128KB)보다 작게, base64 뒤 기준
 _OUTBOX_CAP = 512 * 1024     # 결과함 목록 출력 상한 (수만 개 파일로 컨트롤 플레인 메모리를 늘리지 못하게)
 OUTBOX = WORKSPACE + "/outbox"
+# 복원이 만든 컨테이너에 붙이는 라벨(값은 샌드박스 id). 서버가 복원 도중 죽었을 때 recover_restores가
+# DB가 가리키지 않는 이 라벨 컨테이너(전환 전의 임시 것, 밀려난 이전 것)를 찾아 지운다.
+RESTORE_LABEL = "agentbox.restore_of"
 _BAD_NAME = re.compile(r"[\x00-\x1f\x7f/\\]")
 
 
@@ -168,6 +171,7 @@ class SandboxManager(DesktopTools):
         self.settings = settings
         self.client = docker.from_env()
         self._lock = threading.Lock()
+        self._restoring: set[str] = set()   # 복원 중인 샌드박스. 새 도구 호출이 이전 컨테이너로 가지 않게 막는다
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False, isolation_level=None)
         self.conn.executescript(SCHEMA)
         cols = {r[1] for r in self.conn.execute("PRAGMA table_info(sandboxes)")}
@@ -237,6 +241,9 @@ class SandboxManager(DesktopTools):
         rec = self._rec(sid)
         if rec["status"] == "deleted":
             raise SandboxError(f"삭제된 샌드박스: {sid}")
+        if sid in getattr(self, "_restoring", ()):
+            # 새 컨테이너로 바꾸는 중이다. 이전 컨테이너에 쓰면 성공으로 보이고 전환 뒤 사라진다
+            raise SandboxError(f"복원 중인 샌드박스: {sid} (끝난 뒤 다시 시도)")
         try:
             return self.client.containers.get(rec["container_id"])
         except NotFound as e:
@@ -251,7 +258,8 @@ class SandboxManager(DesktopTools):
         return self.settings.template(self._rec(sid).get("template") or "cli")
 
     # ---- SB-1 생성·삭제 -----------------------------------------------
-    def _run_container(self, tpl: Template, image: str, source_dir: str, name: str):
+    def _run_container(self, tpl: Template, image: str, source_dir: str, name: str,
+                       labels: dict[str, str] | None = None):
         """원본 폴더는 읽기 전용으로, 그 안쪽에 걸린 다른 마운트는 빼고 붙인다."""
         kwargs: dict[str, Any] = dict(
             image=image,
@@ -269,7 +277,7 @@ class SandboxManager(DesktopTools):
             cap_add=["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID"],
             security_opt=["no-new-privileges"],
             runtime=self.runtime,
-            labels={"agentbox": "1", "agentbox.template": tpl.name},
+            labels={"agentbox": "1", "agentbox.template": tpl.name, **(labels or {})},
         )
         if self.settings.disk_limit:
             kwargs["storage_opt"] = {"size": self.settings.disk_limit}
@@ -402,22 +410,116 @@ class SandboxManager(DesktopTools):
         snaps = {s["id"]: s for s in self.list_snapshots(sid)}
         if snap_id not in snaps:
             raise SandboxError(f"이 샌드박스의 스냅샷이 아님: {snap_id}")
-        try:
-            self.client.containers.get(rec["container_id"]).remove(force=True)
-        except NotFound:
-            pass
         tpl = self.template_of(sid)
-        c = self._run_container(tpl, snaps[snap_id]["image"], rec["source_dir"], f"agentbox-{sid}")
-        # 그사이 삭제됐으면 되살리지 않는다. 삭제는 상태로 토큰을 폐기하므로 덮어쓰면 토큰이 다시 살아난다 (run-4 F6)
         with self._lock:
-            cur = self.conn.execute("UPDATE sandboxes SET container_id = ?, status = 'running' "
-                                    "WHERE id = ? AND status != 'deleted'", (c.id, sid))
-        if cur.rowcount == 0:
-            c.remove(force=True)
-            raise SandboxError(f"복원하는 사이 삭제된 샌드박스: {sid}")
-        if tpl.desktop:
-            self._wait_display(c)
+            if sid in self._restoring:
+                raise SandboxError(f"이미 복원 중인 샌드박스: {sid}")
+            self._restoring.add(sid)
+        try:
+            self._replace_container(sid, rec, tpl, snaps[snap_id]["image"])
+        finally:
+            with self._lock:
+                self._restoring.discard(sid)
         return self.get(sid)
+
+    def _replace_container(self, sid: str, rec: dict[str, Any], tpl: Template, image: str) -> None:
+        """새 컨테이너를 임시 이름으로 띄워 확인한 뒤에만 DB를 바꾸고 이전 것을 지운다.
+        DB를 바꾸기 전에 실패하면 임시 컨테이너만 지우므로 이전 컨테이너와 DB는 그대로 남는다.
+        서버가 중간에 죽으면 다음 시작 때 recover_restores가 남은 것을 정리한다."""
+        old_id = rec["container_id"]
+        tmp_name = f"agentbox-{sid}-restore-{secrets.token_hex(3)}"
+        try:
+            c = self._run_container(tpl, image, rec["source_dir"], tmp_name, labels={RESTORE_LABEL: sid})
+        except Exception as e:
+            # 만든 뒤 시작에서 실패하면 created 상태로 남는다. 이름이 겹친 경우 그 컨테이너는 남의 것일 수 있으니
+            # 이 샌드박스의 복원 라벨이 있고 지금 쓰는 컨테이너가 아닌 것만 지운다
+            try:
+                left = self.client.containers.get(tmp_name)
+                if (left.labels or {}).get(RESTORE_LABEL) == sid and left.id != old_id:
+                    self._remove_quietly(left.id)
+            except Exception:
+                pass
+            detail = getattr(e, "explanation", None) or e
+            raise SandboxError(f"복원용 컨테이너를 띄우지 못함. 기존 컨테이너는 그대로: {detail}") from e
+        try:
+            probe = c.exec_run(["true"], user="0:0")
+            if probe.exit_code != 0:
+                raise SandboxError(f"복원한 컨테이너가 명령을 실행하지 못함 (exit {probe.exit_code})")
+            if tpl.desktop:
+                self._wait_display(c)
+            # 그사이 삭제됐으면 되살리지 않는다. 삭제는 상태로 토큰을 폐기하므로 덮어쓰면 토큰이 다시 살아난다 (run-4 F6).
+            # container_id도 같이 본다. 잠금을 거치지 않은 다른 전환이 끼었으면 그 결과를 덮지 않는다.
+            with self._lock:
+                cur = self.conn.execute(
+                    "UPDATE sandboxes SET container_id = ?, status = 'running' "
+                    "WHERE id = ? AND status != 'deleted' AND container_id = ?", (c.id, sid, old_id))
+            if cur.rowcount == 0:
+                raise SandboxError(f"복원하는 사이 삭제되었거나 바뀐 샌드박스: {sid}")
+        except BaseException as e:
+            self._remove_quietly(c.id)
+            if isinstance(e, Exception) and not isinstance(e, SandboxError):
+                raise SandboxError(f"복원 실패. 기존 컨테이너는 그대로: {e}") from e
+            raise
+        # 전환 끝. 여기부터는 실패해도 복원은 성공이다. 못 지운 이전 컨테이너와 못 바꾼 이름은
+        # 다음 시작 때 recover_restores가 정리한다. 지우면 이전 컨테이너에서 돌던 도구 호출도 끊긴다.
+        if self._remove_quietly(old_id):
+            try:
+                c.rename(f"agentbox-{sid}")
+            except APIError:
+                pass
+
+    def _remove_quietly(self, ident: str) -> bool:
+        """컨테이너를 지운다. 없으면 지운 것으로 친다. Docker가 거부하면 False."""
+        try:
+            self.client.containers.get(ident).remove(force=True)
+        except NotFound:
+            return True
+        except APIError:
+            return False
+        return True
+
+    def recover_restores(self) -> list[str]:
+        """서버 시작 때 부른다. 복원 도중 서버가 죽어 남은 컨테이너를 정리하고, 지운 컨테이너 id를 돌려준다.
+        1) agentbox.restore_of=<sid> 라벨 컨테이너 중 DB가 가리키지 않는 것(전환 전의 임시 것, 다음 복원으로
+           밀려난 이전 것)과 삭제된 샌드박스의 것을 지운다.
+        2) DB가 가리키는 컨테이너가 agentbox-<sid> 이름이 아니면(전환 뒤 죽음), 그 이름을 쥔 이전 컨테이너를
+           지우고 이름을 바꾼다.
+        이 DB에 없는 샌드박스의 컨테이너는 건드리지 않는다 (같은 Docker를 쓰는 다른 agentbox일 수 있다).
+        복원이 도는 중에 부르면 그 임시 컨테이너를 지우므로, 서버 시작 때 한 번만 부른다."""
+        with self._lock:
+            rows = {r[0]: (r[1], r[2]) for r in
+                    self.conn.execute("SELECT id, container_id, status FROM sandboxes")}
+        removed: list[str] = []
+        for c in self.client.containers.list(all=True, filters={"label": RESTORE_LABEL}):
+            sid = (c.labels or {}).get(RESTORE_LABEL)
+            if sid not in rows:
+                continue
+            cid, status = rows[sid]
+            if (status == "deleted" or c.id != cid) and self._remove_quietly(c.id):
+                removed.append(c.id)
+        for sid, (cid, status) in rows.items():
+            if status == "deleted":
+                continue
+            name = f"agentbox-{sid}"
+            try:
+                cur = self.client.containers.get(cid)
+            except NotFound:
+                continue
+            if cur.name == name:
+                continue
+            try:
+                holder = self.client.containers.get(name)
+            except NotFound:
+                holder = None
+            if holder is not None and holder.id != cur.id:
+                if not self._remove_quietly(holder.id):
+                    continue
+                removed.append(holder.id)
+            try:
+                cur.rename(name)
+            except APIError:
+                pass
+        return removed
 
     # ---- 도구 ----------------------------------------------------------
     def _exec_head(self, c, argv: list[str], *, user: str = AGENT_UID,
