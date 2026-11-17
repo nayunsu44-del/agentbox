@@ -29,6 +29,10 @@ _NOVNC_RETRY = 60   # noVNC 꺼내기에 실패한 뒤 다시 시도하기까지
 # 부른 스레드가 묶인다. 컨테이너 안에서 끊어야 exec가 돌아온다 (클라이언트 쪽 시간 제한으로는 풀리지 않았다).
 _X_TIMEOUT = 15
 _TIMED_OUT = (124, 137)   # timeout(1)이 끊었을 때의 종료 코드 (TERM, 안 끝나서 KILL)
+# 데스크톱이 준비됐다고 보는 Xfce 세션 구성 요소 (ps comm 이름). 이것들이 다 뜨고 화면 계정의 프로세스 목록이
+# _SESSION_SETTLE초 동안 그대로이면 준비된 것으로 본다 (images/desktop의 startxfce4와 맞춘다)
+_SESSION_PARTS = frozenset({"xfwm4", "xfce4-panel", "xfdesktop", "xfsettingsd"})
+_SESSION_SETTLE = 1.0
 
 # 데스크톱 템플릿 (images/desktop/Dockerfile과 맞춘다)
 DESKTOP_USER = "desktop"
@@ -96,12 +100,35 @@ class DesktopTools:
                                         user=DESKTOP_USER)
 
     def _wait_display(self, c, timeout: float = 45) -> None:
+        """X 서버만이 아니라 Xfce 세션이 다 뜰 때까지 기다린다 (만들기·복원).
+        시작 스크립트는 Xvfb를 띄운 뒤 startxfce4를 따로 띄운다. X 서버만 기다리면 세션이 뜨는 1~2초 사이에
+        첫 GUI 입력이 구간을 열 수 있고, 그 기준(baseline)에 빠진 xfsettingsd·패널 등이 구간이 닫힐 때
+        새 프로세스로 잡혀 멈춰진다."""
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             if self._x(c, ["xdotool", "getdisplaygeometry"]).exit_code == 0:
-                return
+                break
             time.sleep(0.3)
-        raise SandboxError("데스크톱(X 서버)이 시작되지 않음")
+        else:
+            raise SandboxError("데스크톱(X 서버)이 시작되지 않음")
+        last: frozenset[str] | None = None
+        since = 0.0
+        while time.monotonic() < deadline:
+            # root로 본다. 화면 계정으로 돌리면 이 ps 자체가 화면 계정 프로세스 목록을 바꾼다
+            res = c.exec_run(_timed(_X_TIMEOUT, "ps", "-u", DESKTOP_USER, "-o", "pid=,comm="))
+            rows = [ln.split(None, 1) for ln in (res.output or b"").decode(errors="replace").splitlines()]
+            names = {r[1].strip() for r in rows if len(r) == 2}
+            if res.exit_code != 0 or not _SESSION_PARTS <= names:
+                last = None   # 못 봤거나 덜 뜬 사이는 안정으로 치지 않는다. 연속으로 본 시간만 센다
+            else:
+                pids = frozenset(r[0] for r in rows if r)
+                now = time.monotonic()
+                if pids != last:
+                    last, since = pids, now
+                elif now - since >= _SESSION_SETTLE:
+                    return
+            time.sleep(0.3)
+        raise SandboxError("데스크톱 세션(Xfce)이 다 뜨지 않음")
 
     def geometry(self, sid: str) -> tuple[int, int]:
         res = self._x(self._desktop(sid), ["xdotool", "getdisplaygeometry"])

@@ -351,6 +351,14 @@ def test_gui_background_jobs_stopped_when_burst_closes(desk):
     assert any("sleep 4; rm" in x["args"] for x in stopped[0]["processes"])
     assert desktop_pids("sleep 4") == []
     assert desktop_pids("xfce4-panel") == panel                       # 데스크톱 세션은 그대로
+    # 만든 직후의 첫 GUI 입력이 구간을 열어도 Xfce 세션은 기준에 들어 있다. 예전에는 X 서버만 기다려
+    # 아직 뜨지 않은 xfsettingsd·Thunar 데몬이 매번 멈춰지고, 패널은 창 감지가 될 때만 살아남았다
+    # 그래서 구간이 멈추거나 남기는 것은 이 구간에 띄운 것(터미널과 그 안의 일)뿐이어야 한다
+    def prog(args):
+        return args.split()[0].rsplit("/", 1)[-1]
+    assert {prog(x["args"]) for x in stopped[0]["processes"]} <= {"bash", "sh", "sleep"}, stopped
+    kept = [p for x in events(e) if x["event"] == "gui_processes_kept" for p in x["payload"]["processes"]]
+    assert {prog(p["args"]) for p in kept} <= {"xfce4-terminal"}, kept
     time.sleep(5)
     assert {"old-report.md", "new-report.md"} <= set(ls(e))           # 멈춘 일은 파일을 지우지 못했다
 
